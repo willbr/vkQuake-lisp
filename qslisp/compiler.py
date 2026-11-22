@@ -31,6 +31,7 @@ ENGINE_CALLS = {
     'quake:set-size': (4, ('entity', 'vector', 'vector')),
     'quake:sound': (8, ('entity', 'number', 'sample', 'number', 'number')),
     'quake:error': (10, ('string',)),
+    'quake:vector-length': (12, ('vector',)),
     'quake:vector-yaw': (13, ('vector',)),
     'quake:spawn': (14, ()),
     'quake:remove': (15, ('entity',)),
@@ -59,7 +60,8 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
 ENTITY_RESULTS = {'quake:spawn': 1, 'quake:find': 1, 'quake:traceline': 'trace_ent'}
-NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor', 'quake:floor', 'quake:cvar'}
+NUMERIC_RESULTS = {'quake:vector-length', 'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor',
+                   'quake:floor', 'quake:cvar'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
     'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'append', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?',
@@ -67,7 +69,8 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
     'quake:world?', 'quake:entity?', 'quake:entity=?',
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
-    'quake:set-callback!', 'quake:call-callback', 'quake:set-view', 'quake:set-view-angles!',
+    'quake:set-callback!', 'quake:call-callback', 'quake:set-view', 'quake:set-view-angles!', 'quake:beam',
+    'quake:dprint-number',
 }
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
                     'quake:vector?': 'vector', 'quake:entity?': 'entity', 'procedure?': 'procedure'}
@@ -484,6 +487,10 @@ class Compiler:
         return function, values
 
     def tail_expression(self, frame, node, environment, function):
+        with frame.at(node.location):
+            return self.tail_expression_body(frame, node, environment, function)
+
+    def tail_expression_body(self, frame, node, environment, function):
         if isinstance(node.value, tuple) and node.value:
             name, args = self.application(node, environment)
             if name is None:
@@ -1098,12 +1105,26 @@ class Compiler:
         frame.emit(OP_STORE, previous, recipient)
         return Value(self.zero, 'number')
 
+    def beam(self, frame, node, args, environment):
+        if len(args) != 3:
+            raise CompileError(node.location, 'quake:beam requires an entity, start, and end')
+        source = self.entity(frame, args[0], environment)
+        start, end = (self.vector(frame, arg, environment) for arg in args[1:])
+        # svc_temp_entity TE_BEAM uses one entity number and six stock coordinates.
+        payload = [(52, self.program.constant(23)), (52, self.program.constant(13)), (59, source)]
+        payload.extend((56, advance(vector, i)) for vector in (start, end) for i in range(3))
+        for writer, slot in payload:
+            frame.emit(OP_STORE, self.zero, 4)  # MSG_BROADCAST
+            frame.emit(OP_STORE, slot, 7)
+            frame.emit(OP_CALL0 + 2, self.program.builtin(f'__qslisp_builtin_{writer}', writer, 2))
+        return Value(self.zero, 'number')
+
     def expression(self, frame, node, environment):
         # An inner let may shadow a binding still needed by the enclosing
         # expression's continuation. Keep those outer environments as well as
         # already evaluated arguments; scanning only the innermost scope loses
         # such pairs during collection.
-        with self.keep(environment.values()):
+        with self.keep(environment.values()), frame.at(node.location):
             return self.expression_body(frame, node, environment)
 
     def expression_body(self, frame, node, environment):
@@ -1189,6 +1210,20 @@ class Compiler:
             return self.engine_call(frame, node, name, args, environment)
         if name in ('quake:set-view', 'quake:set-view-angles!'):
             return self.view_message(frame, node, name, args, environment)
+        if name == 'quake:beam':
+            return self.beam(frame, node, args, environment)
+        if name == 'quake:dprint-number':
+            if len(args) != 1:
+                raise CompileError(node.location, 'quake:dprint-number requires one number')
+            value = self.expression(frame, args[0], environment)
+            self.number(frame, value, args[0])
+            formatted = self.program.builtin('__qslisp_builtin_26', 26, 1)
+            printer = self.program.builtin('__qslisp_builtin_25', 25, 1)
+            frame.emit(OP_STORE, value.slot, 4)
+            frame.emit(OP_CALL0 + 1, formatted)
+            frame.emit(OP_STORE, 1, 4)
+            frame.emit(OP_CALL0 + 1, printer)
+            return Value(self.zero, 'number')
         if name in ENGINE_GLOBALS:
             if args:
                 raise CompileError(node.location, f'{name} takes no arguments')

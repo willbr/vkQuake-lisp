@@ -98,23 +98,42 @@ class Model:
 
     def write(self, output, *, steering=None):
         poses = [self.steering_pose(yaw, steering) for yaw in STEERING_YAWS] if steering else [self.vertices]
+        names = ['bike' if index == 0 else f'bike{index}' for index in range(len(poses))]
+        self.write_poses(output, list(zip(names, poses)), PALETTE)
+
+    def write_poses(self, output, named_poses, palette):
+        if not named_poses or not self.vertices or not 1 <= len(palette) <= 8:
+            raise ValueError('stock alias model requires geometry, poses, and up to eight palette colors')
+        if len(self.vertices) > 2000 or len(self.triangles) > 2048:
+            raise ValueError('model exceeds stock alias vertex or triangle limits')
+        if any(not isinstance(color, int) or not 0 <= color <= 255 for color in palette):
+            raise ValueError('palette colors must be byte indices')
+        if any(not 0 <= material < len(palette) for _, _, material in self.vertices):
+            raise ValueError('a model face refers to a missing palette color')
+        poses = [pose for _, pose in named_poses]
+        if any(len(pose) != len(self.vertices) for pose in poses):
+            raise ValueError('animation frames must keep the same topology')
         origin = tuple(math.floor(min(point[i] for pose in poses for point, _, _ in pose)) for i in range(3))
+        size = tuple(max(point[i] - origin[i] for pose in poses for point, _, _ in pose) for i in range(3))
+        scales = tuple(max(.25, axis / 255) for axis in size)
         radius = max(math.sqrt(sum(coord * coord for coord in point)) for pose in poses for point, _, _ in pose)
-        data = bytearray(struct.pack('<4si3f3ff3f8if', b'IDPO', 6, .25, .25, .25, *origin,
+        data = bytearray(struct.pack('<4si3f3ff3f8if', b'IDPO', 6, *scales, *origin,
                                      radius, 0., 0., 22., 1, 32, 32, len(self.vertices),
                                      len(self.triangles), len(poses), 0, 0, 1.))
         data += struct.pack('<i', 0)
-        data += bytes(PALETTE[x // 4] for _ in range(32) for x in range(32))
+        data += bytes(palette[min(x // 4, len(palette) - 1)] for _ in range(32) for x in range(32))
         for _, _, material in self.vertices:
             data += struct.pack('<3i', 0, 2 + 4 * material, 4)
         for triangle in self.triangles:
             data += struct.pack('<4i', *triangle)
-        for index, pose in enumerate(poses):
-            points = [tuple(round((point[i] - origin[i]) * 4) for i in range(3)) + (normal,)
+        for name, pose in named_poses:
+            name = name.encode('ascii')
+            if not 1 <= len(name) <= 15 or b'\0' in name:
+                raise ValueError('frame names must contain 1–15 ASCII bytes')
+            points = [tuple(round((point[i] - origin[i]) / scales[i]) for i in range(3)) + (normal,)
                       for point, normal, _ in pose]
             low = tuple(min(point[i] for point in points) for i in range(3))
             high = tuple(max(point[i] for point in points) for i in range(3))
-            name = b'bike' if index == 0 else f'bike{index}'.encode('ascii')
             data += struct.pack('<i8B16s', 0, *low, 0, *high, 0, name)
             for point in points:
                 data += struct.pack('<4B', *point)

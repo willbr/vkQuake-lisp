@@ -1,4 +1,5 @@
 """Stock v6 records, global storage, and relocation of function-local operands."""
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -40,6 +41,7 @@ class Program:
         self.globaldefs = [(0, 0, 0)]
         self.fielddefs = [(0, 0, 0)]
         self.statements = [(0, 0, 0, 0)]
+        self.source_ranges = []
         self.functions = [(0,) * 15]
         self.names = {}
         self.kinds = {}
@@ -185,6 +187,17 @@ class Frame:
             raise CompileError(location, 'invalid VM parameter layout')
         self.words = sum(self.parameter_sizes)
         self.code = []
+        self.source = location
+        self.locations = []
+
+    @contextmanager
+    def at(self, location):
+        previous = self.source
+        self.source = location
+        try:
+            yield
+        finally:
+            self.source = previous
 
     def allocate(self, words=3):
         slot = Local(self.words)
@@ -195,6 +208,7 @@ class Frame:
 
     def emit(self, opcode, a=0, b=0, c=0):
         self.code.append((opcode, a, b, c))
+        self.locations.append(self.source)
         return len(self.code) - 1
 
     def patch(self, instruction, operand, target):
@@ -213,6 +227,13 @@ class Frame:
         old = self.program.functions[self.index]
         sizes = list(self.parameter_sizes) + [0] * (8 - self.arity)
         self.program.functions[self.index] = (first, start, self.words, 0, old[4], old[5], self.arity, *sizes)
+        for offset, location in enumerate(self.locations):
+            ranges = self.program.source_ranges
+            if ranges and ranges[-1][2:] == (self.index, location):
+                start, _, function, source = ranges[-1]
+                ranges[-1] = (start, first + offset + 1, function, source)
+            else:
+                ranges.append((first + offset, first + offset + 1, self.index, location))
 
 
 def emit_shallow_equality(frame, left, right, result, *, compare_strings):

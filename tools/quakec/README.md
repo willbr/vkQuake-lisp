@@ -137,6 +137,35 @@ the current revision and entity indices. Send `POST /edit` with that
 `revision`, an `operations` array, and optional `write: true`. An intervening
 edit invalidates the old revision. `GET /preview?view=side` returns an SVG.
 
+## Headless model editing
+
+`python3 tools/quakec/model_editor.py recipe.json build/model.mdl` writes a
+stock version 6 alias model. A recipe has a `palette` of up to eight Quake
+palette indices and named `parts`. Each part supplies either `low` and `high`
+box corners or a list of convex `faces` with `points`. A part or face's
+`material` selects a palette entry, starting at zero. Optional named `frames`
+map part names to position offsets. An empty mapping leaves the geometry at
+its base position. The uplink assets are working recipes.
+[Examples](build-uplink-assets.py)
+
+## VM listings and fixtures
+
+```sh
+python3 -m qslisp examples/square.scm -o build/progs.dat --symbols
+python3 -m qslisp.vm_tools disassemble build/progs.dat --symbols build/progs.sym --function square
+python3 -m qslisp.vm_tools assemble fixture.qca -o build/fixture.dat
+```
+
+The optional JSON sidecar records the file digest and source locations for
+half-open statement ranges. Listings work from the bytecode alone.
+
+A fixture can declare `.float name value`, `.builtin name number arity`, or
+`.function name locals [parameter-width ...]`. Each function ends with
+`.end`. Write stock opcode names with operands separated by spaces. Use
+`%offset` for local slots, `[index]` for raw globals, and `label:` for relative
+branches. The assembler statically validates the resulting file.
+[Stock VM fixture](../../qslisp/tests/test_vm_tools.py)
+
 ## VM target
 
 The pinned original engine is authoritative for the compiler target:
