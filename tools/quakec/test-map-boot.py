@@ -8,7 +8,8 @@ import subprocess
 import sys
 import tempfile
 
-from challenge import SAVES, verification_commands, verify_challenge
+import annex
+import challenge
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOT_MESSAGES = ('qslisp: worldspawn', 'qslisp: StartFrame', 'qslisp: StartFrame', 'Server spawned.')
@@ -28,11 +29,15 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
     subprocess.run([sys.executable, '-m', 'qslisp', 'examples/map-boot.scm', '-o', program],
                    cwd=ROOT, check=True)
     subprocess.run([sys.executable, 'tools/quakec/check-stock.py', program], cwd=ROOT, check=True)
-    if level == 'signal':
+    if level in ('signal', 'annex'):
         (output / 'maps').mkdir()
         with (output / 'map-build.log').open('w') as log:
-            subprocess.run([sys.executable, 'tools/quakec/build-signal.py', output / 'maps/signal.bsp'],
+            subprocess.run([sys.executable, 'tools/quakec/build-signal.py', '--map', level,
+                            output / 'maps' / f'{level}.bsp'],
                            cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
+    if level == 'annex':
+        subprocess.run([sys.executable, 'tools/quakec/build-sentry.py', output / 'progs/sentry.mdl'],
+                       cwd=ROOT, check=True)
 
     env = os.environ.copy()
     if not play:
@@ -48,15 +53,18 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
         for name in ('quake.exe', 'cwsdpmi.exe', 'id1/pak0.pak', 'id1/pak1.pak'):
             shutil.copyfile(quake_dir / name, base / name)
         shutil.copyfile(program, mod / 'progs.dat')
-        if level == 'signal':
+        if level in ('signal', 'annex'):
             shutil.copytree(output / 'maps', mod / 'maps')
+        if level == 'annex':
+            shutil.copytree(output / 'progs', mod / 'progs')
 
         engine_flags = '-noudp -noipx -condebug -game lispboot'
         if play:
             (mod / 'walk.cfg').write_text(WALK_CONTROLS.format(level=level), encoding='ascii')
             engine = f'quake -nocdaudio {engine_flags} +developer 1 +map {level} +exec walk.cfg'
         elif verify:
-            (mod / 'verify.cfg').write_text(verification_commands(), encoding='ascii')
+            scenario = annex if level == 'annex' else challenge
+            (mod / 'verify.cfg').write_text(scenario.verification_commands(), encoding='ascii')
             engine = f'quake -nosound -nocdaudio {engine_flags} +developer 1 +map {level} +exec verify.cfg'
         else:
             engine = f'quake -dedicated 1 {engine_flags} +developer 1 +map {level} +wait +quit'
@@ -67,7 +75,7 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
                   flush=True)
         artifacts = {'qconsole.log'}
         if verify:
-            artifacts.update({f'{name}.sav' for name in SAVES} | {'quake00.pcx', 'quake01.pcx'})
+            artifacts.update({f'{name}.sav' for name in scenario.SAVES} | {'quake00.pcx', 'quake01.pcx'})
         with (output / 'dosbox.log').open('w') as log:
             try:
                 subprocess.run(command, cwd=base, env=env, stdout=log, stderr=subprocess.STDOUT,
@@ -91,7 +99,10 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
         except ValueError:
             raise RuntimeError(f'expected {message!r} after line {position} in the Quake console log') from None
     if verify:
-        verify_challenge(output, lines)
+        if level == 'annex':
+            annex.verify_annex(output, lines)
+        else:
+            challenge.verify_challenge(output, lines)
     return console
 
 
@@ -99,14 +110,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--play', action='store_true', help='open the map in a graphical client')
-    mode.add_argument('--verify', action='store_true', help='test and profile the Signal Room in a scripted client')
-    parser.add_argument('--map', choices=('start', 'signal'), help='map to load (default: start, or signal with --verify)')
+    mode.add_argument('--verify', action='store_true', help='test a Lisp map in a scripted client')
+    parser.add_argument('--map', choices=('start', 'signal', 'annex'), help='map to load (default: start, or signal with --verify)')
     parser.add_argument('dosbox', help='DOSBox Staging executable')
     parser.add_argument('quake_dir', type=Path, help='registered DOS Quake directory containing quake.exe and id1')
     args = parser.parse_args()
     level = args.map or ('signal' if args.verify else 'start')
-    if args.verify and level != 'signal':
-        parser.error('--verify requires the signal map')
+    if args.verify and level == 'start':
+        parser.error('--verify requires signal or annex')
     dosbox = shutil.which(args.dosbox)
     if dosbox is None:
         parser.error(f'DOSBox Staging executable not found: {args.dosbox}')

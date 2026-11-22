@@ -5,7 +5,8 @@ from pathlib import Path
 import sys
 
 from .compiler import Compiler
-from .reader import CompileError, read
+from .modules import load_forms
+from .reader import CompileError
 
 
 def main():
@@ -17,7 +18,7 @@ def main():
     parser.add_argument('--report', action='store_true', help='print storage and bytecode statistics as JSON')
     args = parser.parse_args()
     try:
-        compiler = Compiler(read(args.source.read_text(encoding='utf-8'), str(args.source)), str(args.source),
+        compiler = Compiler(load_forms(args.source.read_text(encoding='utf-8'), str(args.source)), str(args.source),
                             heap_pairs=args.heap_pairs, root_slots=args.root_slots)
         data = compiler.compile()
         args.output.parent.mkdir(parents=True, exist_ok=True)

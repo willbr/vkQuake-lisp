@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the original Signal Room map and its indexed textures for stock Quake."""
+"""Build the original Lisp maps and their indexed textures for stock Quake."""
 import argparse
 import os
 from pathlib import Path
@@ -66,7 +66,7 @@ def write_wad(path):
     path.write_bytes(struct.pack('<4sii', b'WAD2', len(textures), 12 + len(lumps)) + lumps + directory)
 
 
-def build(output):
+def build(output, level):
     if not QUTILS.is_dir():
         raise SystemExit('Missing map tools. Run ./tools/quakec/setup.sh first.')
     output = output.resolve()
@@ -92,9 +92,9 @@ def build(output):
                             *sources, *common, '-lm'], cwd=work, check=True)
 
         # qbsp locates the mod directory from the absolute .../quake/<mod>/ path.
-        map_path = work / 'quake/id1/maps/signal.map'
+        map_path = work / 'quake/id1/maps' / f'{level}.map'
         map_path.parent.mkdir(parents=True)
-        shutil.copyfile(ROOT / 'examples/signal.map', map_path)
+        shutil.copyfile(ROOT / 'examples' / map_path.name, map_path)
         write_wad(work / 'quake/id1/signal.wad')
         subprocess.run([binaries / 'qbsp', map_path], cwd=work, check=True)
         bsp = map_path.with_suffix('.bsp')
@@ -107,4 +107,6 @@ def build(output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path, help='output BSP file')
-    build(parser.parse_args().output)
+    parser.add_argument('--map', choices=('signal', 'annex'), default='signal')
+    args = parser.parse_args()
+    build(args.output, args.map)

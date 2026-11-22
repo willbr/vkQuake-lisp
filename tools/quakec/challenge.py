@@ -47,11 +47,15 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def save_state(path):
+def read_edicts(path):
     text = path.read_text(encoding='cp437')
     blocks = re.findall(r'^\{\s*\n(.*?)^\}', text, flags=re.M | re.S)
     require(len(blocks) >= 3, f'missing player edict in {path.name}')
-    entities = [dict(re.findall(r'^"([^"]*)"\s+"([^"]*)"', block, re.M)) for block in blocks[1:]]
+    return [dict(re.findall(r'^"([^"]*)"\s+"([^"]*)"', block, re.M)) for block in blocks[1:]]
+
+
+def save_state(path):
+    entities = read_edicts(path)
     player = entities[1]
     gate, = (ent for ent in entities if ent.get('classname') == 'qslisp_gate')
     exit_trigger, = (ent for ent in entities if ent.get('classname') == 'qslisp_exit')

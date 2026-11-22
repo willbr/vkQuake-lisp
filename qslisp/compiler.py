@@ -8,11 +8,12 @@ from .bytecode import (Program, Frame, Local, advance, OP_MUL, OP_DIV, OP_ADD, O
                        OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V,
                        OP_STOREP_S, OP_EQ_ENT, OP_EQ_STR, OP_BITAND, OP_BITOR,
                        OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC, OP_STOREP_ENT, OP_STOREP_FNC)
-from .reader import CompileError, Location, StringLiteral, read
+from .reader import CompileError, Location, StringLiteral
 from .heap import PairHeap
+from .modules import load_forms
 from .syntax import DERIVED_FORMS, DerivedForms
 
-SYNTAX = DERIVED_FORMS | {'define', 'define-field', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
+SYNTAX = DERIVED_FORMS | {'define', 'define-field', 'import', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
                           'define-syntax', 'syntax-rules', 'quasiquote'}
 ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
 COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
@@ -24,12 +25,15 @@ ENGINE_CALLS = {
     'quake:set-size': (4, ('entity', 'vector', 'vector')),
     'quake:sound': (8, ('entity', 'number', 'sample', 'number', 'number')),
     'quake:error': (10, ('string',)),
+    'quake:vector-yaw': (13, ('vector',)),
     'quake:remove': (15, ('entity',)),
     'quake:traceline': (16, ('vector', 'vector', 'number', 'entity')),
     'quake:find': (18, ('entity', 'string-field', 'string-value')),
     'quake:precache-sound': (19, ('sample',)),
     'quake:precache-model': (20, ('model',)),
     'quake:dprint': (25, ('string',)),
+    'quake:walkmove': (32, ('number', 'number')),
+    'quake:drop-to-floor': (34, ()),
     'quake:centerprint': (73, ('entity', 'string')),
 }
 ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'entity'),
@@ -37,6 +41,7 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:time': ('time', 'number'), 'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
 ENTITY_RESULTS = {'quake:find': 1, 'quake:traceline': 'trace_ent'}
+NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
     'not', 'cons', 'car', 'cdr', 'pair?', 'quake:world?', 'quake:entity=?',
@@ -540,6 +545,8 @@ class Compiler:
             else:
                 slot = self.engine_string(name, arg, kind)
             operands.append(slot)
+        # The stock step mover may run touch callbacks before it returns.
+        base = self.heap.pin(frame, self.roots(environment, ())) if self.heap and name == 'quake:walkmove' else None
         for i, (slot, kind) in enumerate(zip(operands, kinds)):
             frame.emit(OP_STORE_V if kind == 'vector' else OP_STORE, slot, 4 + 3 * i)
         builtin = (self.program.error_function if number == 10 else
@@ -551,6 +558,12 @@ class Compiler:
                 source = self.program.names[source]
             result = self.tagged(frame, 'entity')
             frame.emit(OP_STORE, source, result.slot)
+            return result
+        if name in NUMERIC_RESULTS:
+            result = self.tagged(frame, 'number')
+            frame.emit(OP_STORE, 1, result.slot)
+            if base is not None:
+                self.heap.unpin(frame, base)
             return result
         return Value(self.zero, 'number')
 
@@ -703,5 +716,5 @@ class Compiler:
 
 
 def compile_source(source, filename='<input>', *, heap_pairs=256, root_slots=256):
-    return Compiler(read(source, filename), filename,
+    return Compiler(load_forms(source, filename), filename,
                     heap_pairs=heap_pairs, root_slots=root_slots).compile()

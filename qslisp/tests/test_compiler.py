@@ -6,6 +6,7 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from qslisp.compiler import compile_source
@@ -287,6 +288,17 @@ class CompilerTests(CompilerCase):
                    (not (string=? "signal" "other")))
               49 0))
         ''', 49)
+
+    def test_imports_are_relative_and_shared_dependencies_load_once(self):
+        with tempfile.TemporaryDirectory(dir=self.work) as directory:
+            root = Path(directory)
+            (root / 'shared.scm').write_text('(define offset 48)', encoding='utf-8')
+            (root / 'feature.scm').write_text('(import "shared.scm") (define (answer) (+ offset 1))', encoding='utf-8')
+            self.value('(import "shared.scm" "feature.scm") (define (test) (answer))', 49,
+                       filename=str(root / 'entry.scm'))
+            (root / 'shared.scm').write_text('(import "entry.scm")', encoding='utf-8')
+            with self.assertRaisesRegex(CompileError, r'shared\.scm:1:9: cyclic import'):
+                compile_source('(import "feature.scm")', str(root / 'entry.scm'))
 
     def test_callback_context_and_entity_reference_field(self):
         path = self.program('''

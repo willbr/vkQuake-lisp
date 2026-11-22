@@ -57,6 +57,9 @@ header; executing the result also needs the built interpreter CLI.
   `else`, test-only clauses, and `=>` with a named receiver. `when` returns `#f`
   when skipped. `let*` introduces sequential bindings. A top-level `(define
   name value)` binds an immutable number, boolean, or string literal.
+- Top-level `(import "file.scm" ...)` reads source relative to the importing
+  file. Imported files share the program namespace. The compiler loads each
+  file once and diagnoses cycles.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
   numbers, booleans, entity references, and other pairs. A pair is always true,
@@ -143,9 +146,26 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 977 instructions against the 100,000-instruction watchdog. The
-program uses 1,066 of 32,768 global slots and its largest individual frame uses
-103 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 1,317 instructions against the 100,000-instruction watchdog. The
+program uses 1,962 of 32,768 global slots and its largest individual frame uses
+107 slots. The engine shares 2,048 saved-local slots across active frames.
+
+### Relay Annex sentry
+
+Relay Annex has a sight screen and a sentry that follows two map-authored
+waypoints. Use cover to break line of sight. Once the sentry spots you, its
+sensor lights up before it chases and fires. Release and press fire to respawn
+after defeat. Two hits disable the sentry. **R** restarts the encounter.
+
+```sh
+python3 tools/quakec/test-map-boot.py --play --map annex /path/to/dosbox /path/to/quake
+python3 tools/quakec/test-map-boot.py --verify --map annex /path/to/dosbox /path/to/quake
+```
+
+The stock-engine test checks patrol behind cover, detection, chase, loss of
+sight, player defeat and respawn, sentry defeat, and reset. The launcher
+generates the original sentry model in stock MDL format. The actor uses
+`quake:vector-yaw`, `quake:drop-to-floor`, and `quake:walkmove` for movement.
 
 ### Entity and gameplay forms
 

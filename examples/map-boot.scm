@@ -1,4 +1,6 @@
 ; Explore stock Quake and play the original Signal Room challenge.
+(import "sentry.scm")
+
 (define-field next-shot)
 (define-field gate-open)
 (define-field linked-gate entity)
@@ -135,8 +137,10 @@
                                               (+ y (* range (quake:forward-y)))
                                               (+ z (* range (quake:forward-z))))
                                 0 player)))
-      (when (and (not (quake:world? hit)) (string=? (quake:field hit classname) "qslisp_target"))
-        (quake:call-callback hit use player)))))
+      (when (not (quake:world? hit))
+        (cond ((> (quake:field hit takedamage) 0) (damage hit player 25))
+              ((string=? (quake:field hit classname) "qslisp_target")
+               (quake:call-callback hit use player)))))))
 
 (define (update-weapon player)
   (let ((now (quake:time))
@@ -155,9 +159,11 @@
 
 (define (PlayerPreThink)
   (let ((player (quake:self)))
-    (when (and (> (quake:field player health) 0) (= (quake:field player movetype) move-walk))
-      (update-jump player)
-      (update-weapon player))))
+    (if (<= (quake:field player health) 0)
+        (update-respawn player)
+        (when (= (quake:field player movetype) move-walk)
+          (update-jump player)
+          (update-weapon player)))))
 
 (define (PlayerPostThink) 0)
 
@@ -168,6 +174,13 @@
         (quake:error "qslisp: map has no info_player_start\n")
         (begin
           (quake:set-field! player health 100)
+          (quake:set-field! player deadflag 0)
+          (quake:set-field! player takedamage 2)
+          (quake:set-field! player classname "qslisp_player")
+          (quake:set-field! player velocity (quake:vector 0 0 0))
+          (quake:set-field! player punchangle (quake:vector 0 0 0))
+          (quake:set-field! player next-shot (+ (quake:time) 0.35))
+          (quake:set-field! player weaponframe 0)
           (quake:set-field! player movetype move-walk)
           (quake:set-field! player solid solid-slidebox)
           (quake:set-field! player flags flag-client)
