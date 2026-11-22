@@ -72,7 +72,8 @@ header; executing the result also needs the built interpreter CLI.
   Literals support `\"`, `\\`, `\n`, `\r`, and `\t` escapes.
 - `(define-field name)` adds a numeric field to each entity after the stock
   fields, initially zero. `(define-field name entity)` adds an entity reference,
-  initially the world entity. Read and write both through the entity forms.
+  initially the world entity. `(define-field name string)` adds a string,
+  initially empty. Read and write them through the entity forms.
 
 Arithmetic on a known boolean is a compile error. When a parameter or function
 result has an unknown type, generated checks call stock builtin #10 (`error`) on
@@ -112,7 +113,8 @@ python3 tools/quakec/test-map-boot.py --play /path/to/dosbox /path/to/quake
 
 Click the game window to capture the mouse. Use **WASD** to walk, the mouse to
 look around, **Space** to jump, **left click** to fire, and **R** to restart the
-map. The Lisp code spawns the local player at `info_player_start`, handles input,
+current map. Press **E** to interact and **1** or **2** to select a weapon. The
+Lisp code spawns the local player at `info_player_start`, handles input,
 and uses stock walking physics and collision. On `start`, Quake skips original
 gameplay entities that lack a Lisp spawn function.
 
@@ -120,8 +122,8 @@ gameplay entities that lack a Lisp spawn function.
 
 The original [Signal Room map](../examples/signal.map) has a lit signal plate
 and a practice step. You start with three shells. Hit the plate to open the
-gate and walk through the exit to complete the level. Press **R** to reset the
-room, player, and ammo.
+gate and walk through the exit to complete the level. Press **E** at the exit
+to continue to Relay Annex, or **R** to reset the room, player, and ammo.
 
 ```sh
 python3 tools/quakec/test-map-boot.py --play --map signal /path/to/dosbox /path/to/quake
@@ -138,7 +140,8 @@ The scripted client checks walking, takeoff, landing while the jump key is
 held, ammo use on a miss, gate opening on a hit, and completion through the
 exit. It saves and reloads both locked and open gate states and checks that
 Quake restores ammo, the target, and native entity fields. It also checks that
-reset restores the original state. Stock engine screenshots, state snapshots,
+reset restores the original state and that the completed room leads to Relay
+Annex. Stock engine screenshots, state snapshots,
 and `measurements.json` are under `build/quakec/map-boot/`. Heap-backed save and
 reload remain future work.
 
@@ -146,9 +149,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 1,317 instructions against the 100,000-instruction watchdog. The
-program uses 1,962 of 32,768 global slots and its largest individual frame uses
-107 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 3,763 instructions against the 100,000-instruction watchdog. The
+program uses 2,805 of 32,768 global slots and its largest individual frame uses
+98 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -156,6 +159,8 @@ Relay Annex has a sight screen and a sentry that follows two map-authored
 waypoints. Use cover to break line of sight. Once the sentry spots you, its
 sensor lights up before it chases and fires. Release and press fire to respawn
 after defeat. Two hits disable the sentry. **R** restarts the encounter.
+Beyond the sentry are health and ammo supplies, a pulse carbine, a respawn
+checkpoint, and a switch that opens the service gate when used with **E**.
 
 ```sh
 python3 tools/quakec/test-map-boot.py --play --map annex /path/to/dosbox /path/to/quake
@@ -163,9 +168,11 @@ python3 tools/quakec/test-map-boot.py --verify --map annex /path/to/dosbox /path
 ```
 
 The stock-engine test checks patrol behind cover, detection, chase, loss of
-sight, player defeat and respawn, sentry defeat, and reset. The launcher
+sight, player defeat and respawn, sentry defeat, supplies, weapon switching
+and separate ammo pools, checkpoint respawn, switch activation, and reset. The launcher
 generates the original sentry model in stock MDL format. The actor uses
 `quake:vector-yaw`, `quake:drop-to-floor`, and `quake:walkmove` for movement.
+`(quake:change-level "annex")` queues a stock map transition.
 
 ### Entity and gameplay forms
 

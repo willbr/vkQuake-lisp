@@ -171,6 +171,7 @@
 {
 "classname" "qslisp_exit"
 "target" "signal_gate"
+"message" "annex"
 // Exit volume
 {
 ( 252 -55 0 ) ( 252 55 0 ) ( 252 55 96 ) relay_trim 0 0 0 1 1

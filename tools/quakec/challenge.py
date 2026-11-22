@@ -31,14 +31,15 @@ def verification_commands():
     commands += profile('shot', ['+attack'])
     commands += ['-attack'] + ['wait'] * 12 + ['save cleared', 'screenshot', 'load locksave']
     commands += ['wait'] * 35 + ['save lockload', '+attack', 'wait', '-attack']
-    commands += ['wait'] * 12 + ['save reopened', 'map signal']
+    commands += ['wait'] * 12 + ['save reopened', 'restart']
     commands += ['wait'] * 35 + ['load cleared']
     commands += ['wait'] * 35 + ['save openload', '+forward']
-    commands += ['wait'] * 45 + ['-forward', 'wait', 'save finished', 'map signal']
+    commands += ['wait'] * 45 + ['-forward', 'wait', 'save finished', 'restart']
     commands += ['wait'] * 35 + ['save reset']
     commands += profile('combined', ['+jump', '+attack'])
     commands += ['-attack', '-jump'] + ['wait'] * 25
-    commands += ['save replay', 'toggleconsole', 'quit']
+    commands += ['save replay', '+forward'] + ['wait'] * 55
+    commands += ['-forward', 'wait', 'echo annex-transition-request', 'impulse 3', 'wait', 'wait']
     return '\n'.join(commands) + '\n'
 
 
@@ -124,8 +125,10 @@ def verify_challenge(output, lines):
             'walking through the gate did not complete the level')
     require(states['lockload'] == states['locksave'] and states['openload'] == states['cleared'],
             'stock load did not restore ammo, position, model, target, and gate state')
-    require(lines.count('qslisp: gate open') == 3 and lines.count('qslisp: level complete') == 1,
-            'expected three gate openings and one exit callback')
+    require(lines.count('qslisp: gate open') == 3 and lines.count('qslisp: level complete') == 2,
+            'expected three gate openings and two exit callbacks')
+    transition = lines.index('SpawnServer: annex')
+    require('CL_SignonReply: 4' in lines[transition:], 'the local client did not enter Relay Annex')
     require(states['reset'] == spawn, 'reset did not restore player position, ammo, and target')
     require(lines.count('qslisp: fired') == 4 and lines.count('qslisp: target hit') == 3,
             'expected one miss, the initial hit, and a hit after each restore or reset of the target')

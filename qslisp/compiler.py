@@ -34,6 +34,7 @@ ENGINE_CALLS = {
     'quake:dprint': (25, ('string',)),
     'quake:walkmove': (32, ('number', 'number')),
     'quake:drop-to-floor': (34, ()),
+    'quake:change-level': (70, ('level',)),
     'quake:centerprint': (73, ('entity', 'string')),
 }
 ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'entity'),
@@ -50,7 +51,7 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
 }
 TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4}
 FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector', 4: 'entity', 6: 'function'}
-CUSTOM_FIELDS = {'number': 2, 'entity': 4}
+CUSTOM_FIELDS = {'number': 2, 'entity': 4, 'string': 1}
 FIELD_READS = {1: ('string', OP_LOAD_S), 2: ('number', OP_LOAD_F), 4: ('entity', OP_LOAD_ENT)}
 FIELD_WRITES = {1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V, 4: OP_STOREP_ENT}
 
@@ -131,7 +132,7 @@ class Compiler:
         form = node.value
         if isinstance(form, tuple) and form and form[0].value == 'define-field':
             if len(form) not in (2, 3):
-                raise CompileError(node.location, 'define-field requires a name and optional number or entity type')
+                raise CompileError(node.location, 'define-field requires a name and optional number, entity, or string type')
             name = binding_name(form[1])
             kind = symbol(form[2], 'entity field type') if len(form) == 3 else 'number'
             if kind not in CUSTOM_FIELDS:
@@ -408,6 +409,9 @@ class Compiler:
             raise CompileError(literal.location, f'{name} text exceeds the stock 255-byte limit')
         if kind in ('model', 'sample') and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
             raise CompileError(literal.location, f'{name} requires a stock {kind} path of 1–63 bytes')
+        if kind == 'level' and (not 1 <= len(text) <= 63 or not text.isascii() or
+                                not all(char.isalnum() or char in '_-' for char in text)):
+            raise CompileError(literal.location, 'change-level requires a literal map name using letters, digits, _ or -')
         return self.program.literal_string(text)
 
     def engine_field(self, node, kinds):

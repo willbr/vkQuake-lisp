@@ -83,6 +83,15 @@
 ( 208 -150 0 ) ( 270 -150 0 ) ( 270 -98 0 ) relay_trim 0 0 0 1 1
 ( 208 -150 28 ) ( 208 -98 28 ) ( 270 -98 28 ) relay_trim 0 0 0 1 1
 }
+// Service bay wall
+{
+( 230 -176 0 ) ( 230 106 0 ) ( 230 106 160 ) relay_trim 0 0 0 1 1
+( 242 -176 0 ) ( 242 -176 160 ) ( 242 106 160 ) relay_trim 0 0 0 1 1
+( 230 -176 0 ) ( 230 -176 160 ) ( 242 -176 160 ) relay_trim 0 0 0 1 1
+( 230 106 0 ) ( 242 106 0 ) ( 242 106 160 ) relay_trim 0 0 0 1 1
+( 230 -176 0 ) ( 242 -176 0 ) ( 242 106 0 ) relay_trim 0 0 0 1 1
+( 230 -176 160 ) ( 230 106 160 ) ( 242 106 160 ) relay_trim 0 0 0 1 1
+}
 }
 {
 "classname" "info_player_start"
@@ -132,7 +141,55 @@
 }
 {
 "classname" "qslisp_waypoint"
-"origin" "192 150 16"
+"origin" "178 150 16"
 "targetname" "patrol_far"
 "target" "patrol_near"
+}
+{
+"classname" "qslisp_health"
+"origin" "16 150 8"
+}
+{
+"classname" "qslisp_ammo"
+"origin" "64 150 8"
+}
+{
+"classname" "qslisp_pulse"
+"origin" "108 150 14"
+}
+{
+"classname" "qslisp_checkpoint"
+"origin" "158 150 24"
+"angle" "0"
+}
+{
+"classname" "light"
+"origin" "262 140 88"
+"light" "285"
+}
+{
+"classname" "qslisp_gate"
+"targetname" "annex_gate"
+// Service gate
+{
+( 230 106 0 ) ( 230 176 0 ) ( 230 176 160 ) relay_wall 0 0 0 1 1
+( 242 106 0 ) ( 242 106 160 ) ( 242 176 160 ) relay_wall 0 0 0 1 1
+( 230 106 0 ) ( 230 106 160 ) ( 242 106 160 ) relay_wall 0 0 0 1 1
+( 230 176 0 ) ( 242 176 0 ) ( 242 176 160 ) relay_wall 0 0 0 1 1
+( 230 106 0 ) ( 242 106 0 ) ( 242 176 0 ) relay_wall 0 0 0 1 1
+( 230 106 160 ) ( 230 176 160 ) ( 242 176 160 ) relay_wall 0 0 0 1 1
+}
+}
+{
+"classname" "qslisp_switch"
+"target" "annex_gate"
+// Service switch
+{
+( 201 130 16 ) ( 201 170 16 ) ( 201 170 72 ) relay_goal 0 0 0 1 1
+( 208 130 16 ) ( 208 130 72 ) ( 208 170 72 ) relay_goal 0 0 0 1 1
+( 201 130 16 ) ( 201 130 72 ) ( 208 130 72 ) relay_goal 0 0 0 1 1
+( 201 170 16 ) ( 208 170 16 ) ( 208 170 72 ) relay_goal 0 0 0 1 1
+( 201 130 16 ) ( 208 130 16 ) ( 208 170 16 ) relay_goal 0 0 0 1 1
+( 201 130 72 ) ( 201 170 72 ) ( 208 170 72 ) relay_goal 0 0 0 1 1
+}
 }

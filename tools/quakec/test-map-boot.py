@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 import annex
 import challenge
@@ -19,9 +20,35 @@ bind s +back
 bind d +moveright
 bind space +jump
 bind mouse1 +attack
-bind r "map {level}"
+bind 1 "impulse 1"
+bind 2 "impulse 2"
+bind e "impulse 3"
+bind r restart
 +mlook
 '''
+
+
+def wait_for_annex(command, base, mod, env, log):
+    # Quake appends changelevel to its command buffer. Let the cfg finish and
+    # observe the new map's signon before closing the emulator.
+    with subprocess.Popen(command, cwd=base, env=env, stdout=log, stderr=subprocess.STDOUT) as engine:
+        deadline = time.monotonic() + 60
+        try:
+            while engine.poll() is None and time.monotonic() < deadline:
+                console = next((path for path in mod.iterdir() if path.name.lower() == 'qconsole.log'), None)
+                if console:
+                    _, separator, tail = console.read_bytes().partition(b'SpawnServer: annex')
+                    if separator and b'CL_SignonReply: 4' in tail:
+                        return
+                time.sleep(0.1)
+            raise RuntimeError('the scripted client did not finish signing on to Relay Annex')
+        finally:
+            if engine.poll() is None:
+                engine.terminate()
+                try:
+                    engine.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    engine.kill()
 
 
 def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
@@ -29,13 +56,15 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
     subprocess.run([sys.executable, '-m', 'qslisp', 'examples/map-boot.scm', '-o', program],
                    cwd=ROOT, check=True)
     subprocess.run([sys.executable, 'tools/quakec/check-stock.py', program], cwd=ROOT, check=True)
-    if level in ('signal', 'annex'):
+    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',)}[level]
+    if maps:
         (output / 'maps').mkdir()
         with (output / 'map-build.log').open('w') as log:
-            subprocess.run([sys.executable, 'tools/quakec/build-signal.py', '--map', level,
-                            output / 'maps' / f'{level}.bsp'],
-                           cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
-    if level == 'annex':
+            for name in maps:
+                subprocess.run([sys.executable, 'tools/quakec/build-signal.py', '--map', name,
+                                output / 'maps' / f'{name}.bsp'],
+                               cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
+    if 'annex' in maps:
         subprocess.run([sys.executable, 'tools/quakec/build-sentry.py', output / 'progs/sentry.mdl'],
                        cwd=ROOT, check=True)
 
@@ -53,14 +82,14 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
         for name in ('quake.exe', 'cwsdpmi.exe', 'id1/pak0.pak', 'id1/pak1.pak'):
             shutil.copyfile(quake_dir / name, base / name)
         shutil.copyfile(program, mod / 'progs.dat')
-        if level in ('signal', 'annex'):
+        if maps:
             shutil.copytree(output / 'maps', mod / 'maps')
-        if level == 'annex':
+        if 'annex' in maps:
             shutil.copytree(output / 'progs', mod / 'progs')
 
         engine_flags = '-noudp -noipx -condebug -game lispboot'
         if play:
-            (mod / 'walk.cfg').write_text(WALK_CONTROLS.format(level=level), encoding='ascii')
+            (mod / 'walk.cfg').write_text(WALK_CONTROLS, encoding='ascii')
             engine = f'quake -nocdaudio {engine_flags} +developer 1 +map {level} +exec walk.cfg'
         elif verify:
             scenario = annex if level == 'annex' else challenge
@@ -71,15 +100,18 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
         command = [dosbox, '--noprimaryconf', '--nolocalconf', '--noautoexec',
                    '-c', f'mount c "{base}"', '-c', 'c:', '-c', engine, '--exit']
         if play:
-            print(f'Opening Quake. WASD to walk, Space to jump, click to fire, R to reset. Artifacts: {output}',
+            print(f'Opening Quake. WASD to walk, Space to jump, click to fire, E to use, R to reset. Artifacts: {output}',
                   flush=True)
         artifacts = {'qconsole.log'}
         if verify:
             artifacts.update({f'{name}.sav' for name in scenario.SAVES} | {'quake00.pcx', 'quake01.pcx'})
         with (output / 'dosbox.log').open('w') as log:
             try:
-                subprocess.run(command, cwd=base, env=env, stdout=log, stderr=subprocess.STDOUT,
-                               timeout=None if play else 60, check=True)
+                if verify and level == 'signal':
+                    wait_for_annex(command, base, mod, env, log)
+                else:
+                    subprocess.run(command, cwd=base, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                   timeout=None if play else 60, check=True)
             finally:
                 for path in mod.iterdir():
                     name = path.name.lower()

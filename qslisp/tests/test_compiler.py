@@ -214,6 +214,7 @@ class CompilerTests(CompilerCase):
             ('(quake:dprint "' + 'é' * 128 + '")', 'stock 255-byte limit'),
             ('(quake:precache-model "")', 'requires a stock model path'),
             ('(quake:precache-model "' + 'a' * 64 + '")', 'requires a stock model path'),
+            ('(quake:change-level "annex; quit")', 'requires a literal map name'),
         ]
         for call, message in cases:
             with self.subTest(call=call):
