@@ -56,7 +56,7 @@
       (quake:set-origin player (quake:field bike origin))
       (quake:set-field! player weaponmodel "progs/v_bike.mdl")
       (quake:set-field! player weaponframe 0)
-      (quake:centerprint player "Mouse1: pedal   Space: brake\nMouse: steer   E: dismount when stopped")
+      (quake:centerprint player "Left and Right arrows to steer\nF or Mouse1 to pedal   Space to brake\nE to dismount when stopped")
       (quake:dprint "qslisp: bike mounted\n"))))
 
 (define (clear-rider player)

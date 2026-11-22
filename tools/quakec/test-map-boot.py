@@ -19,6 +19,9 @@ WALK_CONTROLS = '''bind w +forward
 bind a +moveleft
 bind s +back
 bind d +moveright
+bind leftarrow +left
+bind rightarrow +right
+bind f +attack
 bind space +jump
 bind mouse1 +attack
 bind 1 "impulse 1"

@@ -223,11 +223,11 @@ Its Lisp procedures destructure these records with `match`.
 ### Service bicycle
 
 Follow the service lane past the guard to the bike dock. Look at the bike
-and press **E** to mount. Hold **Mouse1** to pedal, aim with the **mouse**
-to steer, and hold **Space** to brake. Approach the marked bend at speed,
-then brake while steering left. Release the brake to regain grip and pedal
-through the relay arch to bring it online. Slow down and press **E** to park
-and step off.
+and press **E** to mount. Hold **F** or **Mouse1** to pedal, steer with the
+**Left** and **Right** arrows or the **mouse**, and hold **Space** to brake.
+Approach the marked bend at speed, then brake while steering left. Release
+the brake to regain grip and pedal through the relay arch to bring it online.
+Slow down and press **E** to park and step off.
 
 The Lisp bicycle model tracks the frame heading and travel velocity separately.
 Hard braking reduces rear-wheel grip at speed, so the bike keeps sliding

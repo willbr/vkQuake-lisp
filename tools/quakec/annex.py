@@ -33,9 +33,8 @@ def verification_commands():
     commands += ['+attack'] + ['wait'] * 16 + ['-attack', '+forward'] + ['wait'] * 15
     commands += ['-forward'] + ['wait'] * 12 + ['save bkdock', 'impulse 3'] + ['wait'] * 2
     commands += ['save bkstart', 'screenshot', '+attack'] + ['wait'] * 17
-    commands += ['-attack', 'save bkfast', 'impulse 3', '+jump', 'cl_yawspeed 400', '+left']
-    commands += ['wait'] * 5 + ['-left', 'cl_yawspeed 140'] + ['wait'] * 2
-    commands += ['save bkslide', '-jump', '+attack'] + ['wait'] * 20
+    commands += ['-attack', 'save bkfast', 'impulse 3', '+jump', '+left'] + ['wait'] * 7
+    commands += ['save bkslide', '-jump', '+attack'] + ['wait'] * 6 + ['-left'] + ['wait'] * 14
     commands += ['-attack', 'save bkrelay', '+jump'] + ['wait'] * 24
     commands += ['-jump', 'impulse 3'] + ['wait'] * 2 + ['save bkpark', 'load bkslide']
     commands += ['wait'] * 16 + ['save bkreload', 'kill'] + ['wait'] * 12
