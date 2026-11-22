@@ -1,55 +1,51 @@
 # Lisp and gameplay ideas
 
-Signal Room is the current milestone. Lisp drives player spawning, walking,
-jumping, shooting, ammo, target removal, and reset in original DOS Quake. The
-review reran all 71 tests and the scripted room verification. The busiest
-sampled frame had a conservative bound of 746 VM instructions. Keep stock
-NetQuake compatibility and the scripted engine test as the baseline for new
-work. [Signal Room and measurements](qslisp/README.md#play-and-verify-the-signal-room)
+Signal Room and Relay Annex run in original DOS Quake. The roadmap below
+started with a single-room walking, jumping, and shooting demo. Its Lisp and
+gameplay milestones are implemented. The final Signal Room profile bounded the
+busiest sampled frame at 7,678 VM instructions. Keep stock NetQuake and the
+scripted engine tests as the baseline for new work.
+[Signal Room and measurements](qslisp/README.md#play-and-verify-the-signal-room)
 
-## Lisp features we are missing
+## Lisp milestones
 
-| Area | Ideas |
+| Area | Delivered |
 | --- | --- |
-| Everyday syntax | Add `cond`, short-circuit `and` and `or`, `when`, `let*`, named `let`, and top-level constants. Use the jump handler's nested conditionals as an early example. |
-| Data | Build on immutable pairs and garbage collection with `()`, proper lists, quoted symbols and data, and general equality. Make strings and Quake vectors bindable values that can be passed to functions. Strings currently work in specific engine forms, and vectors work in native operand positions. |
-| Functions and state | Add named procedure values, `lambda`, closures, higher-order helpers such as `map` and `fold`, and binding mutation with `set!`. |
-| Quake interop | Extend numeric entity fields with entity-reference fields and let Lisp assign named functions to `think`, `touch`, and `use`. Replace the plate's hardcoded brush model `*1` and the shot handler's first-matching-target lookup with links authored in the map. |
-| Larger programs | Grow from one source file to modules or imports. Add compile-time macros and verify persistence for Lisp-owned state. |
+| Everyday syntax | `cond`, short-circuit `and` and `or`, `when`, `let*`, named `let`, and top-level constants. Signal Room's jump handler uses the new conditional forms. |
+| Data | `()`, proper lists, quoted symbols and data, and structural equality. Strings and Quake vectors bind and pass through functions as values. |
+| Functions and state | Named procedure values, `lambda`, escaping closures, `map`, `fold`, and mutable lexical bindings with `set!`. |
+| Quake interop | Entity-reference fields and named functions assigned to `think`, `touch`, and `use`. The plate reads its brush model from the map and activates its authored gate link. |
+| Larger programs | Relative source imports, compile-time macros, and stock save and reload for Lisp-owned lists of entity references. |
 
 [Language reference](qslisp/README.md#language-in-this-milestone) · [Entity forms](qslisp/README.md#entity-and-gameplay-forms) · [Signal Room Lisp](examples/map-boot.scm)
 
-## Game features we are missing
+## Game milestones
 
-- **Level progression.** Add doors, switches, triggers, pickups, checkpoints, and
-  an exit. The current target ends the round with a message and a map reset.
-- **Enemies and AI.** Start with one sentry and two mapper-placed patrol points.
-  Let it spot the player with a line-of-sight trace, telegraph an attack, and
-  chase or return to patrol. Test that walls block detection and that the sentry
-  responds to losing sight of the player. Expose the stock movement builtins
-  and scheduled `think` callbacks needed for this behavior.
-- **Combat and player state.** Add damage, player and enemy death, respawn, and
-  health and ammo pickups. Add weapon switching after the single-weapon loop
-  supports a full encounter.
-- **Persistence and multiplayer.** Test a save–reload round trip. The scripted
-  room currently writes saves to observe state. Add Lisp game rules and tests
-  for co-op or deathmatch when we take on multiplayer.
+- **Level progression.** Signal Room's target opens its gate. Walking through
+  the exit and pressing E takes the player to Relay Annex, which adds a
+  service switch, a second gate, pickups, and a checkpoint.
+- **Enemies and AI.** The Annex sentry patrols two authored waypoints, checks
+  line of sight, signals an attack, chases, and returns to patrol when cover
+  breaks sight. A stationary guard defends the service gate.
+- **Combat and player state.** Both sides can deal damage and be defeated.
+  Players respawn, collect health and ammo, and switch between two weapons
+  with separate ammo pools.
+- **Persistence and multiplayer.** Save and reload restore Signal Room before
+  and after the gate opens and restore the Annex sentry's ordered route.
+  Two-player co-op adds separate starts, friendly fire protection, shared
+  progression, and enemies that can target either player.
 
-## Lisp features worth exploring
+## Lisp ideas in use
 
-1. **An actor DSL.** A `define-actor` macro could describe states such as
-   `patrol`, `alert`, and `chase` and expand them into named handlers and entity
-   fields. A second enemy would be a chance to reuse the same vocabulary with
-   different Lisp behavior.
-2. **Resumable sequences.** Write “flash the light, wait half a second, open the
-   gate” as one script. Compile each pause into a scheduled `think` so the
-   sequence can resume on a later frame.
-3. **Pattern matching and typed records.** Give patrol routes, damage events,
-   and actor states names and shapes that the compiler can check. Use those
-   shapes to make behavior code easier to read where it currently uses numeric
-   flags.
+1. **An actor DSL.** `define-actor` expands the sentry's patrol, alert, and
+   chase states into named handlers and entity fields. The guard uses the
+   same macro with stationary behavior.
+2. **Resumable sequences.** `define-sequence` and `after` let the gate flash,
+   wait, lift, and stop across scheduled `think` callbacks.
+3. **Pattern matching and typed records.** `define-record` and `match` describe
+   patrol legs, damage events, and attack states in the Annex source.
 
-## Proposed order
+## Original implementation order
 
 1. Add named entity callbacks and entity-reference fields. Add `cond`, `when`,
    and short-circuit logic as gameplay code needs them.
@@ -64,3 +60,17 @@ work. [Signal Room and measurements](qslisp/README.md#play-and-verify-the-signal
    heap-backed persistence when a gameplay feature needs them.
 
 [Stock VM limits](tools/quakec/README.md#vm-target) · [Existing engine verification](tools/quakec/challenge.py)
+
+## Verification
+
+- The compiler and stock VM suites cover the language changes and runtime
+  type checks.
+- Signal Room's scripted client verifies its gate, exit, reset, locked and
+  open save states, and transition to Annex.
+  [Signal Room test](tools/quakec/challenge.py)
+- Relay Annex's scripted client covers patrol and detection, combat,
+  pickups, the checkpoint, the guard, and restoration of the patrol route.
+  [Relay Annex test](tools/quakec/annex.py)
+- Two original DOS Quake clients verify separate starts, friendly fire
+  protection, the shared transition, sentry detection, and guest respawn.
+  [Co-op test](tools/quakec/coop.py)
