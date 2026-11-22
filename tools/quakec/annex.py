@@ -4,7 +4,7 @@ import json
 from challenge import read_edicts, require
 
 SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplies',
-         'pulse', 'switched', 'checked', 'dooropen', 'reset')
+         'pulse', 'switched', 'checked', 'dooropen', 'guarded', 'reset')
 
 
 def verification_commands():
@@ -21,7 +21,8 @@ def verification_commands():
     commands += ['wait'] * 5 + ['impulse 1', 'wait', 'save switched', 'kill']
     commands += ['wait'] * 12 + ['+attack', 'wait', '-attack']
     commands += ['wait'] * 12 + ['save checked', 'impulse 3']
-    commands += ['wait'] * 14 + ['save dooropen', 'restart']
+    commands += ['wait'] * 14 + ['save dooropen', '+moveright'] + ['wait'] * 5
+    commands += ['-moveright'] + ['wait'] * 24 + ['save guarded', 'restart']
     commands += ['wait'] * 35 + ['save reset', 'toggleconsole', 'quit']
     return '\n'.join(commands) + '\n'
 
@@ -30,6 +31,7 @@ def state(path):
     entities = read_edicts(path)
     player = entities[1]
     sentry = next((entry for entry in entities if entry.get('classname') == 'qslisp_sentry'), None)
+    guard = next(entry for entry in entities if entry.get('classname') == 'qslisp_guard')
     gate = next(entry for entry in entities if entry.get('classname') == 'qslisp_gate')
     return {
         'player_origin': tuple(float(x) for x in player['origin'].split()),
@@ -40,6 +42,8 @@ def state(path):
         'weapon': player.get('weaponmodel'),
         'checkpoint': int(player.get('checkpoint', '0')),
         'gate_open': int(float(gate.get('gate-open', '0'))),
+        'guard_origin': tuple(float(x) for x in guard['origin'].split()),
+        'guard_state': int(float(guard.get('sentry-state', '0'))),
         'sentry_origin': tuple(float(x) for x in sentry['origin'].split()) if sentry else None,
         'sentry_health': int(float(sentry.get('health', '0'))) if sentry else None,
         'sentry_state': int(float(sentry.get('sentry-state', '0'))) if sentry else None,
@@ -79,6 +83,9 @@ def verify_annex(output, lines):
             states['checked']['checkpoint'] == supplies['checkpoint'], 'respawn missed the active checkpoint')
     require(states['checked']['gate_open'] == 0 and states['dooropen']['gate_open'] == 2 and
             lines.count('qslisp: switch used') == 1, 'the authored switch did not open the service gate')
+    require(states['guarded']['guard_state'] == 1 and 'qslisp: guard fired' in lines and
+            states['guarded']['guard_origin'] == states['patrol']['guard_origin'],
+            'the second actor did not defend its position after the service gate opened')
     require(states['reset']['player_health'] == 100 and states['reset']['rounds'] == 3 and
             states['reset']['sentry_health'] == 45 and states['reset']['sentry_state'] == 0 and
             states['reset']['checkpoint'] == states['reset']['gate_open'] == 0,

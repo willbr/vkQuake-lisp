@@ -13,19 +13,16 @@
 
 (define (qslisp_waypoint) 0)
 
-(define (qslisp_sentry)
-  (let ((actor (quake:self)))
-    (quake:precache-model "progs/sentry.mdl")
-    (quake:set-field! actor movetype move-step)
-    (quake:set-field! actor solid solid-slidebox)
-    (quake:set-field! actor flags flag-monster)
-    (quake:set-field! actor health 45)
-    (quake:set-field! actor takedamage 2)
-    (quake:set-model actor "progs/sentry.mdl")
-    (quake:set-size actor (quake:vector -16 -16 0) (quake:vector 16 16 48))
-    (quake:drop-to-floor)
-    (quake:set-callback! actor think sentry-think)
-    (quake:set-field! actor nextthink (+ (quake:time) 0.1))))
+(define (configure-actor actor health)
+  (quake:precache-model "progs/sentry.mdl")
+  (quake:set-field! actor movetype move-step)
+  (quake:set-field! actor solid solid-slidebox)
+  (quake:set-field! actor flags flag-monster)
+  (quake:set-field! actor health health)
+  (quake:set-field! actor takedamage 2)
+  (quake:set-model actor "progs/sentry.mdl")
+  (quake:set-size actor (quake:vector -16 -16 0) (quake:vector 16 16 48))
+  (quake:drop-to-floor))
 
 (define (player-entity? actor)
   (= (quake:bit-and (quake:field actor flags) flag-client) flag-client))
@@ -131,11 +128,43 @@
     (quake:dprint "qslisp: sentry attacked\n")
     (damage player actor 20)))
 
-(define (sentry-think)
-  (let ((actor (quake:self))
-        (player (quake:find (quake:world) classname "qslisp_player")))
-    (quake:set-field! actor nextthink (+ (quake:time) 0.1))
-    (cond ((not (sentry-visible? actor player)) (resume-patrol actor))
-          ((= (quake:field actor sentry-state) sentry-patrol) (spot-player actor player))
-          ((>= (quake:time) (quake:field actor attack-time)) (pursue actor player))
-          ((= (quake:field actor sentry-state) sentry-chase) (pursue actor player)))))
+(define-actor qslisp_sentry sentry-think actor sentry-state 0.1
+  (spawn (configure-actor actor 45))
+  (context (player (quake:find (quake:world) classname "qslisp_player"))
+           (visible (sentry-visible? actor player)))
+  (states
+    (sentry-patrol (if visible (spot-player actor player) (patrol actor)))
+    (sentry-alert
+      (if visible
+          (when (>= (quake:time) (quake:field actor attack-time)) (pursue actor player))
+          (resume-patrol actor)))
+    (sentry-chase (if visible (pursue actor player) (resume-patrol actor)))))
+
+(define (guard-reset actor)
+  (quake:set-field! actor sentry-state sentry-patrol)
+  (quake:set-field! actor effects 0)
+  (quake:set-field! actor frame 0))
+
+(define (guard-fire actor player)
+  (quake:set-field! actor angles_y (sentry-facing actor player))
+  (quake:set-field! actor attack-time (+ (quake:time) 0.9))
+  (quake:sound actor 1 "weapons/spike2.wav" 0.65 1)
+  (quake:dprint "qslisp: guard fired\n")
+  (damage player actor 12))
+
+(define-actor qslisp_guard guard-think actor sentry-state 0.15
+  (spawn (configure-actor actor 30))
+  (context (player (quake:find (quake:world) classname "qslisp_player"))
+           (visible (sentry-visible? actor player)))
+  (states
+    (sentry-patrol
+      (when visible
+        (quake:set-field! actor sentry-state sentry-alert)
+        (quake:set-field! actor attack-time (+ (quake:time) 0.75))
+        (quake:set-field! actor effects 8)
+        (quake:set-field! actor frame 1)
+        (quake:dprint "qslisp: guard alerted\n")))
+    (sentry-alert
+      (if visible
+          (when (>= (quake:time) (quake:field actor attack-time)) (guard-fire actor player))
+          (guard-reset actor)))))

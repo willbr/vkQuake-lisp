@@ -11,6 +11,7 @@ from .bytecode import (Program, Frame, Local, TAGS, advance, OP_MUL, OP_DIV, OP_
                        emit_shallow_equality)
 from .reader import CompileError, Location, StringLiteral
 from .heap import PairHeap
+from .macros import Macros
 from .modules import load_forms
 from .syntax import DERIVED_FORMS, DerivedForms
 
@@ -116,6 +117,7 @@ def binding_name(node):
 
 class Compiler:
     def __init__(self, forms, filename, *, heap_pairs=256, root_slots=256):
+        forms = Macros().program(forms)
         location = forms[0].location if forms else Location(filename, 1, 1)
         if any(type(n) is not int or n < 1 for n in (heap_pairs, root_slots)):
             raise CompileError(location, 'heap-pairs and root-slots must be positive integers')

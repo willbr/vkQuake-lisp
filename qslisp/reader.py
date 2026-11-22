@@ -113,7 +113,7 @@ def read(source, filename='<input>'):
             return Node((Node('quote', location), datum(depth + 1)), location)
         if token in ('#t', '#f'):
             return Node(token == '#t', location)
-        if token == '.':
+        if token in ('.', '...'):
             return Node(token, location)
         if NUMBER.fullmatch(token):
             value = float(token)

@@ -1,5 +1,5 @@
 ; Explore stock Quake and play the original Signal Room challenge.
-(import "sentry.scm" "progression.scm")
+(import "../qslisp/actors.scm" "sentry.scm" "progression.scm")
 
 (define-field next-shot)
 (define-field gate-open)
@@ -52,23 +52,26 @@
     (quake:set-field! gate movetype move-push)
     (quake:set-field! gate solid solid-brush)
     (quake:set-model gate (quake:field gate model))
-    (quake:set-callback! gate use open-gate)
-    (quake:set-callback! gate think stop-gate)))
+    (quake:set-callback! gate use open-gate)))
 
-(define (open-gate)
-  (let ((gate (quake:self)))
-    (when (= (quake:field gate gate-open) 0)
-      (quake:set-field! gate gate-open 1)
-      (quake:set-field! gate velocity_z 320)
-      (quake:set-field! gate nextthink (+ (quake:field gate ltime) 0.5)))))
-
-(define (stop-gate)
-  (let ((gate (quake:self)))
-    (quake:set-field! gate velocity_z 0)
-    (quake:set-field! gate solid 0)
-    (quake:set-field! gate gate-open 2)
-    (quake:set-origin gate (quake:field gate origin))
-    (quake:dprint "qslisp: gate open\n")))
+(define-sequence
+  (step open-gate
+    (let ((gate (quake:self)))
+      (when (= (quake:field gate gate-open) 0)
+        (quake:set-field! gate gate-open 1)
+        (quake:set-field! gate effects 8)
+        (after 0.12 lift-gate))))
+  (step lift-gate
+    (quake:set-field! (quake:self) velocity_z 400)
+    (after 0.4 stop-gate))
+  (step stop-gate
+    (let ((gate (quake:self)))
+      (quake:set-field! gate effects 0)
+      (quake:set-field! gate velocity_z 0)
+      (quake:set-field! gate solid 0)
+      (quake:set-field! gate gate-open 2)
+      (quake:set-origin gate (quake:field gate origin))
+      (quake:dprint "qslisp: gate open\n"))))
 
 (define (qslisp_exit)
   (let ((exit (quake:self)))

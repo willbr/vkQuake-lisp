@@ -396,6 +396,26 @@ class CompilerTests(CompilerCase):
             (+ (sum n (begin (set! n 6) 7) copy) (* n 6) 4)))
         ''', 49, heap_pairs=4)
 
+    def test_macros_rename_their_locals_without_capturing_arguments(self):
+        self.value('''
+        (define-syntax add-local
+          (syntax-rules () ((_ value body) (let* ((temp value) (later (+ temp 1))) (+ later body)))))
+        (define (test) (let ((temp 41)) (add-local 7 temp)))
+        ''', 49)
+
+    def test_macros_expand_nested_repetitions_and_top_level_definitions(self):
+        self.value('''
+        (define-syntax define-values-by-row
+          (syntax-rules (row)
+            ((_ (row name value ...) ...)
+             (begin (define (name) (list value ...)) ...))))
+        (define-values-by-row (row empty) (row example 20 29))
+        (define (test)
+          (if (and (null? (empty)) (equal? (example) '(20 29)))
+              (+ (car (example)) (car (cdr (example))))
+              0))
+        ''', 49)
+
     def test_imports_are_relative_and_shared_dependencies_load_once(self):
         with tempfile.TemporaryDirectory(dir=self.work) as directory:
             root = Path(directory)

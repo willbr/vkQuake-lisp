@@ -70,6 +70,10 @@ header; executing the result also needs the built interpreter CLI.
 - Top-level `(import "file.scm" ...)` reads source relative to the importing
   file. Imported files share the program namespace. The compiler loads each
   file once and diagnoses cycles.
+- `(define-syntax name (syntax-rules (literal ...) (pattern template) ...))`
+  expands before code generation. Rules support a wildcard `_` and nested
+  ellipses with one repeating pattern per list. Template-introduced lexical
+  bindings are fresh, and expansion can generate top-level definitions.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
   any supported value. `()` and `(list)` are empty, and `(list x ...)` builds
@@ -97,7 +101,7 @@ a nonnumeric value, with a source location. Runtime diagnostics are bounded to
 fit the original engine's 256-byte error-message buffer.
 
 This is a scoped Scheme-style language, not a conforming Scheme implementation.
-User-defined macros remain future work. Non-tail recursion
+Non-tail recursion
 uses the stock call/local stacks; all execution remains subject to the original
 instruction watchdog. Syntax keywords,
 primitive function names, `__qslisp*` global names, and stock ABI global/field names
@@ -164,8 +168,8 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 3,763 instructions against the 100,000-instruction watchdog. The
-program uses 2,805 of 32,768 global slots and its largest individual frame uses
+is bounded by 4,121 instructions against the 100,000-instruction watchdog. The
+program uses 3,083 of 32,768 global slots and its largest individual frame uses
 98 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
@@ -188,6 +192,13 @@ and separate ammo pools, checkpoint respawn, switch activation, and reset. The l
 generates the original sentry model in stock MDL format. The actor uses
 `quake:vector-yaw`, `quake:drop-to-floor`, and `quake:walkmove` for movement.
 `(quake:change-level "annex")` queues a stock map transition.
+
+The sentry and stationary guard use `define-actor` from the [actor and sequence
+library](actors.scm). The macro turns named states into Lisp conditionals
+over an entity field and schedules a stock `think` callback.
+The gate uses `define-sequence` and `after` for a short flash and lift. `after`
+stores the next named callback and time on the entity. Steps can span frames
+using entity fields for shared state.
 
 ### Entity and gameplay forms
 
