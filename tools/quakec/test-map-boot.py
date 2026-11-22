@@ -67,6 +67,7 @@ def prepare(output, maps):
     if 'annex' in maps:
         subprocess.run([sys.executable, 'tools/quakec/build-sentry.py', output / 'progs/sentry.mdl'],
                        cwd=ROOT, check=True)
+        subprocess.run([sys.executable, 'tools/quakec/build-bike.py', output], cwd=ROOT, check=True)
 
 
 def stage(quake_dir, output, base):
@@ -76,7 +77,7 @@ def stage(quake_dir, output, base):
     for name in ('quake.exe', 'cwsdpmi.exe', 'id1/pak0.pak', 'id1/pak1.pak'):
         shutil.copyfile(quake_dir / name, base / name)
     shutil.copyfile(output / 'progs.dat', mod / 'progs.dat')
-    for name in ('maps', 'progs'):
+    for name in ('maps', 'progs', 'sound'):
         if (output / name).is_dir():
             shutil.copytree(output / name, mod / name)
     return mod

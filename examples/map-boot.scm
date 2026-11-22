@@ -1,5 +1,5 @@
 ; Explore stock Quake and play the original Signal Room challenge.
-(import "../qslisp/actors.scm" "../qslisp/persistence.scm" "sentry.scm" "progression.scm")
+(import "../qslisp/actors.scm" "../qslisp/persistence.scm" "sentry.scm" "progression.scm" "bike.scm")
 
 (define-field next-shot)
 (define-field gate-open)
@@ -35,6 +35,7 @@
 (define (SetChangeParms) 0)
 (define (ClientDisconnect)
   (let ((player (quake:self)))
+    (return-bike player)
     (quake:set-field! player classname "")
     (quake:set-field! player health 0)
     (quake:set-field! player solid 0)
@@ -176,17 +177,23 @@
                   (quake:centerprint player "Out of ammo.\nPress R to reset.")))))))
 
 (define (PlayerPreThink)
-  (let ((player (quake:self)))
+  (let* ((player (quake:self)) (was-riding (riding-bike? player)))
     (if (<= (quake:field player health) 0)
         (update-respawn player)
         (begin
           (interact player)
-          (when (= (quake:field player movetype) move-walk)
-            (select-weapon player)
-            (update-jump player)
-            (update-weapon player))))))
+          (cond
+            ((riding-bike? player) (ride-bike player))
+            ((and (not was-riding) (= (quake:field player movetype) move-walk))
+             (select-weapon player)
+             (update-jump player)
+             (update-weapon player)))))))
 
-(define (PlayerPostThink) 0)
+(define (PlayerPostThink)
+  (let ((player (quake:self)))
+    (when (riding-bike? player)
+      (quake:set-field! player bike-vx (quake:field player velocity_x))
+      (quake:set-field! player bike-vy (quake:field player velocity_y)))))
 
 (define (PutClientInServer)
   (let* ((player (quake:self)) (spot (spawn-point player)))

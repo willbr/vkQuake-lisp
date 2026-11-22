@@ -186,9 +186,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 7,641 instructions against the 100,000-instruction watchdog. The
-program uses 9,119 of 32,768 global slots and its largest individual frame uses
-135 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 9,330 instructions against the 100,000-instruction watchdog. The
+program uses 10,433 of 32,768 global slots and its largest individual frame uses
+315 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -219,6 +219,22 @@ stores the next named callback and time on the entity. Steps can span frames
 using entity fields for shared state.
 Annex defines typed records for damage events, patrol legs, and attack states.
 Its Lisp procedures destructure these records with `match`.
+
+### Service bicycle
+
+Follow the service lane past the guard to the bike dock. Look at the bike
+and press **E** to mount. Hold **Mouse1** to pedal, aim with the **mouse**
+to steer, and hold **Space** to brake. Approach the marked bend at speed,
+then brake while steering left. Release the brake to regain grip and pedal
+through the relay arch to bring it online. Slow down and press **E** to park
+and step off.
+
+The Lisp bicycle model tracks the frame heading and travel velocity separately.
+Hard braking reduces rear-wheel grip at speed, so the bike keeps sliding
+sideways as it turns. Quake's player hull still handles walls and the floor.
+The launcher builds the parked bike, rider, cockpit models, and skid sound.
+The Annex verification checks acceleration, sideways momentum under braking,
+the relay, parking, save and reload while mounted, and respawn after defeat.
 
 ### Saved Lisp lists
 
@@ -258,8 +274,8 @@ reaching Annex, sentry detection of the guest, and guest respawn.
 The example also shows how to use the stock entity ABI. `(quake:self)`,
 `(quake:other)`, and `(quake:world)` return entity values. `(quake:find start field value)` searches
 a string field and returns the world entity when there is no match. Test this
-with `(quake:world? entity)`. `(quake:time)` and `(quake:coop)` read the stock
-time and co-op globals.
+with `(quake:world? entity)`. `(quake:time)`, `(quake:frametime)`, and
+`(quake:coop)` read the stock time, frame duration, and co-op globals.
 `(quake:field entity field)` reads numeric, string, and entity fields, including
 vector components such as `origin_z`. `(quake:set-field! entity field value)`
 also supports vector fields. Strings can be bound, passed through functions,
@@ -285,8 +301,9 @@ links from the map entities.
 float slots. `quake:make-vectors` takes a stock angle vector and sets the
 components read by `quake:forward-x`, `quake:forward-y`, and `quake:forward-z`.
 `(quake:traceline start end mode ignore)` returns the hit entity or the world
-entity. Use `quake:entity=?` to compare references and `quake:remove` to remove
-an entity. `(quake:precache-sound "path.wav")` runs during map loading and
+entity. `(quake:trace-fraction)` reads how far the last trace traveled, with
+`1` indicating a clear path. Use `quake:entity=?` to compare references and
+`quake:remove` to remove an entity. `(quake:precache-sound "path.wav")` runs during map loading and
 `(quake:sound entity channel "path.wav" volume attenuation)` plays the sample.
 `(quake:centerprint client "message")` shows a message to that client.
 

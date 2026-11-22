@@ -1,11 +1,13 @@
 """Exercise a stock-engine sentry encounter with real client input."""
 import json
+import math
 
 from challenge import read_edicts, require
 
 SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplies',
          'pulse', 'switched', 'checked', 'dooropen', 'guarded', 'reset',
-         'rtmoved', 'rtload', 'rtresume')
+         'rtmoved', 'rtload', 'rtresume',
+         'bkdock', 'bkstart', 'bkfast', 'bkslide', 'bkrelay', 'bkpark', 'bkreload', 'bkresp')
 
 
 def verification_commands():
@@ -26,7 +28,18 @@ def verification_commands():
     commands += ['-moveright'] + ['wait'] * 24 + ['save guarded', 'restart']
     commands += ['wait'] * 35 + ['save reset'] + ['wait'] * 27 + ['save rtmoved', 'load reset']
     commands += ['wait'] * 14 + ['save rtload'] + ['wait'] * 21
-    commands += ['save rtresume', 'toggleconsole', 'quit']
+    commands += ['save rtresume', 'load guarded'] + ['wait'] * 20
+    commands += ['+moveleft'] + ['wait'] * 5 + ['-moveleft'] + ['wait'] * 10
+    commands += ['+attack'] + ['wait'] * 16 + ['-attack', '+forward'] + ['wait'] * 15
+    commands += ['-forward'] + ['wait'] * 12 + ['save bkdock', 'impulse 3'] + ['wait'] * 2
+    commands += ['save bkstart', 'screenshot', '+attack'] + ['wait'] * 17
+    commands += ['-attack', 'save bkfast', 'impulse 3', '+jump', 'cl_yawspeed 400', '+left']
+    commands += ['wait'] * 5 + ['-left', 'cl_yawspeed 140'] + ['wait'] * 2
+    commands += ['save bkslide', '-jump', '+attack'] + ['wait'] * 20
+    commands += ['-attack', 'save bkrelay', '+jump'] + ['wait'] * 24
+    commands += ['-jump', 'impulse 3'] + ['wait'] * 2 + ['save bkpark', 'load bkslide']
+    commands += ['wait'] * 16 + ['save bkreload', 'kill'] + ['wait'] * 12
+    commands += ['+attack', 'wait', '-attack'] + ['wait'] * 10 + ['save bkresp', 'toggleconsole', 'quit']
     return '\n'.join(commands) + '\n'
 
 
@@ -34,8 +47,10 @@ def state(path):
     entities = read_edicts(path)
     player = entities[1]
     sentry = next((entry for entry in entities if entry.get('classname') == 'qslisp_sentry'), None)
-    guard = next(entry for entry in entities if entry.get('classname') == 'qslisp_guard')
+    guard = next((entry for entry in entities if entry.get('classname') == 'qslisp_guard'), None)
     gate = next(entry for entry in entities if entry.get('classname') == 'qslisp_gate')
+    bike = next(entry for entry in entities if entry.get('classname') == 'qslisp_bike')
+    relay = next(entry for entry in entities if entry.get('classname') == 'qslisp_bike_relay')
     return {
         'player_origin': tuple(float(x) for x in player['origin'].split()),
         'player_health': int(float(player.get('health', '0'))),
@@ -43,16 +58,26 @@ def state(path):
         'pulse_ammo': int(float(player.get('ammo_nails', '0'))),
         'display_ammo': int(float(player.get('currentammo', '0'))),
         'weapon': player.get('weaponmodel'),
+        'player_model': player.get('model'),
         'checkpoint': int(player.get('checkpoint', '0')),
         'gate_open': int(float(gate.get('gate-open', '0'))),
-        'guard_origin': tuple(float(x) for x in guard['origin'].split()),
-        'guard_state': int(float(guard.get('sentry-state', '0'))),
+        'guard_origin': tuple(float(x) for x in guard['origin'].split()) if guard else None,
+        'guard_state': int(float(guard.get('sentry-state', '0'))) if guard else None,
         'sentry_origin': tuple(float(x) for x in sentry['origin'].split()) if sentry else None,
         'sentry_health': int(float(sentry.get('health', '0'))) if sentry else None,
         'sentry_state': int(float(sentry.get('sentry-state', '0'))) if sentry else None,
         'patrol_count': int(float(sentry.get('patrol-count', '0'))) if sentry else None,
         'patrol_route': [entities[int(sentry[f'patrol-route-{i}'])]['targetname']
                          for i in range(int(float(sentry.get('patrol-route-length', '0'))))] if sentry else None,
+        'riding': int(player.get('riding', '0')),
+        'bike_rider': int(bike.get('bike-rider', '0')),
+        'bike_model': bike.get('model'),
+        'bike_solid': int(float(bike.get('solid', '0'))),
+        'bike_velocity': tuple(float(player.get(f'bike-v{axis}', '0')) for axis in 'xy'),
+        'bike_heading': float(player.get('bike-heading', '0')),
+        'bike_skidding': int(float(player.get('bike-skidding', '0'))),
+        'bike_origin': tuple(float(x) for x in bike['origin'].split()),
+        'bike_relay': int(float(relay.get('bike-relay-active', '0'))),
     }
 
 
@@ -105,4 +130,40 @@ def verify_annex(output, lines):
     require(resumed['patrol_route'] == moved['patrol_route'] and resumed['patrol_count'] == moved['patrol_count'],
             'the saved Lisp route did not point the sentry to the next waypoint')
     require((output / 'quake00.pcx').is_file(), 'missing sentry screenshot')
+    verify_bike(states, lines, output)
     (output / 'encounter.json').write_text(json.dumps(states, indent=2) + '\n', encoding='utf-8')
+
+
+def verify_bike(states, lines, output):
+    dock, start, fast, slide, relay, park, loaded, respawn = (
+        states[name] for name in ('bkdock', 'bkstart', 'bkfast', 'bkslide', 'bkrelay', 'bkpark', 'bkreload', 'bkresp'))
+    require(dock['bike_solid'] == 2 and dock['bike_model'] == 'progs/bike.mdl' and
+            start['riding'] and start['bike_rider'] == 1 and start['bike_solid'] == 0 and
+            start['player_model'] == 'progs/r_bike.mdl' and start['weapon'] == 'progs/v_bike.mdl' and
+            start['bike_relay'] == 0,
+            'the player did not mount the service bike at the dock')
+    vx, vy = slide['bike_velocity']
+    motion_bearing = math.degrees(math.atan2(vy, vx))
+    require(math.hypot(*fast['bike_velocity']) > 300 and fast['player_origin'][0] > start['player_origin'][0] + 140,
+            'pedaling did not accelerate the bike down the approach')
+    require(slide['bike_skidding'] == 1 and slide['bike_heading'] > 25 and
+            abs(motion_bearing - slide['bike_heading']) > 22 and
+            100 < math.hypot(vx, vy) < math.hypot(*fast['bike_velocity']),
+            'braking into the corner did not produce controlled sideways momentum')
+    require(relay['bike_relay'] == 1 and relay['player_origin'][1] >= 332,
+            'the rider did not reach and activate the relay around the corner')
+    require(not park['riding'] and not park['bike_rider'] and park['bike_solid'] == 2 and
+            park['player_model'] == 'progs/player.mdl' and park['weapon'] == 'progs/v_shot.mdl' and
+            math.dist(park['player_origin'], park['bike_origin']) >= 48,
+            'dismount did not restore a parked bike and the player weapon')
+    require(loaded['riding'] == slide['riding'] and loaded['bike_rider'] == 1 and
+            loaded['bike_solid'] == 0 and loaded['weapon'] == start['weapon'] and loaded['bike_relay'] == 0,
+            'reloading a ride did not restore the mounted bike and previous relay state')
+    require(respawn['player_health'] == 100 and not respawn['riding'] and not respawn['bike_rider'] and
+            respawn['bike_solid'] == 2 and respawn['bike_origin'] == dock['bike_origin'],
+            'defeat and respawn did not release the bike at its parking spot')
+    event = 0
+    for message in ('qslisp: bike mounted', 'qslisp: bike rear-wheel slide',
+                    'qslisp: bike relay online', 'qslisp: bike dismounted'):
+        event = lines.index(message, event) + 1
+    require((output / 'quake01.pcx').is_file(), 'missing bike cockpit screenshot')

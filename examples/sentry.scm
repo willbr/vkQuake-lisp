@@ -55,6 +55,7 @@
       (when (<= health 0)
         (if (player-entity? target)
             (begin
+              (return-bike target)
               (quake:set-field! target deadflag 2)
               (quake:set-field! target takedamage 0)
               (quake:set-field! target movetype 0)
