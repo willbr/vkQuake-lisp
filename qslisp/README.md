@@ -318,8 +318,10 @@ Slots support stock number, entity, and string types.
 The [map generator](../tools/quakec/build-uplink.py) writes the editable
 [uplink map](../examples/uplink.map). The stock tests place the client at
 authored waypoints between sections and drive each objective with real
-inputs. The two-player test uses the same geometry with starts at the
-bike dock, pump, and swing gallery.
+inputs. The two-player test uses the same geometry for paired bikes, a
+two-person valve interlock, and simultaneous tethers. A test-only waypoint
+driver also lets both clients advance the shared mission through extraction
+in one session.
 
 ### Two-player co-op
 

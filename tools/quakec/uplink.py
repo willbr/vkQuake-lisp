@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import re
+import shutil
 import socket
 import struct
 import subprocess
@@ -12,6 +13,15 @@ import coop
 from map_editor import MapDocument, coordinates
 
 MAP_SOURCE = Path(__file__).resolve().parents[2] / 'examples/uplink.map'
+TOUR_STOPS = (
+    ((-3650, -2780, -2560, 90), (-3750, -2780, -2560, 90)),
+    ((-2693, -3550, -3840, 0), (-3370, -3770, -3840, 0)),
+    ((3220, -3290, 1280, 0), (3268, -3410, 1280, 0)),
+    ((3840, -2960, 1280, 0), (3700, -3100, 1280, 0)),
+    ((3250, 3850, 2560, 180), (-2150, 3590, 2560, 180)),
+    ((-3800, 3720, 2560, 0), (-3696, 3830, 2560, 0)),
+    ((3890, 3622, 3840, 90), (3790, 3715, 3840, 90)),
+)
 
 
 def level_measurements(bsp):
@@ -260,6 +270,7 @@ def coop_maps(output):
         'updock': ((-3316, -2258, 0, 270), (-3136, -2258, 0, 270)),
         'uppump': ((-2693, -3550, -3840, 0), (-3370, -3770, -3840, 0)),
         'uprope': ((-410, 3127, 2560, 181), (-342, 3154, 2560, 185)),
+        'uptour': ((-3316, -2258, 0, 270), (-3136, -2258, 0, 270)),
     }
     with (output / 'coop-map-build.log').open('w') as log:
         for level, positions in layouts.items():
@@ -273,25 +284,39 @@ def coop_maps(output):
                 document.set(index, 'angle', str(yaw))
                 if level == 'uprope':
                     document.add_entity({'classname': 'uplink_tether_supply', 'origin': position})
+            if level == 'uptour':
+                document.add_entity({'classname': 'uplink_tour_driver', 'origin': '-3750 -2000 24'})
+                for command, stops in enumerate(TOUR_STOPS, 50):
+                    for player_slot, (x, y, z, yaw) in enumerate(stops, 1):
+                        document.add_entity({
+                            'classname': 'uplink_tour_stop', 'origin': coordinates((x, y, z + 25)),
+                            'angle': str(yaw), 'tour-command': str(command),
+                            'tour-player': str(player_slot), 'tour-roof': str(int(command == 56)),
+                            'tour-bike': str({54: 1, 55: 2}.get(command, 0)),
+                        })
             source.write_text(document.text, encoding='ascii')
             subprocess.run([sys.executable, Path(__file__).with_name('build-signal.py'), '--source',
                             source, output / 'maps' / f'{level}.bsp'], stdout=log,
                            stderr=subprocess.STDOUT, check=True)
 
 
-def run_coop(dosbox, output, env, host, guest, level, host_input, guest_input):
+def run_coop(dosbox, output, env, host, guest, level, *rounds):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.bind(('127.0.0.1', 0))
         port = probe.getsockname()[1]
-    poll = 'alias poll "exec go.cfg; wait; wait; wait; wait; poll"\npoll\n'
+    def poll(round_index):
+        return f'alias poll "exec go{round_index}.cfg; wait; wait; wait; wait; poll"'
+
+    startup = poll(0) + '\npoll\n'
     host_cfg = f'hostname qsuplink\nname Host\ncoop 1\nhost_framerate 0.05\nmap {level}\n'
-    (host / 'host.cfg').write_text(host_cfg + poll, encoding='ascii')
-    (guest / 'guest.cfg').write_text('host_framerate 0.05\n' + poll, encoding='ascii')
+    (host / 'host.cfg').write_text(host_cfg + startup, encoding='ascii')
+    (guest / 'guest.cfg').write_text('host_framerate 0.05\n' + startup, encoding='ascii')
     for mod in (host, guest):
         log = coop.console_file(mod)
         if log:
             log.unlink()
-        (mod / 'go.cfg').write_text('', encoding='ascii')
+        for index in range(len(rounds) + 1):
+            (mod / f'go{index}.cfg').write_text('', encoding='ascii')
     with coop.client(dosbox, output, env, host, f'{level}-host', f'ipxnet startserver {port}',
                      '-listen 2 +exec host.cfg') as server:
         coop.wait_for(server, host, lambda log: 'CL_SignonReply: 4' in log, f'{level} host did not sign on')
@@ -299,38 +324,72 @@ def run_coop(dosbox, output, env, host, guest, level, host_input, guest_input):
                          '+name Guest +connect qsuplink +exec guest.cfg') as player:
             coop.wait_for(player, guest, lambda log: 'CL_SignonReply: 4' in log,
                           f'{level} guest did not sign on')
-            for mod, commands in ((host, host_input), (guest, guest_input)):
-                command = mod / 'next.cfg'
-                command.write_text('\n'.join(['alias poll "echo input-complete"', *commands, '']),
-                                   encoding='ascii')
-                command.replace(mod / 'go.cfg')
-            coop.wait_for(player, guest, lambda log: 'input-complete' in log,
-                          f'{level} guest did not finish the input script')
-            coop.wait_for(server, host, lambda log: 'input-complete' in log,
-                          f'{level} host did not finish the input script')
+            for index, inputs in enumerate(rounds):
+                marker = f'input-complete-{index:02d}'
+                for mod, commands in zip((host, guest), inputs):
+                    command = mod / 'next.cfg'
+                    command.write_text('\n'.join([*commands, poll(index + 1), f'echo {marker}', '']),
+                                       encoding='ascii')
+                    command.replace(mod / f'go{index}.cfg')
+                for process, mod, role in ((server, host, 'host'), (player, guest, 'guest')):
+                    coop.wait_for(process, mod, lambda log: marker in log,
+                                  f'{level} {role} did not finish input round {index}')
             return coop.read_console(host), coop.read_console(guest)
 
 
 def verify_coop(dosbox, output, env, host, guest):
     ride = ['impulse 3', *wait(8), 'impulse 24', '+attack', *wait(20), '-attack']
     dock, _ = run_coop(dosbox, output, env, host, guest, 'updock',
-                       ['impulse 21', *wait(12), *ride], [*wait(10), *ride])
+                       (['impulse 21', *wait(12), *ride], [*wait(10), *ride]))
     bike_samples = [line.split() for line in dock.splitlines() if line.startswith('bike ')]
     require(dock.count('qslisp: bike mounted') == 2 and
             {sample[2] for sample in bike_samples if float(sample[6]) > 60} == {'1', '2'},
             'both co-op riders did not mount and ride separate bikes')
     pump, _ = run_coop(dosbox, output, env, host, guest, 'uppump',
-                       ['impulse 3', *wait(8)], wait(10))
+                       (['impulse 3', *wait(8)], wait(10)))
     require('uplink: pumps online' in pump, 'the other client did not satisfy the valve interlock')
     equip = ['impulse 6', *wait(6), 'impulse 24']
-    rope, _ = run_coop(dosbox, output, env, host, guest, 'uprope',
-                       [*equip, *look_up(19), '+attack', '+forward', *wait(18), '-attack', '-forward'],
-                       [*equip, *look_up(16), '+attack', '+forward', *wait(35), '-attack', '-forward'])
+    rope, _ = run_coop(dosbox, output, env, host, guest, 'uprope', (
+        [*equip, *look_up(19), '+attack', '+forward', *wait(18), '-attack', '-forward', *wait(4)],
+        [*equip, *look_up(16), '+attack', '+forward', *wait(35), '-attack', '-forward', *wait(4)],
+    ))
     events = [tuple(map(float, line.split()[1:])) for line in rope.splitlines() if line.startswith('tether ')]
     require({(rider, attached) for _, rider, attached in events} == {(1, 1), (2, 1), (1, 0), (2, 0)}
             and max(time for time, _, attached in events if attached)
             < min(time for time, _, attached in events if not attached)
             and [rider for _, rider, attached in events if not attached] == [1, 2],
             f'co-op tethers did not attach simultaneously and release independently: {events}')
-    return output / 'uprope-host-qconsole.log'
+    verify_coop_tour(dosbox, output, env, host, guest)
+    return output / 'uptour-host-qconsole.log'
+
+
+def verify_coop_tour(dosbox, output, env, host, guest):
+    # Only the test map receives the staging callback. Progression, lifts,
+    # relay touches, and firing still run through the normal gameplay code.
+    fixture = output / 'tour.dat'
+    subprocess.run([sys.executable, '-m', 'qslisp', Path(__file__).with_name('uplink-tour.scm'),
+                    '-o', fixture], cwd=MAP_SOURCE.parents[1], check=True)
+    for mod in (host, guest):
+        shutil.copyfile(fixture, mod / 'progs.dat')
+    drive = ['impulse 3', *wait(8), '+attack', *wait(28), '-attack', *wait(12)]
+    segments = [
+        (['impulse 3', *wait(20)], wait(20)),
+        (['impulse 3', *wait(20)], wait(20)),
+        (['+attack', *wait(75), '-attack'], wait(75)),
+        (['impulse 3', *wait(20)], wait(20)),
+        (drive, drive),
+        (['impulse 3', *wait(101)], wait(101)),
+        (['impulse 3', *wait(10)], wait(10)),
+    ]
+    rounds = [(['impulse 21', *wait(12), 'impulse 3', *wait(12)],
+               [*wait(12), 'impulse 3', *wait(12)])]
+    for command, actions in enumerate(segments, 50):
+        move = [f'impulse {command}', *wait(14)]
+        rounds.extend(((move, move), actions))
+    log, _ = run_coop(dosbox, output, env, host, guest, 'uptour', *rounds)
+    reached = {tuple(map(int, line.split()[1:])) for line in log.splitlines() if line.startswith('tour ')}
+    require(reached == {(command, slot) for command in range(50, 57) for slot in (1, 2)},
+            f'co-op tour missed waypoints or the roof lift: {sorted(reached)}')
+    require(log.count('uplink: gantry relay online') == 2 and 'uplink: mission complete' in log,
+            'co-op tour did not complete the shared journal and extraction')
     return output / 'boot.log'

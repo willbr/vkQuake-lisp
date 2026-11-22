@@ -215,7 +215,7 @@ def main():
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
         sys.exit(f'Map boot failed: {error}\nArtifacts: {output}')
     if args.verify_coop and level == 'uplink':
-        print(f'Two stock Quake clients tested the uplink bikes, pump, and tethers. Logs: {console.parent}')
+        print(f'Two stock Quake clients reached extraction and tested independent tethers. Logs: {console.parent}')
     elif args.verify_coop:
         print(f'Two stock Quake clients completed Signal Room and reached Relay Annex. Logs: {console.parent}')
     elif args.verify and level == 'uplink':
