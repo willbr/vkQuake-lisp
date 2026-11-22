@@ -193,10 +193,11 @@
   (let* ((player (quake:self)) (riding (riding-bike? player)))
     (bike-sync-arrows player riding)
     (when riding
+      (bike-bank-step player)
       (quake:set-field! player bike-vx (quake:field player velocity_x))
       (quake:set-field! player bike-vy (quake:field player velocity_y))
       (bike-surface-pose player)
-      (bike-brake-dust player)
+      (bike-tire-effects player)
       (bike-chase-view player)
       ; Stock clients derive walking bob and view roll from this packet's
       ; horizontal velocity. The next bike tick uses its own momentum fields.

@@ -52,18 +52,21 @@ def verification_commands():
     commands += ['save bkrelay', '+right'] + ['wait'] * 13 + ['-right', 'save bkdepot', 'screenshot']
     commands += ['wait'] * 11 + ['save bkjump1'] + ['wait'] * 7 + ['save bkland1']
     commands += ['wait'] * 12 + ['save bkjump2', 'screenshot', '+left']
-    commands += ['wait'] * 5 + ['save bkair'] + ['wait'] * 3 + ['save bktouch']
-    commands += ['wait'] * 2 + ['save bkgripup'] + ['wait'] * 4 + ['-left', 'save bkland2']
+    commands += ['wait'] * 5 + ['save bkair', 'echo landing-particle-window', 'cl_shownet 2']
+    commands += ['wait'] * 3 + ['save bktouch'] + ['wait'] * 2
+    commands += ['save bkgripup', 'cl_shownet 0', 'echo landing-particle-end']
+    commands += ['wait'] * 4 + ['-left', 'save bkland2']
     commands += ['wait'] * 25 + ['save bkentry'] + ['wait'] * 8
     commands += ['save bkbank', '+left']
     commands += ['wait'] * 5 + ['save bkviewa', 'wait', 'save bkcurve', 'screenshot'] + ['wait'] * 8
     commands += ['-left', '-attack', '+jump'] + ['wait'] * 35
     commands += ['-jump', 'impulse 3'] + ['wait'] * 2
-    commands += ['save bkpark', 'load bkentry'] + ['wait'] * 4
-    commands += ['+jump'] + ['wait'] * 19 + ['-jump', 'save bkupbase', '+attack']
-    commands += ['wait'] * 11 + ['save bkup'] + ['wait'] * 40 + ['save bkwall', '+left']
-    commands += ['wait'] * 16 + ['save bkwmid'] + ['wait'] * 16
-    commands += ['save bkwout', '-left', '-attack', 'load bkslide']
+    # Revisit the bank at the play session's faster update rate.
+    commands += ['save bkpark', 'host_framerate 0.013888889', 'load bkentry'] + ['wait'] * 14
+    commands += ['+jump'] + ['wait'] * 69 + ['-jump', 'save bkupbase', '+attack']
+    commands += ['wait'] * 40 + ['save bkup'] + ['wait'] * 115 + ['save bkwall', '+left']
+    commands += ['wait'] * 35 + ['save bkwmid'] + ['wait'] * 65
+    commands += ['save bkwout', '-left', '-attack', 'host_framerate 0.05', 'load bkslide']
     commands += ['wait'] * 16 + ['save bkreload', 'kill'] + ['wait'] * 12
     commands += ['+attack', 'wait', '-attack'] + ['wait'] * 10 + ['save bkresp', 'toggleconsole', 'quit']
     return '\n'.join(commands) + '\n'
@@ -120,6 +123,9 @@ def state(path):
         'bike_bank_contact': bool(float(player.get('bike-bank-contact', '0'))),
         'bike_contact_grip': float(player.get('bike-contact-grip', '0')),
         'bike_front_angle': float(player.get('bike-front-angle', '0')),
+        'bike_pitch': float(player.get('bike-pitch', '0')),
+        'bike_air_time': float(player.get('bike-air-time', '0')),
+        'landing_dust_until': float(player.get('bike-landing-dust-until', '0')),
         'bike_next_dust': float(player.get('bike-next-dust', '0')),
         'client_horizontal_speed': tuple(float(x) for x in player.get('velocity', '0 0 0').split()[:2]),
         'vertical_speed': float(player.get('velocity', '0 0 0').split()[2]),
@@ -269,8 +275,15 @@ def verify_bike(states, lines, output):
             abs(yaw_delta(air['bike_heading'], second_jump['bike_heading'])) < 1 and
             touch['grounded'] and touch['bike_contact_grip'] == 0 and
             0 < grip['bike_contact_grip'] < 1 and
-            4 < yaw_delta(grip['bike_heading'], touch['bike_heading']) < 20,
+            4 < yaw_delta(grip['bike_heading'], touch['bike_heading']) < 13 and
+            0 < abs(grip['bike_pitch']) < abs(touch['bike_pitch']),
             'the wheel did not steer in the air and regain grip progressively on touchdown')
+    landing_start = lines.index('landing-particle-window')
+    landing_end = lines.index('landing-particle-end', landing_start)
+    require(air['bike_air_time'] > 0.1 and touch['bike_air_time'] == 0 and
+            air['landing_dust_until'] < touch['landing_dust_until'] == grip['landing_dust_until'] and
+            any('svc_particle' in line for line in lines[landing_start:landing_end]),
+            'touchdown did not send a dust puff to the stock client')
     entry, bank, curve = (states[name] for name in ('bkentry', 'bkbank', 'bkcurve'))
     require(entry['bike_bank_contact'] and entry['player_origin'][1] < 1220 and
             all(sample['bike_bank_contact'] and sample['grounded'] for sample in (bank, curve)) and
