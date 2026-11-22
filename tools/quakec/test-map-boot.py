@@ -95,7 +95,7 @@ def engine_env(play):
     return env
 
 
-def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
+def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protected_cycles=None):
     maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',)}[level]
     prepare(output, maps)
     env = engine_env(play)
@@ -114,8 +114,10 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
             engine = f'quake -nosound -nocdaudio {engine_flags} +developer 1 +map {level} +exec verify.cfg'
         else:
             engine = f'quake -dedicated 1 {engine_flags} +developer 1 +map {level} +wait +quit'
-        command = [dosbox, '--noprimaryconf', '--nolocalconf', '--noautoexec',
-                   '-c', f'mount c "{base}"', '-c', 'c:', '-c', engine, '--exit']
+        command = [dosbox, '--noprimaryconf', '--nolocalconf', '--noautoexec']
+        if protected_cycles:
+            command += ['--set', f'cpu_cycles_protected={protected_cycles}']
+        command += ['-c', f'mount c "{base}"', '-c', 'c:', '-c', engine, '--exit']
         if play:
             print(f'Opening Quake. WASD to walk, Space to jump, click to fire, E to use, R to reset. Artifacts: {output}',
                   flush=True)
@@ -170,6 +172,7 @@ def main():
     mode.add_argument('--play', action='store_true', help='open the map in a graphical client')
     mode.add_argument('--verify', action='store_true', help='test a Lisp map in a scripted client')
     mode.add_argument('--verify-coop', action='store_true', help='test Signal Room and Annex with two IPX clients')
+    parser.add_argument('--protected-cycles', type=int, help='set DOSBox Staging protected-mode cycles for --play')
     parser.add_argument('--map', choices=('start', 'signal', 'annex'), help='map to load (default: start, or signal with --verify)')
     parser.add_argument('dosbox', help='DOSBox Staging executable')
     parser.add_argument('quake_dir', type=Path, help='registered DOS Quake directory containing quake.exe and id1')
@@ -179,6 +182,8 @@ def main():
         parser.error('--verify requires signal or annex')
     if args.verify_coop and args.map:
         parser.error('--verify-coop runs Signal Room and Relay Annex')
+    if args.protected_cycles is not None and (not args.play or args.protected_cycles <= 0):
+        parser.error('--protected-cycles requires a positive value and --play')
     dosbox = shutil.which(args.dosbox)
     if dosbox is None:
         parser.error(f'DOSBox Staging executable not found: {args.dosbox}')
@@ -190,7 +195,8 @@ def main():
             console = boot_coop(Path(dosbox).resolve(), args.quake_dir.resolve(), output)
         else:
             console = boot(Path(dosbox).resolve(), args.quake_dir.resolve(), output,
-                           level=level, play=args.play, verify=args.verify)
+                           level=level, play=args.play, verify=args.verify,
+                           protected_cycles=args.protected_cycles)
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
         sys.exit(f'Map boot failed: {error}\nArtifacts: {output}')
     if args.verify_coop:

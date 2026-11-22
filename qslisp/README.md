@@ -186,9 +186,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 10,518 instructions against the 100,000-instruction watchdog. The
-program uses 13,179 of 32,768 global slots and its largest individual frame uses
-832 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 10,596 instructions against the 100,000-instruction watchdog. The
+program uses 13,660 of 32,768 global slots and its largest individual frame uses
+882 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -239,15 +239,25 @@ fork, and front wheel can turn while the frame stays still. Once the bike
 rolls, its speed and front-wheel angle determine how fast the frame changes
 heading. Brake while turning to build rear-wheel slip, carry speed through
 the slide, and throw dust and smoke from the rear tire. Brake in a straight
-line to stop quickly. Releasing the brake restores grip gradually. Pedaling
-follows the slope of the bank, and the rider leans with the bank and follows
-the jump's pitch.
+line to stop quickly. Releasing the brake restores grip gradually. Pedal
+and steer away if you come up against the wall on a bank. The front wheel
+also turns in the air, and the bike regains tire grip over the first
+0.2 seconds of ground contact.
 
 The raised chase camera stays centered behind the bike and eases toward its
-heading with a steady downward view. Steering turns the front wheel while the
-camera follows the frame. The camera moves in near walls and eases back out as
-the track opens up. The stock-engine test checks momentum through a slide, both
-jumps, and pedaling uphill from a stop on the northeast bank.
+heading with a steady downward view. In single-player stock Quake, Lisp
+combines the network view angle with the stock visual view offset to make
+small turns smoother. The camera moves in near walls and eases back out as
+the track opens up. The stock-engine test covers slide recovery, landing
+grip, and steering clear of the northeast wall.
+
+With DOSBox Staging versions that support `cpu_cycles_protected`, you can
+raise the emulated CPU speed for this launch. At 180,000 cycles, the tested
+Annex ride ran near stock Quake's 72 Hz cap.
+
+```sh
+python3 tools/quakec/test-map-boot.py --play --map annex --protected-cycles 180000 /path/to/dosbox /path/to/quake
+```
 
 ### Saved Lisp lists
 

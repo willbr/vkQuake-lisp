@@ -9,8 +9,9 @@ SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplie
          'rtmoved', 'rtload', 'rtresume',
          'bkdock', 'bkstart', 'bkbrake', 'bkback', 'bkaim', 'bkpush', 'bksteer', 'bkgrip',
          'bkfast', 'bkslide', 'bksettle', 'bkrelay', 'bkdepot', 'bkjump1', 'bkland1',
-         'bkjump2', 'bkland2', 'bkentry', 'bkbank', 'bkviewa', 'bkcurve', 'bkpark',
-         'bkupbase', 'bkup', 'bkreload', 'bkresp')
+         'bkjump2', 'bkair', 'bktouch', 'bkgripup', 'bkland2', 'bkentry', 'bkbank',
+         'bkviewa', 'bkcurve', 'bkpark', 'bkupbase', 'bkup', 'bkwall', 'bkwmid',
+         'bkwout', 'bkreload', 'bkresp')
 
 
 def verification_commands():
@@ -49,16 +50,20 @@ def verification_commands():
     commands += ['save bkslide', 'screenshot', '-jump', '+attack', 'wait', 'wait', 'save bksettle']
     commands += ['cl_shownet 0', 'echo bike-particle-end'] + ['wait'] * 4 + ['-left'] + ['wait'] * 14
     commands += ['save bkrelay', '+right'] + ['wait'] * 13 + ['-right', 'save bkdepot', 'screenshot']
-    commands += ['wait'] * 11 + ['save bkjump1'] + ['wait'] * 6 + ['save bkland1']
-    commands += ['wait'] * 11 + ['save bkjump2', 'screenshot', '+left'] + ['wait'] * 13
-    commands += ['-left', 'save bkland2'] + ['wait'] * 28 + ['save bkentry'] + ['wait'] * 8
+    commands += ['wait'] * 11 + ['save bkjump1'] + ['wait'] * 7 + ['save bkland1']
+    commands += ['wait'] * 12 + ['save bkjump2', 'screenshot', '+left']
+    commands += ['wait'] * 5 + ['save bkair'] + ['wait'] * 3 + ['save bktouch']
+    commands += ['wait'] * 2 + ['save bkgripup'] + ['wait'] * 4 + ['-left', 'save bkland2']
+    commands += ['wait'] * 25 + ['save bkentry'] + ['wait'] * 8
     commands += ['save bkbank', '+left']
     commands += ['wait'] * 5 + ['save bkviewa', 'wait', 'save bkcurve', 'screenshot'] + ['wait'] * 8
     commands += ['-left', '-attack', '+jump'] + ['wait'] * 35
     commands += ['-jump', 'impulse 3'] + ['wait'] * 2
     commands += ['save bkpark', 'load bkentry'] + ['wait'] * 4
     commands += ['+jump'] + ['wait'] * 19 + ['-jump', 'save bkupbase', '+attack']
-    commands += ['wait'] * 11 + ['save bkup', '-attack', 'load bkslide']
+    commands += ['wait'] * 11 + ['save bkup'] + ['wait'] * 40 + ['save bkwall', '+left']
+    commands += ['wait'] * 16 + ['save bkwmid'] + ['wait'] * 16
+    commands += ['save bkwout', '-left', '-attack', 'load bkslide']
     commands += ['wait'] * 16 + ['save bkreload', 'kill'] + ['wait'] * 12
     commands += ['+attack', 'wait', '-attack'] + ['wait'] * 10 + ['save bkresp', 'toggleconsole', 'quit']
     return '\n'.join(commands) + '\n'
@@ -73,6 +78,7 @@ def state(path):
     bike = next(entry for entry in entities if entry.get('classname') == 'qslisp_bike')
     relay = next(entry for entry in entities if entry.get('classname') == 'qslisp_bike_relay')
     camera = int(player.get('bike-camera', '0'))
+    wire_yaw = math.trunc(math.trunc(float(player.get('bike-view-command-yaw', '0'))) * 256 / 360) * 1.40625
     return {
         'player_origin': tuple(float(x) for x in player['origin'].split()),
         'player_health': int(float(player.get('health', '0'))),
@@ -104,12 +110,16 @@ def state(path):
         'bike_view': int(player.get('bike-view', '0')),
         'camera_origin': tuple(float(x) for x in entities[camera]['origin'].split()) if camera else None,
         'camera_yaw': float(player.get('bike-camera-yaw', '0')),
+        'camera_yaw_offset': float(player.get('punchangle', '0 0 0').split()[1]),
+        'camera_wire_yaw': wire_yaw,
         'camera_floor': float(player.get('bike-camera-floor', '0')),
         'camera_reach': float(player.get('bike-camera-reach', '0')),
         'bike_skidding': int(float(player.get('bike-skidding', '0'))),
         'bike_slip': float(player.get('bike-slip', '0')),
         'bike_bank': float(player.get('bike-bank', '0')),
         'bike_bank_contact': bool(float(player.get('bike-bank-contact', '0'))),
+        'bike_contact_grip': float(player.get('bike-contact-grip', '0')),
+        'bike_front_angle': float(player.get('bike-front-angle', '0')),
         'bike_next_dust': float(player.get('bike-next-dust', '0')),
         'client_horizontal_speed': tuple(float(x) for x in player.get('velocity', '0 0 0').split()[:2]),
         'vertical_speed': float(player.get('velocity', '0 0 0').split()[2]),
@@ -173,6 +183,9 @@ def verify_annex(output, lines):
 
 
 def verify_bike(states, lines, output):
+    def yaw_delta(current, previous):
+        return (current - previous + 180) % 360 - 180
+
     dock, start, fast, slide, relay, park, loaded, respawn = (
         states[name] for name in ('bkdock', 'bkstart', 'bkfast', 'bkslide', 'bkrelay', 'bkpark', 'bkreload', 'bkresp'))
     require(dock['bike_solid'] == 2 and dock['bike_model'] == 'progs/bike.mdl' and
@@ -232,6 +245,10 @@ def verify_bike(states, lines, output):
     require(8 < slide['bike_heading'] - slide['camera_yaw'] < 24 and
             8 < slide['steering_yaw'] - slide['bike_heading'] < 24,
             'the chase heading did not ease around the brake slide')
+    require(any(s['camera_yaw_offset'] for s in (slide, settle, relay)) and
+            all(abs(yaw_delta(s['camera_wire_yaw'] + s['camera_yaw_offset'], s['camera_yaw'])) < 0.12
+                for s in (slide, settle, relay)),
+            'the stock client yaw and its visual offset did not reconstruct the smooth camera heading')
     require(relay['bike_relay'] == 1 and relay['player_origin'][1] >= 332,
             'the rider did not reach and activate the relay around the corner')
     depot = states['bkdepot']
@@ -245,8 +262,15 @@ def verify_bike(states, lines, output):
                 f'the bike did not take off and land across the ramp at x={lip}')
     first_jump, second_jump = states['bkjump1'], states['bkjump2']
     require(abs(first_jump['steering_yaw'] - second_jump['steering_yaw']) < 2 and
-            abs(second_jump['view_yaw'] - second_jump['camera_yaw']) < 4,
+            abs(second_jump['view_yaw'] - second_jump['camera_wire_yaw']) < 3,
             'the camera fed its own rotation back into the steering')
+    air, touch, grip = (states[name] for name in ('bkair', 'bktouch', 'bkgripup'))
+    require(not air['grounded'] and air['bike_contact_grip'] == 0 and air['bike_front_angle'] > 15 and
+            abs(yaw_delta(air['bike_heading'], second_jump['bike_heading'])) < 1 and
+            touch['grounded'] and touch['bike_contact_grip'] == 0 and
+            0 < grip['bike_contact_grip'] < 1 and
+            4 < yaw_delta(grip['bike_heading'], touch['bike_heading']) < 20,
+            'the wheel did not steer in the air and regain grip progressively on touchdown')
     entry, bank, curve = (states[name] for name in ('bkentry', 'bkbank', 'bkcurve'))
     require(entry['bike_bank_contact'] and entry['player_origin'][1] < 1220 and
             all(sample['bike_bank_contact'] and sample['grounded'] for sample in (bank, curve)) and
@@ -267,6 +291,14 @@ def verify_bike(states, lines, output):
             math.hypot(*climb_start['bike_velocity']) < 25 and math.hypot(*climb['bike_velocity']) > 120 and
             climb['player_origin'][2] > climb_start['player_origin'][2] + 8,
             'the stopped bike could not pedal up the bank')
+    wall, wall_mid, wall_out = (states[name] for name in ('bkwall', 'bkwmid', 'bkwout'))
+    require(wall['bike_bank_contact'] and wall['player_origin'][1] > 1550 and
+            math.hypot(*wall['bike_velocity']) < 20 and
+            yaw_delta(wall_mid['bike_heading'], wall['bike_heading']) > 35 and
+            yaw_delta(wall_out['bike_heading'], wall_mid['bike_heading']) > 15 and
+            wall_out['player_origin'][0] < wall['player_origin'][0] - 50 and
+            math.hypot(*wall_out['bike_velocity']) > 80,
+            'holding Left with the bike against the bank wall did not steer it clear')
     require(not park['riding'] and not park['bike_rider'] and not park['bike_camera'] and park['bike_solid'] == 2 and
             park['player_model'] == 'progs/player.mdl' and park['weapon'] == 'progs/v_shot.mdl' and
             math.dist(park['player_origin'], park['bike_origin']) >= 48,
