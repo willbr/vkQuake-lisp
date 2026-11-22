@@ -19,6 +19,24 @@ or landing. Use the same trace to capture the buddy's state, current waypoint,
 and reason for stopping or changing behavior. Keep tracing off during normal
 play.
 
+## VM disassembly and source symbols
+
+Build a read-only disassembler for stock `progs.dat`. Show function names,
+symbolic branch targets, builtin calls, and local frame sizes. Use it to
+inspect compiler output and investigate VM budget regressions.
+[Stock VM limits](tools/quakec/README.md#vm-target)
+
+Have the Lisp compiler optionally emit a `progs.sym` sidecar. Map VM statement
+ranges to Lisp functions, files, and lines so listings and VM traces can point
+back to source. Include a format version and the SHA-256 of the matching
+`progs.dat` so tools can detect stale symbols. The disassembler can use the
+names already embedded in `progs.dat` on its own. Stock Quake loads the standard
+bytecode file as usual.
+
+Add a small text assembler when a VM test needs a hand-written opcode fixture.
+Reuse the existing bytecode writer, validator, and stock VM runner.
+[Bytecode writer](qslisp/bytecode.py) · [Stock validator](tools/quakec/check-stock.py)
+
 ## Broader Lisp persistence
 
 Extend heap-backed save and reload when a gameplay feature needs Lisp-owned
