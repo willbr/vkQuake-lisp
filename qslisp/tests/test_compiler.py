@@ -164,7 +164,7 @@ class CompilerTests(CompilerCase):
             ('(define (test) (+ #t 1))', 'require numbers'),
             ('(define (test) (lambda (x) x))', 'lambda is not supported'),
             ("(define (test) '(1 . 2 3))", 'a dotted list requires'),
-            ('(define (test) (let ((f 1)) (f 2)))', 'calling local values'),
+            ('(define (test) (let ((f 1)) (f 2)))', 'expected a procedure, got a number'),
             ('(define (test) (begin))', 'begin requires'),
             ('(define (test) (< 1 2 3))', 'exactly two arguments'),
             ('(define (test) (/))', 'at least one argument'),
@@ -337,6 +337,31 @@ class CompilerTests(CompilerCase):
                      (not (equal? a (cons 1 (cons 0 3)))))
                 49 0)))
         ''', 49)
+
+    def test_named_procedures_are_values_and_indirect_tail_calls_release_frames(self):
+        self.value('''
+        (define (left peer n) (if (= n 0) 49 (peer left (- n 1))))
+        (define (right peer n) (if (= n 0) 49 (peer right (- n 1))))
+        (define (pick) left)
+        (define (test)
+          (if (and (procedure? (pick)) (eq? left (pick)))
+              ((pick) right 1000)
+              0))
+        ''', 49)
+        result = self.execute('''
+        (define (one x) x)
+        (define (test) (let ((f one)) (f 1 2)))
+        ''')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('procedure does not accept 2 arguments', result.stderr)
+
+    def test_higher_order_map_and_fold_in_the_list_library(self):
+        self.value('''
+        (import "../qslisp/list.scm")
+        (define (square n) (* n n))
+        (define (accumulate total n) (+ total n))
+        (define (test) (fold accumulate 0 (map square '(2 3 6))))
+        ''', 49, filename=str(ROOT / 'examples/list-test.scm'))
 
     def test_imports_are_relative_and_shared_dependencies_load_once(self):
         with tempfile.TemporaryDirectory(dir=self.work) as directory:

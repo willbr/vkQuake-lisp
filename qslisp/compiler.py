@@ -46,14 +46,14 @@ ENTITY_RESULTS = {'quake:find': 1, 'quake:traceline': 'trace_ent'}
 NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
-    'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?',
+    'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?', 'procedure?',
     'quake:world?', 'quake:entity=?',
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
     'quake:set-callback!', 'quake:call-callback',
 }
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
-                    'quake:vector?': 'vector'}
+                    'quake:vector?': 'vector', 'procedure?': 'procedure'}
 VECTOR_COMPONENTS = {'quake:vector-x': 0, 'quake:vector-y': 1, 'quake:vector-z': 2}
 FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector', 4: 'entity', 6: 'function'}
 CUSTOM_FIELDS = {'number': 2, 'entity': 4, 'string': 1}
@@ -101,6 +101,7 @@ class Compiler:
         self.functions = {}
         self.constants = {}
         self.derived_forms = DerivedForms()
+        self.uses_procedures = False
         self.zero = self.program.constant(0)
         self.one = self.program.constant(1)
         for form in forms:
@@ -143,6 +144,8 @@ class Compiler:
             kinds = ('entity', 'field', 'vector')
         result = set().union(*(self.heap_features(arg, native=i < len(kinds) and kinds[i] == 'vector')
                                for i, arg in enumerate(form[1:])))
+        if name is None:
+            result.update(self.heap_features(form[0]))
         raw_source = name == 'quake:vector' or (name == 'quake:field' and len(form) == 3 and self.vector_field(form[2]))
         if native != raw_source:
             result.add('vector')
@@ -281,7 +284,11 @@ class Compiler:
         # Stock calls copy the callee's declared parameter widths, independently
         # of the CALL opcode's argument count. All internal functions take <=8.
         frame.emit(OP_CALL0 + 8, Local(0))
-        pending = frame.emit(OP_IF, 3)  # OFS_RETURN + 2: request flag.
+        pending_slot = 3  # OFS_RETURN + 2: request flag or callable arity.
+        if self.uses_procedures:
+            pending_slot = frame.allocate(1)
+            frame.emit(OP_EQ, 3, self.one, pending_slot)
+        pending = frame.emit(OP_IF, pending_slot)
         frame.emit(OP_RETURN, 1)
         frame.patch(pending, 2, len(frame.code))
         frame.emit(OP_STORE, 1, Local(0))  # New raw target from request payload.
@@ -304,10 +311,9 @@ class Compiler:
         form = node.value
         if not form:
             raise CompileError(node.location, 'empty application; list values are not supported yet')
-        name = symbol(form[0], 'call or special form')
-        if name in environment:
-            raise CompileError(form[0].location, 'calling local values is not supported yet')
-        return name, form[1:]
+        name = form[0].value
+        direct = isinstance(name, str) and name not in environment
+        return name if direct else None, form[1:]
 
     def let_environment(self, frame, node, args, environment):
         if len(args) < 2 or not isinstance(args[0].value, tuple):
@@ -334,6 +340,9 @@ class Compiler:
     def tail_expression(self, frame, node, environment, function):
         if isinstance(node.value, tuple) and node.value:
             name, args = self.application(node, environment)
+            if name is None:
+                self.call_indirect(frame, node, args, environment, tail=True)
+                return
             if name in DERIVED_FORMS:
                 self.tail_expression(frame, self.derived_forms.expand(name, args, node.location), environment, function)
                 return
@@ -411,17 +420,56 @@ class Compiler:
             frame.patch(skip, 2, len(frame.code))
 
     def call(self, frame, function, args, environment=None):
+        return self.invoke(frame, function.request, args, environment)
+
+    def invoke(self, frame, request, args, environment):
         # Stage arguments only after evaluating ALL of them. Nested calls also
         # use the shared argument/return registers and must not clobber siblings.
         base = self.heap.pin(frame, self.roots(environment or {}, args)) if self.heap else None
         self.publish(frame, args)
-        frame.emit(OP_STORE_V, function.request, 4)
+        frame.emit(OP_STORE_V, request, 4)
         frame.emit(OP_CALL0 + 1, self.dispatch_reference)
         result = Value(frame.allocate())
         frame.emit(OP_STORE_V, 1, result.slot)
         if self.heap:
             self.heap.unpin(frame, base)
         return result
+
+    def named_procedure(self, function):
+        self.uses_procedures = True
+        slot = self.program.tagged_literal(f'__qslisp_procedure_{function.private}', function.private,
+                                           'procedure', len(function.parameters) + 2)
+        return Value(slot, 'procedure')
+
+    def call_indirect(self, frame, node, args, environment, *, tail=False):
+        if len(args) > 8:
+            raise CompileError(node.location, 'stock VM supports at most eight arguments')
+        self.uses_procedures = True
+        target = node.value[0]
+        procedure = self.expression(frame, target, environment)
+        if procedure.kind not in ('procedure', 'unknown'):
+            raise CompileError(target.location, f'expected a procedure, got a {procedure.kind}')
+        self.require_tag(frame, procedure, target, 'procedure')
+        with self.keep((procedure,)):
+            values = self.values(frame, args, environment)
+
+        arity = frame.allocate(1)
+        frame.emit(OP_EQ, advance(procedure.slot, 2), self.program.constant(len(args) + 2), arity)
+        valid = frame.emit(OP_IF, arity)
+        message = self.program.message(f'{node.location}: procedure does not accept {len(args)} arguments\n')
+        frame.emit(OP_STORE, message, 4)
+        frame.emit(OP_CALL0 + 1, self.program.error_function)
+        frame.patch(valid, 2, len(frame.code))
+
+        request = frame.allocate()
+        frame.emit(OP_STORE, procedure.slot, request)
+        frame.emit(OP_STORE, self.zero, advance(request, 1))
+        frame.emit(OP_STORE, self.one, advance(request, 2))
+        if tail:
+            self.publish(frame, values)
+            frame.emit(OP_RETURN, request)
+            return None
+        return self.invoke(frame, request, values, environment)
 
     def publish(self, frame, args):
         for i, destination in enumerate(self.mailbox):
@@ -704,10 +752,13 @@ class Compiler:
             if form in self.constants and form not in environment:
                 return self.expression_body(frame, self.constants[form], environment)
             if form not in environment:
-                message = 'function values are not supported yet' if form in self.functions else f'unbound variable {form}'
-                raise CompileError(node.location, message)
+                if form in self.functions:
+                    return self.named_procedure(self.functions[form])
+                raise CompileError(node.location, f'unbound variable {form}')
             return environment[form]
         name, args = self.application(node, environment)
+        if name is None:
+            return self.call_indirect(frame, node, args, environment)
         if name in DERIVED_FORMS:
             return self.expression(frame, self.derived_forms.expand(name, args, node.location), environment)
         if name == 'quote':

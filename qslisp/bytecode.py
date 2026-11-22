@@ -18,7 +18,7 @@ OP_NOT_ENT = 47
 OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND, OP_OR = 49, 50, 51, 61, 62, 63
 OP_BITAND, OP_BITOR = 64, 65
 TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4,
-        'null': 5, 'symbol': 6, 'vector': 7}
+        'null': 5, 'symbol': 6, 'vector': 7, 'procedure': 8}
 
 
 @dataclass(frozen=True)
@@ -133,10 +133,10 @@ class Program:
     def literal_string(self, text):
         return self.define(f'__qslisp_string_{len(self.globaldefs)}', 1, [self.string(text)])
 
-    def tagged_literal(self, name, payload, tag):
+    def tagged_literal(self, name, payload, tag, extra=0):
         if name not in self.names:
-            raw_tag = struct.unpack('<I', struct.pack('<f', TAGS[tag]))[0]
-            return self.define(name, 3, [payload, raw_tag, 0])
+            raw_tag, raw_extra = struct.unpack('<2I', struct.pack('<2f', TAGS[tag], extra))
+            return self.define(name, 3, [payload, raw_tag, raw_extra])
         return self.names[name]
 
     def define_field(self, name, kind, location):

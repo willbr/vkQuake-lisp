@@ -39,6 +39,11 @@ header; executing the result also needs the built interpreter CLI.
   Functions can refer to later definitions and recurse, including mutual recursion.
   Calls in tail position use constant stack space, including calls between
   different functions and different arities.
+- A function name is also a procedure value. Bind it, return it, pass it as
+  an argument, or use it from a computed operator position. Indirect calls
+  check argument counts and support constant-stack tail calls. `procedure?`
+  checks the value kind. Import the [list library](list.scm) for `map` and
+  left-to-right `fold`, whose combiner receives the accumulator and item.
 - Decimal numbers, scientific notation, `#t`, and `#f`. All numbers use the VM's
   inexact IEEE float32 arithmetic. Literals round to float32; out-of-range finite
   literals are diagnosed. Exact integers, rationals, and bignums are not provided.
@@ -87,8 +92,7 @@ a nonnumeric value, with a source location. Runtime diagnostics are bounded to
 fit the original engine's 256-byte error-message buffer.
 
 This is a scoped Scheme-style language, not a conforming Scheme implementation.
-First-class procedures, `lambda`, closures, mutation, and macros are not
-implemented. Non-tail recursion
+`lambda`, closures, mutation, and macros are not implemented. Non-tail recursion
 uses the stock call/local stacks; all execution remains subject to the original
 instruction watchdog. Syntax keywords,
 primitive function names, `__qslisp*` global names, and stock ABI global/field names
@@ -366,12 +370,12 @@ at the stock instruction budget; they do not gain another budget per iteration.
 Inside compiled Scheme code, each value uses three VM words:
 
 ```text
-[payload, type-tag, reserved-zero]
+[payload, type-tag, metadata]
 ```
 
 The tag is float32 `0` for a number, `1` for a boolean, `2` for a pair, or `3`
 for an entity, `4` for a string, `5` for the empty list, `6` for a symbol,
-or `7` for a vector. Numbers and booleans use float32 payloads. Pairs and
+`7` for a vector, or `8` for a named procedure. Numbers and booleans use float32 payloads. Pairs and
 vectors use opaque cell indices,
 entities use the raw edict reference, and strings and interned symbols use
 stock string offsets. These values
@@ -388,7 +392,8 @@ to forge a pair reference.
 Native entry arguments are numeric, so CLI argument `0` is Scheme's number zero,
 not `#f`.
 
-Normal values always have a zero third word. Private tail requests use
+Named procedure payloads hold a raw function reference, and their third word
+holds the arity plus two. Other normal values have a zero third word. Private tail requests use
 `[raw-function-reference, 0, 1]` instead. The dispatcher consumes this marker
 before any return to a Scheme caller or native entry wrapper. Request records
 are control data, not Scheme values, and internal entries are not a public CLI
