@@ -113,13 +113,8 @@
 (define (finish-patrol-leg actor leg)
   (match leg
     ((patrol-leg waypoint remaining)
-     (remember-sentry-route! actor (append-waypoint remaining waypoint))
+     (remember-sentry-route! actor (append remaining `(,waypoint)))
      (quake:set-field! actor patrol-count (+ (quake:field actor patrol-count) 1)))))
-
-(define (append-waypoint route point)
-  (match route
-    (() (list point))
-    ((cons head tail) (cons head (append-waypoint tail point)))))
 
 (define (collect-patrol-route first next remaining)
   (cond

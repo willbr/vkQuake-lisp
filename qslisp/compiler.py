@@ -9,15 +9,18 @@ from .bytecode import (Program, Frame, Local, TAGS, advance, OP_MUL, OP_DIV, OP_
                        OP_STOREP_S, OP_EQ_ENT, OP_EQ_STR, OP_BITAND, OP_BITOR,
                        OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC, OP_STOREP_ENT, OP_STOREP_FNC,
                        emit_shallow_equality)
-from .reader import CompileError, Location, StringLiteral
+from .reader import CompileError, Location, StringLiteral, split_dotted
 from .heap import PairHeap
 from .macros import Macros
 from .modules import load_forms
+from .quasiquote import BUILD, QUASIQUOTE_FORMS, SPLICE
 from .records import Match, record_definitions
 from .syntax import DERIVED_FORMS, DerivedForms
 
-SYNTAX = DERIVED_FORMS | {'define', 'define-field', 'import', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
-                          'define-syntax', 'syntax-rules', 'quasiquote', 'define-record', 'match'}
+SYNTAX = DERIVED_FORMS | set(QUASIQUOTE_FORMS) | {
+    'define', 'define-field', 'import', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
+    'define-syntax', 'syntax-rules', 'define-record', 'match',
+}
 ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
 COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
 BITWISE = {'quake:bit-and': OP_BITAND, 'quake:bit-or': OP_BITOR}
@@ -49,7 +52,8 @@ ENTITY_RESULTS = {'quake:find': 1, 'quake:traceline': 'trace_ent'}
 NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
-    'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?', 'procedure?',
+    'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'append', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?',
+    'procedure?',
     'quake:world?', 'quake:entity?', 'quake:entity=?',
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
@@ -154,7 +158,8 @@ class Compiler:
         self.closure_mailbox = (self.program.define('__qslisp_captured_values', 3, [0, 0, 0])
                                 if 'closure' in features else None)
         kinds = tuple(kind for kind in ('vector', 'closure', 'record') if kind in features)
-        self.heap = (PairHeap(self.program, heap_pairs, root_slots, deep_equal='equal' in features, boxed_kinds=kinds)
+        self.heap = (PairHeap(self.program, heap_pairs, root_slots, deep_equal='equal' in features,
+                              append='append' in features, boxed_kinds=kinds)
                      if 'pair' in features or kinds else None)
         self.pending = []
 
@@ -194,6 +199,10 @@ class Compiler:
             result.add('vector')
         if name in ('cons', 'car', 'cdr') or (name == 'list' and len(form) > 1):
             result.add('pair')
+        if name == BUILD:
+            result.add('pair')
+        if name == SPLICE or (name == 'append' and len(form) > 2):
+            result.update(('pair', 'append'))
         if name == 'set!':
             result.add('pair')
         if name in ('lambda', 'letrec') or (name == 'let' and len(form) > 1 and isinstance(form[1].value, str)):
@@ -690,17 +699,44 @@ class Compiler:
         self.heap.unpin(frame, base)
         return Value(result, 'pair')
 
+    def append_list(self, frame, prefix, tail, location, environment, diagnostic):
+        if prefix.kind == 'null':
+            return tail
+        if prefix.kind not in ('unknown', 'pair'):
+            raise CompileError(location, diagnostic)
+        bad_list = self.program.message(f'{location}: {diagnostic}\n')
+        no_space = self.program.message(f'{location}: pair heap exhausted ({self.heap.capacity} cells)\n')
+        base = self.heap.pin(frame, self.roots(environment, (prefix, tail)))
+        result = self.heap.call(frame, 'append', [prefix.slot, tail.slot, bad_list, no_space])
+        self.heap.unpin(frame, base)
+        return Value(result, 'unknown' if prefix.kind == 'unknown' else 'pair')
+
+    def build_list(self, frame, name, args, environment):
+        if not args:
+            return self.empty_list()
+        prefixes, tail = args[:-1], args[-1]
+        copies = [name == 'append' or (
+            isinstance(node.value, tuple) and bool(node.value) and node.value[0].value == SPLICE)
+            for node in prefixes]
+        inputs = [node.value[1] if copy and name == BUILD else node for node, copy in zip(prefixes, copies)]
+        items = self.values(frame, (*inputs, tail), environment)
+        result = items.pop()
+        with self.keep(items):
+            for node, copy in reversed(tuple(zip(prefixes, copies))):
+                value = items.pop()
+                if copy:
+                    diagnostic = ('unquote-splicing expects a proper list' if name == BUILD
+                                  else 'append expects proper lists before its final argument')
+                    result = self.append_list(frame, value, result, node.location, environment, diagnostic)
+                else:
+                    result = self.make_pair(frame, value, result, node.location, environment)
+        return result
+
     def quoted(self, frame, datum, environment):
         value = datum.value
         if isinstance(value, tuple):
-            dots = [i for i, item in enumerate(value) if item.value == '.']
-            if dots:
-                if len(dots) != 1 or dots[0] == 0 or dots[0] != len(value) - 2:
-                    raise CompileError(datum.location, 'a dotted list requires preceding items and one tail datum')
-                head, tail_datum = value[:dots[0]], value[-1]
-                tail = self.quoted(frame, tail_datum, environment)
-            else:
-                head, tail = value, self.empty_list()
+            head, tail_datum = split_dotted(datum)
+            tail = self.empty_list() if tail_datum is None else self.quoted(frame, tail_datum, environment)
             for item in reversed(head):
                 with self.keep((tail,)):
                     first = self.quoted(frame, item, environment)
@@ -1078,6 +1114,10 @@ class Compiler:
             if len(args) != 1:
                 raise CompileError(node.location, 'quote requires one datum')
             return self.quoted(frame, args[0], environment)
+        if name in ('unquote', 'unquote-splicing'):
+            raise CompileError(node.location, f'{name} requires an enclosing quasiquote')
+        if name in (BUILD, 'append'):
+            return self.build_list(frame, name, args, environment)
         if name == 'list':
             items = self.values(frame, args, environment)
             return self.make_list(frame, items, node.location, environment)

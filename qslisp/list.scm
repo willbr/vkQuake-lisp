@@ -16,3 +16,32 @@
 
 (define (map transform items)
   (map-reversed transform items ()))
+
+(define (length items)
+  (list-length-from items 0))
+
+(define (list-length-from items count)
+  (if (null? items)
+      count
+      (list-length-from (cdr items) (+ count 1))))
+
+(define (member key items)
+  (cond
+    ((null? items) #f)
+    ((equal? key (car items)) items)
+    (else (member key (cdr items)))))
+
+(define (assoc key entries)
+  (if (null? entries)
+      #f
+      (let ((entry (car entries)))
+        (if (equal? key (car entry))
+            entry
+            (assoc key (cdr entries))))))
+
+(define (for-each visit items)
+  (if (null? items)
+      #f
+      (begin
+        (visit (car items))
+        (for-each visit (cdr items)))))

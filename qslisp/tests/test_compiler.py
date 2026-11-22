@@ -382,6 +382,76 @@ class CompilerTests(CompilerCase):
                 49 0)))
         ''', 49, heap_pairs=8)
 
+    def test_quasiquote_expands_only_active_unquotes_and_preserves_macro_bindings(self):
+        self.value('''
+        (define-syntax twice
+          (syntax-rules () ((_ x) (+ x x))))
+        (define-syntax template
+          (syntax-rules ()
+            ((_ value)
+             (let ((hidden value))
+               `(hidden ,hidden (twice 9) ,(twice hidden))))))
+        (define (test)
+          (let ((x 7) (hidden 19) (cons #f) (append #f))
+            (if (and (equal? (template x) '(hidden 7 (twice 9) 14))
+                     (equal? `(a ,x ,@(list 8 9) ,@() . ,(+ x 3)) '(a 7 8 9 . 10))
+                     (equal? `(outer `(inner ,x ,,x))
+                             '(outer (quasiquote (inner (unquote x) (unquote 7)))))
+                     (equal? '(quasiquote (unquote x)) '`,x)
+                     (= (quasiquote (unquote x)) x))
+                49 0)))
+        ''', 49)
+
+    def test_quasiquote_evaluates_escapes_once_left_to_right(self):
+        self.value('''
+        (define (test)
+          (let ((state 0))
+            (let* ((next (lambda () (set! state (+ state 1))))
+                   (result `(,(next) ,@(list (next) (next)) . ,(next))))
+              (if (and (= state 4) (equal? result '(1 2 3 . 4))) 49 0))))
+        ''', 49)
+
+    def test_quasiquote_reports_malformed_escapes(self):
+        cases = [
+            (',1', 'unquote requires an enclosing quasiquote'),
+            ('`,@(list 1)', 'unquote-splicing requires a list element position'),
+            ('`(head . ,@(list 1))', 'unquote-splicing requires a list element position'),
+            ('`(unquote 1 2)', 'unquote requires one expression'),
+            ('(quasiquote)', 'quasiquote requires one datum'),
+        ]
+        for expression, message in cases:
+            with self.subTest(expression=expression), self.assertRaisesRegex(CompileError, message):
+                compile_source(f'(define (test) {expression})')
+        result = self.execute('''
+        (define (improper) (cons 1 2))
+        (define (test) `(,@(improper) end))
+        ''')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('unquote-splicing expects a proper list', result.stderr)
+
+    def test_append_shares_the_final_argument_and_copies_across_collection(self):
+        self.value('''
+        (define (test)
+          (let* ((prefix (list (list 41) 7 8)) (suffix (list 1)))
+            (cons 0 0)
+            (cons 0 0)
+            (let ((joined (append () prefix () suffix)))
+              (if (and (null? (append)) (eq? (append suffix) suffix)
+                       (not (eq? joined prefix))
+                       (eq? (car joined) (car prefix))
+                       (eq? (cdr (cdr (cdr joined))) suffix)
+                       (= (car (cdr (cdr prefix))) 8))
+                  (+ (car (car joined)) (car (cdr joined)) (car suffix))
+                  0))))
+        ''', 49, heap_pairs=8)
+        self.value('''
+        (define (test)
+          (if (equal? (append '(1) '(2 3) 4) '(1 2 3 . 4)) 49 0))
+        ''', 49)
+        result = self.execute('(define (test) (append (cons 1 2) ()))')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('append expects proper lists', result.stderr)
+
     def test_structural_equality_does_not_recurse_on_the_vm_stack(self):
         self.value('''
         (define (nest n value)
@@ -438,6 +508,22 @@ class CompilerTests(CompilerCase):
         (define (square n) (* n n))
         (define (accumulate total n) (+ total n))
         (define (test) (fold accumulate 0 (map square '(2 3 6))))
+        ''', 49, filename=str(ROOT / 'examples/list-test.scm'))
+
+    def test_list_search_length_and_iteration(self):
+        self.value('''
+        (import "../qslisp/list.scm")
+        (define (test)
+          (let* ((entries '(((relay 1) . 7) ((relay 1) . 8)))
+                 (items '(1 (relay 1) 3))
+                 (order 0))
+            (for-each (lambda (n) (set! order (+ (* 10 order) n))) '(4 2))
+            (if (and (= (length items) 3) (= (length ()) 0)
+                     (eq? (member '(relay 1) items) (cdr items))
+                     (eq? (assoc '(relay 1) entries) (car entries))
+                     (not (member 4 items)) (not (assoc 'missing entries)))
+                (+ order (cdr (assoc '(relay 1) entries)))
+                0)))
         ''', 49, filename=str(ROOT / 'examples/list-test.scm'))
 
     def test_escaping_closures_share_mutable_bindings_through_collection(self):

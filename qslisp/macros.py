@@ -1,6 +1,7 @@
 """Expand top-level syntax-rules before lexical or heap analysis."""
 from dataclasses import dataclass
 
+from .quasiquote import expand_quasiquote
 from .reader import CompileError, Node
 
 
@@ -175,6 +176,8 @@ class Macros:
         if not isinstance(value, tuple) or not value:
             return node
         head = form_name(node)
+        if head == 'quasiquote':
+            return self.hygienic_locals(expand_quasiquote(node, identifier), scope)
         if head == 'quote':
             # Quoted data contains symbols rather than lexical references.
             def quoted(item):
@@ -231,6 +234,8 @@ class Macros:
         if not isinstance(node.value, tuple) or not node.value or form_name(node) == 'quote':
             return node
         head = form_name(node)
+        if head == 'quasiquote':
+            return self.expression(expand_quasiquote(node, identifier), depth)
         visit = lambda child: self.expression(child, depth)
         if head in ('define', 'lambda') and len(node.value) >= 2:
             return Node((*node.value[:2], *(visit(child) for child in node.value[2:])), node.location)

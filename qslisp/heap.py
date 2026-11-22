@@ -17,7 +17,7 @@ def bits(number):
 
 
 class PairHeap:
-    def __init__(self, program, capacity, root_capacity, *, deep_equal=False, boxed_kinds=()):
+    def __init__(self, program, capacity, root_capacity, *, deep_equal=False, append=False, boxed_kinds=()):
         self.program, self.capacity, self.root_capacity = program, capacity, root_capacity
         self.boxed_kinds = ('pair', *boxed_kinds)
         cell_words = 12 if deep_equal else 9
@@ -51,6 +51,8 @@ class PairHeap:
         )
         if deep_equal:
             functions += (('equal_get', (1,)), ('equal_set', (1, 3)), ('equal', (3, 3)))
+        if append:
+            functions += (('append', (3, 3, 1, 1)),)
         for name, widths in functions:
             label = '__qslisp_rt_' + name
             index = program.function(label, '<pair-runtime>', len(widths))
@@ -121,11 +123,48 @@ class PairHeap:
         self.compile_cons()
         self.compile_read('car')
         self.compile_read('cdr')
+        if 'append' in self.functions:
+            self.compile_append()
         if self.equal_stack:
             self.compile_accessor('equal_get', self.equal_stack, False)
             self.compile_accessor('equal_set', self.equal_stack, True)
             self.compile_equal()
         self.generated_statements = len(self.program.statements) - before
+
+    def compile_append(self):
+        frame = self.frame('append')
+        source, suffix, bad_list, no_space = Local(0), Local(3), Local(6), Local(7)
+        empty = self.program.tagged_literal('__qslisp_null', 0, 'null')
+        head = frame.allocate()
+        last, base = frame.allocate(1), frame.allocate(1)
+        frame.emit(OP_STORE, self.minus_one, last)
+        frame.emit(OP_STORE, self.root_sp, base)
+
+        loop = len(frame.code)
+        done = frame.emit(OP_IF, self.compare(frame, OP_EQ, advance(source, 1), advance(empty, 1)))
+        item = self.call(frame, 'car', [source, bad_list])
+        next_source = self.call(frame, 'cdr_get', [source])
+        cell = self.call(frame, 'cons', [item, empty, no_space])
+        first = frame.emit(OP_IF, self.compare(frame, OP_LT, last, self.zero))
+        self.call(frame, 'cdr_set', [last, cell])
+        linked = frame.emit(OP_GOTO)
+        frame.patch(first, 2, len(frame.code))
+        # The caller pins both inputs. The new chain needs just one more root.
+        frame.emit(OP_STORE_V, cell, head)
+        self.call(frame, 'root_push', [head])
+        frame.patch(linked, 1, len(frame.code))
+        frame.emit(OP_STORE, cell, last)
+        frame.emit(OP_STORE_V, next_source, source)
+        self.go(frame, loop)
+
+        frame.patch(done, 2, len(frame.code))
+        have_copy = frame.emit(OP_IFNOT, self.compare(frame, OP_LT, last, self.zero))
+        frame.emit(OP_RETURN, suffix)
+        frame.patch(have_copy, 2, len(frame.code))
+        self.call(frame, 'cdr_set', [last, suffix])
+        self.unpin(frame, base)
+        frame.emit(OP_RETURN, head)
+        frame.finish()
 
     def compile_equal(self):
         frame = self.frame('equal')

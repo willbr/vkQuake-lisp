@@ -35,6 +35,18 @@ IDENTIFIER = re.compile(r'[a-zA-Z_!$%&*/:<=>?^~+\-][a-zA-Z0-9_!$%&*/:<=>?^~+.\-]
 STRING_TOKEN = re.compile(r'"(?:[^"\\\r\n]|\\[^\r\n])*"')
 STRING_ESCAPE = re.compile(r'\\(.)')
 STRING_ESCAPES = {'"': '"', '\\': '\\', 'n': '\n', 'r': '\r', 't': '\t'}
+ABBREVIATIONS = {"'": 'quote', "`": 'quasiquote', ',': 'unquote', ',@': 'unquote-splicing'}
+DELIMITERS = "()';`," + '"'
+
+
+def split_dotted(datum, identifier=lambda item: item.value):
+    items = datum.value
+    dots = [i for i, item in enumerate(items) if identifier(item) == '.']
+    if not dots:
+        return items, None
+    if len(dots) != 1 or dots[0] == 0 or dots[0] != len(items) - 2:
+        raise CompileError(datum.location, 'a dotted list requires preceding items and one tail datum')
+    return items[:dots[0]], items[-1]
 
 
 def decode_string(token, location):
@@ -76,13 +88,14 @@ def read(source, filename='<input>'):
             column += match.end() - offset
             offset = match.end()
             continue
-        if char in "()'":
-            tokens.append((char, location))
-            offset += 1
-            column += 1
+        if char in "()'`,":
+            marker = ',@' if source.startswith(',@', offset) else char
+            tokens.append((marker, location))
+            offset += len(marker)
+            column += len(marker)
             continue
         start = offset
-        while offset < len(source) and not source[offset].isspace() and source[offset] not in "();'\"":
+        while offset < len(source) and not source[offset].isspace() and source[offset] not in DELIMITERS:
             offset += 1
             column += 1
         tokens.append((source[start:offset], location))
@@ -107,10 +120,11 @@ def read(source, filename='<input>'):
             return Node(tuple(items), location)
         if token == ')':
             raise CompileError(location, 'unexpected closing parenthesis')
-        if token == "'":
+        if token in ABBREVIATIONS:
+            name = ABBREVIATIONS[token]
             if cursor == len(tokens):
-                raise CompileError(location, 'expected a datum after quote')
-            return Node((Node('quote', location), datum(depth + 1)), location)
+                raise CompileError(location, f'expected a datum after {name}')
+            return Node((Node(name, location), datum(depth + 1)), location)
         if token in ('#t', '#f'):
             return Node(token == '#t', location)
         if token in ('.', '...'):

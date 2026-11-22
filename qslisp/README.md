@@ -89,6 +89,16 @@ header; executing the result also needs the built interpreter CLI.
   a proper list. `null?` checks for the empty list and `list?` checks for a
   proper list. Quotation supports symbols, lists, nested data, and dotted
   tails. Pairs and the empty list are true in conditionals.
+- Quasiquote builds data from a template. Backtick introduces the template,
+  `,` evaluates an expression for one value, and `,@` splices a proper list
+  into the enclosing list. Templates can nest and have dotted tails. The
+  long forms are `quasiquote`, `unquote`, and `unquote-splicing`.
+- `(append list ... tail)` copies each proper list and shares the final
+  argument, which can be an improper tail. With zero arguments it returns
+  `()`. The [list library](list.scm) adds `length`, `member`, `assoc`, and
+  single-list `for-each`. `member` returns the matching tail and `assoc`
+  returns the matching entry. Both use `equal?` and return `#f` on a miss.
+  `for-each` visits left to right and returns `#f`.
 - `eq?` compares identity and scalar values. `equal?` also compares string
   contents and walks pairs, records, and boxed vectors with an explicit work stack. It uses
   three extra global words per configured pair cell when the program needs
@@ -176,8 +186,8 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 7,678 instructions against the 100,000-instruction watchdog. The
-program uses 9,148 of 32,768 global slots and its largest individual frame uses
+is bounded by 7,641 instructions against the 100,000-instruction watchdog. The
+program uses 9,119 of 32,768 global slots and its largest individual frame uses
 135 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
@@ -222,8 +232,10 @@ point to entities that remain alive. Closures and arbitrary heap objects are
 transient.
 
 The Annex sentry uses a saved Lisp list to keep the order of its authored
-waypoints. The stock-engine test saves the route, lets the sentry rotate to
-the next waypoint, then reloads the old order and checks that patrol continues.
+waypoints. When the sentry reaches a waypoint it uses `append` and a
+quasiquoted list to move that waypoint to the end. The stock-engine test
+saves the route, lets the sentry rotate to the next waypoint, then reloads
+the old order and checks that patrol continues.
 
 ### Two-player co-op
 
