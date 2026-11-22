@@ -163,7 +163,7 @@ class CompilerTests(CompilerCase):
             ('(define (test) (if #t 1))', 'two branches'),
             ('(define (test) (+ #t 1))', 'require numbers'),
             ('(define (test) (lambda (x) x))', 'lambda is not supported'),
-            ("(define (test) '(1 2))", 'quote is not supported'),
+            ("(define (test) '(1 . 2 3))", 'a dotted list requires'),
             ('(define (test) (let ((f 1)) (f 2)))', 'calling local values'),
             ('(define (test) (begin))', 'begin requires'),
             ('(define (test) (< 1 2 3))', 'exactly two arguments'),
@@ -288,6 +288,30 @@ class CompilerTests(CompilerCase):
           (if (and (string=? (car (cons (identity label) #f)) "signal")
                    (not (string=? "signal" "other")))
               49 0))
+        ''', 49)
+
+    def test_quoted_data_proper_lists_and_value_equality(self):
+        self.value('''
+        (define (test)
+          (let ((left (list 'relay "ready" #f))
+                (right '(relay "ready" #f))
+                (dotted '(relay . annex)))
+            (if (and (list? left) (list? right) (not (list? dotted))
+                     (symbol? (car left)) (string? (car (cdr left)))
+                     (eq? 'relay (car dotted)) (eq? 'annex (cdr dotted))
+                     (not (eq? left right)) (equal? left right)
+                     (eq? 0 -0.0) (not (eq? #f 0))
+                     (null? ()) (eq? '() (list)) (not (not '())))
+                49 0)))
+        ''', 49, heap_pairs=8)
+
+    def test_structural_equality_does_not_recurse_on_the_vm_stack(self):
+        self.value('''
+        (define (nest n value)
+          (if (= n 0) value (nest (- n 1) (list value))))
+        (define (test)
+          (let* ((a (nest 70 'left)) (b (nest 70 'left)) (c (nest 70 'right)))
+            (if (and (equal? a b) (not (equal? b c))) 49 0)))
         ''', 49)
 
     def test_imports_are_relative_and_shared_dependencies_load_once(self):

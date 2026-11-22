@@ -62,8 +62,14 @@ header; executing the result also needs the built interpreter CLI.
   file once and diagnoses cycles.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
-  numbers, booleans, entity references, and other pairs. A pair is always true,
-  including handle zero.
+  any supported value. `()` and `(list)` are empty, and `(list x ...)` builds
+  a proper list. `null?` checks for the empty list and `list?` checks for a
+  proper list. Quotation supports symbols, lists, nested data, and dotted
+  tails. Pairs and the empty list are true in conditionals.
+- `eq?` compares identity and scalar values. `equal?` also compares string
+  contents and walks both sides of pairs with an explicit work stack. It uses
+  three extra global words per configured pair cell when the program needs
+  structural equality on pairs. `symbol?` and `string?` check value kinds.
 - `(quake:dprint "text\n")` calls stock builtin #25. It prints when `developer`
   is enabled in the game engine and accepts up to 255 UTF-8 bytes.
 - `(quake:precache-model "progs/player.mdl")` calls stock builtin #20 during
@@ -81,8 +87,8 @@ a nonnumeric value, with a source location. Runtime diagnostics are bounded to
 fit the original engine's 256-byte error-message buffer.
 
 This is a scoped Scheme-style language, not a conforming Scheme implementation.
-First-class procedures, `lambda`, closures, empty-list/list literal syntax,
-quotation, mutation, and macros are not implemented. Non-tail recursion
+First-class procedures, `lambda`, closures, mutation, and macros are not
+implemented. Non-tail recursion
 uses the stock call/local stacks; all execution remains subject to the original
 instruction watchdog. Syntax keywords,
 primitive function names, `__qslisp*` global names, and stock ABI global/field names
@@ -361,9 +367,10 @@ Inside compiled Scheme code, each value uses three VM words:
 ```
 
 The tag is float32 `0` for a number, `1` for a boolean, `2` for a pair, or `3`
-for an entity, or `4` for a string. Numbers and booleans use float32 payloads,
-pairs use opaque cell indices, entities use the raw edict reference, and strings
-use the stock engine's string offset. These values
+for an entity, `4` for a string, `5` for the empty list, or `6` for a symbol.
+Numbers and booleans use float32 payloads, pairs use opaque cell indices,
+entities use the raw edict reference, and strings and interned symbols use
+stock string offsets. These values
 fit the VM's three-word parameter and return areas. Entity references use
 engine-managed storage and can be passed through Scheme functions and pairs.
 

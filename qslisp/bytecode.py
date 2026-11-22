@@ -17,6 +17,8 @@ OP_STORE, OP_STORE_V, OP_RETURN, OP_NOT = 31, 32, 43, 44
 OP_NOT_ENT = 47
 OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND = 49, 50, 51, 61, 62
 OP_BITAND, OP_BITOR = 64, 65
+TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4,
+        'null': 5, 'symbol': 6}
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,12 @@ class Program:
     def literal_string(self, text):
         return self.define(f'__qslisp_string_{len(self.globaldefs)}', 1, [self.string(text)])
 
+    def tagged_literal(self, name, payload, tag):
+        if name not in self.names:
+            raw_tag = struct.unpack('<I', struct.pack('<f', TAGS[tag]))[0]
+            return self.define(name, 3, [payload, raw_tag, 0])
+        return self.names[name]
+
     def define_field(self, name, kind, location):
         if self.entityfields == 32768:
             raise CompileError(location, 'stock entity field storage limit exceeded')
@@ -204,3 +212,29 @@ class Frame:
         old = self.program.functions[self.index]
         sizes = list(self.parameter_sizes) + [0] * (8 - self.arity)
         self.program.functions[self.index] = (first, start, self.words, 0, old[4], old[5], self.arity, *sizes)
+
+
+def emit_shallow_equality(frame, left, right, result, *, compare_strings):
+    program = frame.program
+    tag, right_tag = advance(left, 1), advance(right, 1)
+    check = frame.allocate(1)
+    frame.emit(OP_STORE, program.constant(0), result)
+    frame.emit(OP_EQ, tag, right_tag, check)
+    different = frame.emit(OP_IFNOT, check)
+
+    frame.emit(OP_LE, tag, program.constant(TAGS['boolean']), check)
+    numeric = frame.emit(OP_IF, check)
+    if compare_strings:
+        frame.emit(OP_EQ, tag, program.constant(TAGS['string']), check)
+        string = frame.emit(OP_IF, check)
+    frame.emit(OP_EQ_ENT, left, right, result)  # Identity of raw references or handles.
+    raw_done = frame.emit(OP_GOTO)
+    frame.patch(numeric, 2, len(frame.code))
+    frame.emit(OP_EQ, left, right, result)
+    if compare_strings:
+        numeric_done = frame.emit(OP_GOTO)
+        frame.patch(string, 2, len(frame.code))
+        frame.emit(OP_EQ_STR, left, right, result)
+        frame.patch(numeric_done, 1, len(frame.code))
+    frame.patch(raw_done, 1, len(frame.code))
+    frame.patch(different, 2, len(frame.code))

@@ -2,12 +2,13 @@
 from dataclasses import dataclass
 from contextlib import contextmanager
 
-from .bytecode import (Program, Frame, Local, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
+from .bytecode import (Program, Frame, Local, TAGS, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
                        OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
                        OP_RETURN, OP_NOT, OP_NOT_ENT, OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND,
                        OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V,
                        OP_STOREP_S, OP_EQ_ENT, OP_EQ_STR, OP_BITAND, OP_BITOR,
-                       OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC, OP_STOREP_ENT, OP_STOREP_FNC)
+                       OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC, OP_STOREP_ENT, OP_STOREP_FNC,
+                       emit_shallow_equality)
 from .reader import CompileError, Location, StringLiteral
 from .heap import PairHeap
 from .modules import load_forms
@@ -45,15 +46,23 @@ ENTITY_RESULTS = {'quake:find': 1, 'quake:traceline': 'trace_ent'}
 NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
-    'not', 'cons', 'car', 'cdr', 'pair?', 'quake:world?', 'quake:entity=?',
+    'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?',
+    'quake:world?', 'quake:entity=?',
     'quake:field', 'quake:set-field!', 'quake:vector', 'string=?',
     'quake:set-callback!', 'quake:call-callback',
 }
-TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4}
+VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string'}
 FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector', 4: 'entity', 6: 'function'}
 CUSTOM_FIELDS = {'number': 2, 'entity': 4, 'string': 1}
 FIELD_READS = {1: ('string', OP_LOAD_S), 2: ('number', OP_LOAD_F), 4: ('entity', OP_LOAD_ENT)}
 FIELD_WRITES = {1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V, 4: OP_STOREP_ENT}
+
+
+def contains_form(node, name):
+    form = node.value
+    if not isinstance(form, tuple) or not form or form[0].value == 'quote':
+        return False
+    return form[0].value == name or any(contains_form(item, name) for item in form)
 
 
 @dataclass(frozen=True)
@@ -109,8 +118,10 @@ class Compiler:
                         for i in range(8)]
         self.dispatch = self.program.function('__qslisp_dispatch', filename, 1)
         self.dispatch_reference = self.program.define('__qslisp_dispatch', 6, [self.dispatch])
-        uses_heap = any(self.needs_heap(node) for f in self.functions.values() for node in f.body)
-        self.heap = PairHeap(self.program, heap_pairs, root_slots) if uses_heap else None
+        bodies = [node for function in self.functions.values() for node in function.body]
+        uses_heap = any(self.needs_heap(node) for node in bodies)
+        deep_equal = uses_heap and any(contains_form(node, 'equal?') for node in bodies)
+        self.heap = PairHeap(self.program, heap_pairs, root_slots, deep_equal=deep_equal) if uses_heap else None
         self.pending = []
 
     @staticmethod
@@ -122,6 +133,10 @@ class Compiler:
         if isinstance(name, str):
             if name in ('cons', 'car', 'cdr'):
                 return True
+            if name == 'list':
+                return len(form) > 1
+            if name == 'quote':
+                return len(form) == 2 and isinstance(form[1].value, tuple) and bool(form[1].value)
             if name == 'let' and len(form) >= 3 and isinstance(form[1].value, tuple):
                 initializers = [binding.value[1] for binding in form[1].value
                                 if isinstance(binding.value, tuple) and len(binding.value) == 2]
@@ -305,7 +320,7 @@ class Compiler:
         return function, values
 
     def tail_expression(self, frame, node, environment, function):
-        if isinstance(node.value, tuple):
+        if isinstance(node.value, tuple) and node.value:
             name, args = self.application(node, environment)
             if name in DERIVED_FORMS:
                 self.tail_expression(frame, self.derived_forms.expand(name, args, node.location), environment, function)
@@ -353,7 +368,7 @@ class Compiler:
         return value
 
     def false_test(self, frame, value):
-        if value.kind in ('number', 'pair', 'entity', 'string'):
+        if value.kind not in ('boolean', 'unknown'):
             return self.zero  # Only booleans can be false, including for pair index zero.
         result = frame.allocate(1)
         frame.emit(OP_NOT, value.slot, 0, result)
@@ -399,6 +414,59 @@ class Compiler:
     def publish(self, frame, args):
         for i, destination in enumerate(self.mailbox):
             frame.emit(OP_STORE_V, args[i].slot if i < len(args) else self.zero, destination)
+
+    def empty_list(self):
+        return Value(self.program.tagged_literal('__qslisp_null', 0, 'null'), 'null')
+
+    def make_pair(self, frame, head, tail, location, environment):
+        message = self.program.message(f'{location}: pair heap exhausted ({self.heap.capacity} cells)\n')
+        base = self.heap.pin(frame, self.roots(environment, (head, tail)))
+        result = self.heap.call(frame, 'cons', [head.slot, tail.slot, message])
+        self.heap.unpin(frame, base)
+        return Value(result, 'pair')
+
+    def quoted(self, frame, datum, environment):
+        value = datum.value
+        if isinstance(value, tuple):
+            dots = [i for i, item in enumerate(value) if item.value == '.']
+            if dots:
+                if len(dots) != 1 or dots[0] == 0 or dots[0] != len(value) - 2:
+                    raise CompileError(datum.location, 'a dotted list requires preceding items and one tail datum')
+                head, tail_datum = value[:dots[0]], value[-1]
+                tail = self.quoted(frame, tail_datum, environment)
+            else:
+                head, tail = value, self.empty_list()
+            for item in reversed(head):
+                with self.keep((tail,)):
+                    first = self.quoted(frame, item, environment)
+                tail = self.make_pair(frame, first, tail, item.location, environment)
+            return tail
+        if isinstance(value, str):
+            if value == '.':
+                raise CompileError(datum.location, 'unexpected dotted-list marker')
+            name_id = self.program.string(value)
+            slot = self.program.tagged_literal(f'__qslisp_symbol_{name_id}', name_id, 'symbol')
+            return Value(slot, 'symbol')
+        return self.expression_body(frame, datum, environment)
+
+    def proper_list(self, frame, value, location):
+        result = self.tagged(frame, 'boolean')
+        current = value.slot
+        if self.heap:
+            current = frame.allocate()
+            frame.emit(OP_STORE_V, value.slot, current)
+            loop = len(frame.code)
+            pair = frame.allocate(1)
+            frame.emit(OP_EQ, advance(current, 1), self.program.constant(TAGS['pair']), pair)
+            done = frame.emit(OP_IFNOT, pair)
+            message = self.program.message(f'{location}: invalid list tail\n')
+            tail = self.heap.call(frame, 'cdr', [current, message])
+            frame.emit(OP_STORE_V, tail, current)
+            again = frame.emit(OP_GOTO)
+            frame.patch(again, 1, loop)
+            frame.patch(done, 2, len(frame.code))
+        frame.emit(OP_EQ, advance(current, 1), self.program.constant(TAGS['null']), result.slot)
+        return result
 
     def engine_string(self, name, literal, kind):
         if not isinstance(literal.value, StringLiteral):
@@ -581,6 +649,8 @@ class Compiler:
 
     def expression_body(self, frame, node, environment):
         form = node.value
+        if form == ():
+            return self.empty_list()
         if isinstance(form, bool):
             return Value(self.program.constant(float(form), True), 'boolean')
         if isinstance(form, float):
@@ -599,6 +669,36 @@ class Compiler:
         name, args = self.application(node, environment)
         if name in DERIVED_FORMS:
             return self.expression(frame, self.derived_forms.expand(name, args, node.location), environment)
+        if name == 'quote':
+            if len(args) != 1:
+                raise CompileError(node.location, 'quote requires one datum')
+            return self.quoted(frame, args[0], environment)
+        if name == 'list':
+            items = self.values(frame, args, environment)
+            result = self.empty_list()
+            with self.keep(items):
+                for item in reversed(items):
+                    result = self.make_pair(frame, item, result, node.location, environment)
+            return result
+        if name == 'list?' or name in VALUE_PREDICATES:
+            if len(args) != 1:
+                raise CompileError(node.location, f'{name} requires 1 argument')
+            value = self.expression(frame, args[0], environment)
+            if name == 'list?':
+                return self.proper_list(frame, value, node.location)
+            result = self.tagged(frame, 'boolean')
+            tag = self.program.constant(TAGS[VALUE_PREDICATES[name]])
+            frame.emit(OP_EQ, advance(value.slot, 1), tag, result.slot)
+            return result
+        if name in ('eq?', 'equal?'):
+            if len(args) != 2:
+                raise CompileError(node.location, f'{name} requires two arguments')
+            left, right = self.values(frame, args, environment)
+            if name == 'equal?' and self.heap:
+                return Value(self.heap.call(frame, 'equal', [left.slot, right.slot]), 'boolean')
+            result = self.tagged(frame, 'boolean')
+            emit_shallow_equality(frame, left.slot, right.slot, result.slot, compare_strings=name == 'equal?')
+            return result
         if name in ENGINE_CALLS:
             return self.engine_call(frame, node, name, args, environment)
         if name in ENGINE_GLOBALS:
@@ -665,26 +765,18 @@ class Compiler:
             result = self.tagged(frame, 'boolean')
             frame.emit(OP_STORE, self.false_test(frame, value), result.slot)
             return result
-        if name in ('cons', 'car', 'cdr', 'pair?'):
+        if name in ('cons', 'car', 'cdr'):
             arity = 2 if name == 'cons' else 1
             if len(args) != arity:
                 raise CompileError(node.location, f'{name} requires {arity} argument(s)')
             values = self.values(frame, args, environment)
-            if name == 'pair?':
-                result = self.tagged(frame, 'boolean')
-                frame.emit(OP_EQ, advance(values[0].slot, 1), self.program.constant(TAGS['pair']), result.slot)
-                return result
             if name in ('car', 'cdr'):
                 if values[0].kind not in ('unknown', 'pair'):
                     raise CompileError(node.location, f'{name} requires a pair, got a {values[0].kind}')
                 message = self.program.message(f'{node.location}: {name} requires an allocated pair\n')
                 slot = self.heap.call(frame, name, [values[0].slot, message])
                 return Value(slot)
-            message = self.program.message(f'{node.location}: pair heap exhausted ({self.heap.capacity} cells)\n')
-            base = self.heap.pin(frame, self.roots(environment, values))
-            slot = self.heap.call(frame, 'cons', [values[0].slot, values[1].slot, message])
-            self.heap.unpin(frame, base)
-            return Value(slot, 'pair')
+            return self.make_pair(frame, *values, node.location, environment)
         if name in ARITHMETIC or name in COMPARISONS or name in BITWISE:
             if name in (COMPARISONS.keys() | BITWISE.keys()) and len(args) != 2:
                 raise CompileError(node.location, f'{name} requires exactly two arguments in this release')

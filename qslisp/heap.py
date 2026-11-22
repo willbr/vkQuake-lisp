@@ -8,7 +8,7 @@ import struct
 
 from .bytecode import (Frame, Local, advance, OP_ADD, OP_SUB, OP_EQ, OP_LT, OP_GE,
                        OP_GT, OP_STORE, OP_STORE_V, OP_RETURN, OP_IF, OP_IFNOT,
-                       OP_CALL0, OP_GOTO)
+                       OP_CALL0, OP_GOTO, emit_shallow_equality)
 from .reader import CompileError
 
 
@@ -17,9 +17,10 @@ def bits(number):
 
 
 class PairHeap:
-    def __init__(self, program, capacity, root_capacity):
+    def __init__(self, program, capacity, root_capacity, *, deep_equal=False):
         self.program, self.capacity, self.root_capacity = program, capacity, root_capacity
-        if 9 * capacity + 3 * root_capacity + len(program.globals) > 32768:
+        cell_words = 12 if deep_equal else 9
+        if cell_words * capacity + 3 * root_capacity + len(program.globals) > 32768:
             raise CompileError(program.location, 'pair/root pools exceed stock global storage (32,768 slots)')
         self.zero, self.one, self.two = (program.constant(i) for i in range(3))
         self.minus_one = program.constant(-1)
@@ -32,19 +33,24 @@ class PairHeap:
             self.meta.append(program.define(f'__qslisp_heap_meta_{i}', 3, [0, bits(next_free), 0]))
         self.roots = [program.define(f'__qslisp_root_{i}', 3, [0, 0, 0])
                       for i in range(root_capacity)]
+        self.equal_stack = ([program.define(f'__qslisp_equal_stack_{i}', 3, [0, 0, 0])
+                             for i in range(capacity)] if deep_equal else [])
         self.free_head = program.define('__qslisp_heap_free_head', 2, [0])
         self.work_head = program.define('__qslisp_heap_work_head', 2, [bits(-1)])
         self.root_sp = program.define('__qslisp_root_sp', 2, [0])
         self.collections = program.define('__qslisp_heap_collections', 2, [0])
         self.functions = {}
-        for name, widths in (
+        functions = (
             ('car_get', (1,)), ('car_set', (1, 3)),
             ('cdr_get', (1,)), ('cdr_set', (1, 3)),
             ('meta_get', (1,)), ('meta_set', (1, 3)),
             ('root_get', (1,)), ('root_set', (1, 3)),
             ('root_push', (3,)), ('mark', (3,)), ('collect', ()),
             ('cons', (3, 3, 1)), ('car', (3, 1)), ('cdr', (3, 1)),
-        ):
+        )
+        if deep_equal:
+            functions += (('equal_get', (1,)), ('equal_set', (1, 3)), ('equal', (3, 3)))
+        for name, widths in functions:
             label = '__qslisp_rt_' + name
             index = program.function(label, '<pair-runtime>', len(widths))
             reference = program.define(label, 6, [index])
@@ -114,7 +120,56 @@ class PairHeap:
         self.compile_cons()
         self.compile_read('car')
         self.compile_read('cdr')
+        if self.equal_stack:
+            self.compile_accessor('equal_get', self.equal_stack, False)
+            self.compile_accessor('equal_set', self.equal_stack, True)
+            self.compile_equal()
         self.generated_statements = len(self.program.statements) - before
+
+    def compile_equal(self):
+        frame = self.frame('equal')
+        left, right = Local(0), Local(3)
+        depth = frame.allocate(1)
+        pending = frame.allocate()
+        same = frame.allocate(1)
+        frame.emit(OP_STORE, self.zero, depth)
+
+        loop = len(frame.code)
+        emit_shallow_equality(frame, left, right, same, compare_strings=True)
+        matched = frame.emit(OP_IF, same)
+        left_pair = self.compare(frame, OP_EQ, advance(left, 1), self.two)
+        mismatch_left = frame.emit(OP_IFNOT, left_pair)
+        right_pair = self.compare(frame, OP_EQ, advance(right, 1), self.two)
+        mismatch_right = frame.emit(OP_IFNOT, right_pair)
+        # The pairs are immutable. Store both handles to revisit their cdrs
+        # after the car comparison. Pending depth cannot exceed the heap size.
+        frame.emit(OP_STORE, left, pending)
+        frame.emit(OP_STORE, right, advance(pending, 1))
+        frame.emit(OP_STORE, self.zero, advance(pending, 2))
+        self.call(frame, 'equal_set', [depth, pending])
+        frame.emit(OP_ADD, depth, self.one, depth)
+        left_car = self.call(frame, 'car_get', [left])
+        right_car = self.call(frame, 'car_get', [right])
+        frame.emit(OP_STORE_V, left_car, left)
+        frame.emit(OP_STORE_V, right_car, right)
+        self.go(frame, loop)
+
+        frame.patch(matched, 2, len(frame.code))
+        complete = self.compare(frame, OP_EQ, depth, self.zero)
+        matched_all = frame.emit(OP_IF, complete)
+        frame.emit(OP_SUB, depth, self.one, depth)
+        handles = self.call(frame, 'equal_get', [depth])
+        left_cdr = self.call(frame, 'cdr_get', [handles])
+        right_cdr = self.call(frame, 'cdr_get', [advance(handles, 1)])
+        frame.emit(OP_STORE_V, left_cdr, left)
+        frame.emit(OP_STORE_V, right_cdr, right)
+        self.go(frame, loop)
+        frame.patch(matched_all, 2, len(frame.code))
+        frame.emit(OP_RETURN, self.program.constant(1, boolean=True))
+        for branch in (mismatch_left, mismatch_right):
+            frame.patch(branch, 2, len(frame.code))
+        frame.emit(OP_RETURN, self.program.constant(0, boolean=True))
+        frame.finish()
 
     def compile_accessor(self, name, entries, write):
         frame = self.frame(name)
