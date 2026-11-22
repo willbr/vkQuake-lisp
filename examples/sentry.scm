@@ -5,6 +5,10 @@
 (define-field attack-time)
 (define-field respawn-ready)
 
+(define-record damage-event (victim entity) (source entity) (amount number))
+(define-record patrol-leg (waypoint entity) (following entity))
+(define-record attack-state (phase number) (deadline number))
+
 (define move-step 4)
 (define flag-monster 32)
 (define sentry-patrol 0)
@@ -28,6 +32,14 @@
   (= (quake:bit-and (quake:field actor flags) flag-client) flag-client))
 
 (define (damage target inflictor amount)
+  (apply-damage (make-damage-event target inflictor amount)))
+
+(define (apply-damage event)
+  (match event
+    ((damage-event target inflictor amount)
+     (damage-entity target inflictor amount))))
+
+(define (damage-entity target inflictor amount)
   (when (and (> (quake:field target takedamage) 0) (> (quake:field target health) 0))
     (let ((health (- (quake:field target health) amount)))
       (if (> health 0)
@@ -87,22 +99,31 @@
                                        (+ (quake:field player origin_z) (quake:field player view_ofs_z)))
                           0 actor))))
 
+(define (finish-patrol-leg actor leg)
+  (match leg
+    ((patrol-leg _ following)
+     (quake:set-field! actor patrol-point following)
+     (quake:set-field! actor patrol-count (+ (quake:field actor patrol-count) 1)))))
+
 (define (patrol actor)
   (when (quake:world? (quake:field actor patrol-point))
     (quake:set-field! actor patrol-point (find-linked actor)))
   (let ((point (quake:field actor patrol-point)))
     (when (not (quake:world? point))
       (if (< (sentry-distance-squared actor point) 64)
-          (begin
-            (quake:set-field! actor patrol-point (find-linked point))
-            (quake:set-field! actor patrol-count (+ (quake:field actor patrol-count) 1)))
+          (finish-patrol-leg actor (make-patrol-leg point (find-linked point)))
           (sentry-step actor point 7)))))
 
+(define (enter-attack-state actor state)
+  (match state
+    ((attack-state phase deadline)
+     (quake:set-field! actor sentry-state phase)
+     (quake:set-field! actor attack-time deadline)
+     (quake:set-field! actor effects 8)
+     (quake:set-field! actor frame 1))))
+
 (define (spot-player actor player)
-  (quake:set-field! actor sentry-state sentry-alert)
-  (quake:set-field! actor attack-time (+ (quake:time) 0.65))
-  (quake:set-field! actor effects 8)
-  (quake:set-field! actor frame 1)
+  (enter-attack-state actor (make-attack-state sentry-alert (+ (quake:time) 0.65)))
   (quake:centerprint player "Sentry alert. Take cover!")
   (quake:dprint "qslisp: sentry spotted player\n"))
 
@@ -159,10 +180,7 @@
   (states
     (sentry-patrol
       (when visible
-        (quake:set-field! actor sentry-state sentry-alert)
-        (quake:set-field! actor attack-time (+ (quake:time) 0.75))
-        (quake:set-field! actor effects 8)
-        (quake:set-field! actor frame 1)
+        (enter-attack-state actor (make-attack-state sentry-alert (+ (quake:time) 0.75)))
         (quake:dprint "qslisp: guard alerted\n")))
     (sentry-alert
       (if visible

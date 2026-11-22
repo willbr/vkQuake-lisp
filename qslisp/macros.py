@@ -234,6 +234,12 @@ class Macros:
         visit = lambda child: self.expression(child, depth)
         if head in ('define', 'lambda') and len(node.value) >= 2:
             return Node((*node.value[:2], *(visit(child) for child in node.value[2:])), node.location)
+        if head == 'define-record':
+            return node
+        if head == 'match' and len(node.value) >= 2:
+            clauses = (Node((child.value[0], *(visit(part) for part in child.value[1:])), child.location)
+                       if isinstance(child.value, tuple) and child.value else child for child in node.value[2:])
+            return Node((node.value[0], visit(node.value[1]), *clauses), node.location)
         if head in ('let', 'let*', 'letrec') and len(node.value) >= 3:
             index = 2 if head == 'let' and isinstance(node.value[1].value, str) else 1
             entries = node.value[index]

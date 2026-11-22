@@ -13,10 +13,11 @@ from .reader import CompileError, Location, StringLiteral
 from .heap import PairHeap
 from .macros import Macros
 from .modules import load_forms
+from .records import Match, record_definitions
 from .syntax import DERIVED_FORMS, DerivedForms
 
 SYNTAX = DERIVED_FORMS | {'define', 'define-field', 'import', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
-                          'define-syntax', 'syntax-rules', 'quasiquote'}
+                          'define-syntax', 'syntax-rules', 'quasiquote', 'define-record', 'match'}
 ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
 COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
 BITWISE = {'quake:bit-and': OP_BITAND, 'quake:bit-or': OP_BITOR}
@@ -48,18 +49,19 @@ NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
     'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?', 'procedure?',
-    'quake:world?', 'quake:entity=?',
+    'quake:world?', 'quake:entity?', 'quake:entity=?',
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
     'quake:set-callback!', 'quake:call-callback',
 }
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
-                    'quake:vector?': 'vector', 'procedure?': 'procedure'}
+                    'quake:vector?': 'vector', 'quake:entity?': 'entity', 'procedure?': 'procedure'}
 VECTOR_COMPONENTS = {'quake:vector-x': 0, 'quake:vector-y': 1, 'quake:vector-z': 2}
 FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector', 4: 'entity', 6: 'function'}
 CUSTOM_FIELDS = {'number': 2, 'entity': 4, 'string': 1}
 FIELD_READS = {1: ('string', OP_LOAD_S), 2: ('number', OP_LOAD_F), 4: ('entity', OP_LOAD_ENT)}
 FIELD_WRITES = {1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V, 4: OP_STOREP_ENT}
+RECORD_TYPES = (TAGS.keys() - {'uninitialized', 'closure'}) | {'any', 'list'}
 
 
 def expression_names(node, *, mutations=False):
@@ -79,6 +81,7 @@ class Value:
     slot: object
     kind: str = 'unknown'
     boxed: bool = False
+    schema: str | None = None
 
 
 @dataclass
@@ -125,6 +128,10 @@ class Compiler:
         self.functions = {}
         self.constants = {}
         self.derived_forms = DerivedForms()
+        forms, self.records = record_definitions(forms, RECORD_TYPES)
+        self.match = Match(self.records, self.derived_forms.fresh)
+        self.constructors = {f'make-{name}': record for name, record in self.records.items()}
+        self.getters = {f'{name}-{field}': kind for name, record in self.records.items() for field, kind in record.fields}
         self.uses_procedures = False
         self.lambdas = []
         self.zero = self.program.constant(0)
@@ -145,7 +152,7 @@ class Compiler:
         self.mutable_names = {name for node in bodies for name in expression_names(node, mutations=True)}
         self.closure_mailbox = (self.program.define('__qslisp_captured_values', 3, [0, 0, 0])
                                 if 'closure' in features else None)
-        kinds = tuple(kind for kind in ('vector', 'closure') if kind in features)
+        kinds = tuple(kind for kind in ('vector', 'closure', 'record') if kind in features)
         self.heap = (PairHeap(self.program, heap_pairs, root_slots, deep_equal='equal' in features, boxed_kinds=kinds)
                      if 'pair' in features or kinds else None)
         self.pending = []
@@ -155,6 +162,13 @@ class Compiler:
             return {'vector'} if native else set()
         form = node.value
         name = form[0].value if isinstance(form[0].value, str) else None
+        if name == 'match':
+            return self.heap_features(self.match.expand(form[1:], node.location), native=native)
+        if name == '#match-branch':
+            children = (*(entry.value[1] for entry in form[1].value), *form[2:])
+            return set().union(*(self.heap_features(child) for child in children)) | ({'vector'} if native else set())
+        if name and name.startswith('#match-call:'):
+            name = name.removeprefix('#match-call:')
         if name == 'quote':
             if len(form) == 2 and isinstance(form[1].value, tuple) and form[1].value:
                 return {'pair'}
@@ -183,6 +197,8 @@ class Compiler:
             result.add('pair')
         if name in ('lambda', 'letrec') or (name == 'let' and len(form) > 1 and isinstance(form[1].value, str)):
             result.add('closure')
+        if name in ('#record-create', '#record-read', '#record-test'):
+            result.add('record')
         if name == 'equal?':
             result.add('equal')
         return result
@@ -369,6 +385,8 @@ class Compiler:
         if not form:
             raise CompileError(node.location, 'empty application; list values are not supported yet')
         name = form[0].value
+        if isinstance(name, str) and name.startswith('#match-call:'):
+            return name.removeprefix('#match-call:'), form[1:]
         direct = isinstance(name, str) and name not in environment
         return name if direct else None, form[1:]
 
@@ -434,6 +452,15 @@ class Compiler:
         if len(args) != len(function.parameters):
             raise CompileError(node.location, f'{name} expects {len(function.parameters)} arguments, got {len(args)}')
         values = self.values(frame, args, environment)
+        if name in self.constructors:
+            record = self.constructors[name]
+            for (field, kind), argument, value in zip(record.fields, args, values):
+                acceptable = {'list': ('pair', 'null'), 'procedure': ('procedure', 'closure')}.get(kind, (kind,))
+                if kind in self.records:
+                    acceptable = ('record',)
+                wrong_schema = kind in self.records and value.schema not in (None, kind)
+                if kind != 'any' and value.kind != 'unknown' and (value.kind not in acceptable or wrong_schema):
+                    raise CompileError(argument.location, f'{record.name}.{field} expects {kind}, got {value.schema or value.kind}')
         return function, values
 
     def tail_expression(self, frame, node, environment, function):
@@ -444,6 +471,12 @@ class Compiler:
                 return
             if name in DERIVED_FORMS:
                 self.tail_expression(frame, self.derived_forms.expand(name, args, node.location), environment, function)
+                return
+            if name == 'match':
+                self.tail_expression(frame, self.match.expand(args, node.location), environment, function)
+                return
+            if name == '#match-branch':
+                self.match_branch(frame, args, environment, function=function)
                 return
             if name == 'if':
                 if len(args) != 3:
@@ -642,6 +675,13 @@ class Compiler:
     def empty_list(self):
         return Value(self.program.tagged_literal('__qslisp_null', 0, 'null'), 'null')
 
+    def make_list(self, frame, items, location, environment):
+        result = self.empty_list()
+        with self.keep(items):
+            for item in reversed(items):
+                result = self.make_pair(frame, item, result, location, environment)
+        return result
+
     def make_pair(self, frame, head, tail, location, environment):
         message = self.program.message(f'{location}: pair heap exhausted ({self.heap.capacity} cells)\n')
         base = self.heap.pin(frame, self.roots(environment, (head, tail)))
@@ -668,9 +708,7 @@ class Compiler:
         if isinstance(value, str):
             if value == '.':
                 raise CompileError(datum.location, 'unexpected dotted-list marker')
-            name_id = self.program.string(value)
-            slot = self.program.tagged_literal(f'__qslisp_symbol_{name_id}', name_id, 'symbol')
-            return Value(slot, 'symbol')
+            return self.symbol_literal(value)
         return self.expression_body(frame, datum, environment)
 
     def proper_list(self, frame, value, location):
@@ -691,6 +729,96 @@ class Compiler:
             frame.patch(done, 2, len(frame.code))
         frame.emit(OP_EQ, advance(current, 1), self.program.constant(TAGS['null']), result.slot)
         return result
+
+    def symbol_literal(self, name):
+        name_id = self.program.string(name)
+        slot = self.program.tagged_literal(f'__qslisp_symbol_{name_id}', name_id, 'symbol')
+        return Value(slot, 'symbol')
+
+    def record_type(self, frame, value, name, location):
+        result = self.tagged(frame, 'boolean')
+        frame.emit(OP_EQ, advance(value.slot, 1), self.program.constant(TAGS['record']), result.slot)
+        fail = frame.emit(OP_IFNOT, result.slot)
+        pair = self.retag(frame, value, 'pair')
+        message = self.program.message(f'{location}: invalid record\n')
+        schema = self.heap.call(frame, 'car', [pair.slot, message])
+        frame.emit(OP_EQ_ENT, schema, self.symbol_literal(name).slot, result.slot)
+        frame.patch(fail, 2, len(frame.code))
+        return result
+
+    def check_field_type(self, frame, value, kind, field, record):
+        if kind == 'any':
+            return
+        if kind == 'list':
+            valid = self.proper_list(frame, value, record.location).slot
+        elif kind in self.records:
+            valid = self.record_type(frame, value, kind, record.location).slot
+        else:
+            valid = frame.allocate(1)
+            frame.emit(OP_EQ, advance(value.slot, 1), self.program.constant(TAGS[kind]), valid)
+            if kind == 'procedure' and self.closure_mailbox is not None:
+                closed = frame.allocate(1)
+                frame.emit(OP_EQ, advance(value.slot, 1), self.program.constant(TAGS['closure']), closed)
+                frame.emit(OP_OR, valid, closed, valid)
+        self.heap.guard(frame, valid, self.program.message(
+            f'{record.location}: {record.name}.{field} expects {kind}\n'))
+
+    def field_value(self, slot, kind):
+        if kind in self.records:
+            return Value(slot, 'record', schema=kind)
+        return Value(slot, kind if kind not in ('any', 'list', 'procedure') else 'unknown')
+
+    def record_operation(self, frame, name, args, environment):
+        record = self.records[args[0].value]
+        if name == '#record-create':
+            items = self.values(frame, args[1:], environment)
+            for (field, kind), value in zip(record.fields, items):
+                self.check_field_type(frame, value, kind, field, record)
+            fields = self.make_list(frame, items, record.location, environment)
+            pair = self.make_pair(frame, self.symbol_literal(record.name), fields, record.location, environment)
+            return self.retag(frame, pair, 'record')
+        value = self.expression(frame, args[1], environment)
+        correct = self.record_type(frame, value, record.name, record.location)
+        if name == '#record-test':
+            return correct
+        message = self.program.message(f'{record.location}: expected a {record.name} record\n')
+        self.heap.guard(frame, correct.slot, message)
+        pair = self.retag(frame, value, 'pair')
+        fields = self.heap.call(frame, 'cdr', [pair.slot, message])
+        index = int(args[2].value)
+        for _ in range(index):
+            fields = self.heap.call(frame, 'cdr', [fields, message])
+        slot = self.heap.call(frame, 'car', [fields, message])
+        return self.field_value(slot, record.fields[index][1])
+
+    def match_branch(self, frame, args, environment, *, function=None):
+        plan, success, failure = args
+        scope = environment.copy()
+        misses = []
+        for check in plan.value:
+            name, expression = check.value
+            value = self.expression(frame, expression, scope)
+            if name.value is False:
+                misses.append(frame.emit(OP_IF, self.false_test(frame, value)))
+            else:
+                scope[name.value] = value
+        if function is not None:
+            self.tail_expression(frame, success, scope, function)
+        else:
+            result = frame.allocate()
+            yes = self.expression(frame, success, scope)
+            frame.emit(OP_STORE_V, yes.slot, result)
+            done = frame.emit(OP_GOTO)
+        for branch in misses:
+            frame.patch(branch, 2, len(frame.code))
+        if function is not None:
+            self.tail_expression(frame, failure, environment, function)
+            return None
+        no = self.expression(frame, failure, environment)
+        frame.emit(OP_STORE_V, no.slot, result)
+        frame.patch(done, 1, len(frame.code))
+        return Value(result, yes.kind if yes.kind == no.kind else 'unknown',
+                     schema=yes.schema if yes.schema == no.schema else None)
 
     def engine_string(self, name, literal, kind):
         if not isinstance(literal.value, StringLiteral):
@@ -925,6 +1053,14 @@ class Compiler:
             return self.call_indirect(frame, node, args, environment)
         if name in DERIVED_FORMS:
             return self.expression(frame, self.derived_forms.expand(name, args, node.location), environment)
+        if name == 'match':
+            return self.expression(frame, self.match.expand(args, node.location), environment)
+        if name == '#match-value':
+            return Value(self.expression(frame, args[0], environment).slot)
+        if name == '#match-branch':
+            return self.match_branch(frame, args, environment)
+        if name in ('#record-create', '#record-test', '#record-read'):
+            return self.record_operation(frame, name, args, environment)
         if name == 'lambda':
             return self.make_lambda(frame, node, args, environment)
         if name == 'set!':
@@ -943,11 +1079,7 @@ class Compiler:
             return self.quoted(frame, args[0], environment)
         if name == 'list':
             items = self.values(frame, args, environment)
-            result = self.empty_list()
-            with self.keep(items):
-                for item in reversed(items):
-                    result = self.make_pair(frame, item, result, node.location, environment)
-            return result
+            return self.make_list(frame, items, node.location, environment)
         if name == 'list?' or name in VALUE_PREDICATES:
             if len(args) != 1:
                 raise CompileError(node.location, f'{name} requires 1 argument')
@@ -1094,7 +1226,12 @@ class Compiler:
         if name not in self.functions:
             raise CompileError(form[0].location, f'undefined function {name}')
         function, values = self.arguments(frame, node, name, args, environment)
-        return self.call(frame, function, values, environment)
+        result = self.call(frame, function, values, environment)
+        if name in self.constructors:
+            return self.field_value(result.slot, self.constructors[name].name)
+        if name in self.getters:
+            return self.field_value(result.slot, self.getters[name])
+        return result
 
 
 def compile_source(source, filename='<input>', *, heap_pairs=256, root_slots=256):

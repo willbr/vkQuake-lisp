@@ -48,6 +48,53 @@ class CompilerCase(unittest.TestCase):
 
 class CompilerTests(CompilerCase):
 
+    def test_records_check_types_and_compare_by_schema_and_value(self):
+        source = """
+        (define-record reading (value number))
+        (define-record other (value number))
+        (define-record packet (readings list) (first reading))
+        (define (test)
+          (let* ((a (make-reading 7))
+                 (b (make-packet (list a) a)))
+            (if (and (packet? b) (reading? (packet-first b))
+                     (not (pair? a)) (not (reading? 7))
+                     (equal? a (make-reading 7)) (not (eq? a (make-reading 7)))
+                     (not (equal? a (make-other 7))))
+                (reading-value (car (packet-readings b)))
+                -1)))
+        """
+        self.value(source, 7, heap_pairs=9)
+        with self.assertRaisesRegex(CompileError, r'reading.value expects number, got boolean'):
+            compile_source('(define-record reading (value number)) (define (test) (make-reading #f))')
+        with self.assertRaisesRegex(CompileError, r'packet.first expects reading, got other'):
+            compile_source(source + '(define (invalid) (make-packet () (make-other 1)))')
+        wrong = self.execute(source + '(define (invalid x) (make-packet x (make-reading 1)))', 'invalid', 5)
+        self.assertNotEqual(wrong.returncode, 0)
+        self.assertIn('packet.readings expects list', wrong.stdout + wrong.stderr)
+
+    def test_match_destructures_once_and_keeps_failed_bindings_local(self):
+        source = """
+        (define-record sample (label symbol) (items list))
+        (define (test)
+          (let ((head 19) (car #f))
+            (+ (match (make-sample 'ready (list 3 4))
+                 ((sample 'ready (list first second)) (+ first second))
+                 (else -1))
+               (match (list 3 'wrong)
+                 ((list head 'right) head)
+                 ((cons _ (cons 'missing ())) -2)
+                 (else head))
+               (match 10 ((cons _ _) -1) (10 1)))))
+        """
+        self.value(source, 27)
+        with self.assertRaisesRegex(CompileError, 'duplicate pattern binding x'):
+            compile_source('(define (test) (match (list 1 2) ((list x x) x)))')
+        with self.assertRaisesRegex(CompileError, 'match else must be the final clause'):
+            compile_source('(define (test) (match 5 (else 0) (_ 2)))')
+        unmatched = self.execute('(define (test) (match 5 (1 0)))')
+        self.assertNotEqual(unmatched.returncode, 0)
+        self.assertIn('no matching pattern', unmatched.stdout + unmatched.stderr)
+
     def test_square_example_and_native_numeric_entry(self):
         source = (ROOT / 'examples/square.scm').read_text()
         self.value(source, 49)

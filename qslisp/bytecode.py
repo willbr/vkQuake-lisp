@@ -18,7 +18,8 @@ OP_NOT_ENT = 47
 OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND, OP_OR = 49, 50, 51, 61, 62, 63
 OP_BITAND, OP_BITOR = 64, 65
 TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4,
-        'null': 5, 'symbol': 6, 'vector': 7, 'procedure': 8, 'closure': 9, 'uninitialized': 10}
+        'null': 5, 'symbol': 6, 'vector': 7, 'procedure': 8, 'closure': 9, 'uninitialized': 10,
+        'record': 11}
 
 
 @dataclass(frozen=True)

@@ -74,6 +74,15 @@ header; executing the result also needs the built interpreter CLI.
   expands before code generation. Rules support a wildcard `_` and nested
   ellipses with one repeating pattern per list. Template-introduced lexical
   bindings are fresh, and expansion can generate top-level definitions.
+- `(define-record name (field type) ...)` declares an immutable record and
+  generates `make-name`, `name?`, and `name-field` accessors. Fields can be
+  numbers, booleans, entities, strings, symbols, pairs, null, lists, vectors,
+  procedures, named records, any record (`record`), or any value (`any`).
+  Constructors check known types at compile time and validate values on entry.
+- `(match value (pattern body ...) ... (else body ...))` evaluates the value
+  once and takes the first matching clause. Patterns can bind identifiers,
+  ignore values with `_`, test literals or quoted data, and destructure
+  `cons`, `list`, or named records. Bindings are local to their clause.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
   any supported value. `()` and `(list)` are empty, and `(list x ...)` builds
@@ -81,7 +90,7 @@ header; executing the result also needs the built interpreter CLI.
   proper list. Quotation supports symbols, lists, nested data, and dotted
   tails. Pairs and the empty list are true in conditionals.
 - `eq?` compares identity and scalar values. `equal?` also compares string
-  contents and walks pairs and boxed vectors with an explicit work stack. It uses
+  contents and walks pairs, records, and boxed vectors with an explicit work stack. It uses
   three extra global words per configured pair cell when the program needs
   structural equality on pairs. `symbol?` and `string?` check value kinds.
 - `(quake:dprint "text\n")` calls stock builtin #25. It prints when `developer`
@@ -199,6 +208,8 @@ over an entity field and schedules a stock `think` callback.
 The gate uses `define-sequence` and `after` for a short flash and lift. `after`
 stores the next named callback and time on the entity. Steps can span frames
 using entity fields for shared state.
+Annex defines typed records for damage events, patrol legs, and attack states.
+Its Lisp procedures destructure these records with `match`.
 
 ### Entity and gameplay forms
 
