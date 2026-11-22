@@ -1,4 +1,30 @@
 # 🌋 vkQuake
+
+This fork is being used to build a Scheme-style Lisp compiler targeting
+**stock Quake (original NetQuake)**. Generated programs must run on the
+unmodified engine using version 6 bytecode and stock builtins. Runtime support
+must be compiled into `progs.dat`; vkQuake extensions are not a dependency.
+See [QuakeC compiler setup and VM references](tools/quakec/README.md) for the
+original gameplay sources, reference compiler, stock interpreter CLI, and target
+limits. The vkQuake engine below remains a convenient development host.
+
+The first [Scheme compiler](qslisp/README.md) is available:
+
+```sh
+python3 -m qslisp examples/square.scm -o build/square.dat
+./tools/quakec/run-stock.sh build/square.dat test
+```
+
+The example returns `49` in the stock interpreter CLI.
+
+Named functions also support constant-stack self and mutual tail calls. See
+[the tail-call example](examples/tail-calls.scm), which sums 1 through 1,000 and
+returns `500500` without growing the VM call stack.
+
+The compiler also supports `cons`, `car`, `cdr`, and `pair?` with a bounded
+mark/sweep heap implemented in stock bytecode. See [the pair example](examples/pairs.scm)
+and the [heap documentation and measurements](qslisp/README.md#pair-heap-and-collection).
+
 [![Windows CI](https://github.com/Novum/vkQuake/actions/workflows/build-windows.yml/badge.svg)](https://github.com/Novum/vkQuake/actions/workflows/build-windows.yml) [![Windows CI](https://github.com/Novum/vkQuake/actions/workflows/build-mingw.yml/badge.svg)](https://github.com/Novum/vkQuake/actions/workflows/build-mingw.yml) [![Windows CI](https://github.com/Novum/vkQuake/actions/workflows/build-msys2-clangarm64.yml/badge.svg)](https://github.com/Novum/vkQuake/actions/workflows/build-msys2-clangarm64.yml) [![Linux CI](https://github.com/Novum/vkQuake/actions/workflows/build-linux.yml/badge.svg)](https://github.com/Novum/vkQuake/actions/workflows/build-linux.yml) [![macOS CI](https://github.com/Novum/vkQuake/actions/workflows/build-mac.yml/badge.svg)](https://github.com/Novum/vkQuake/actions/workflows/build-mac.yml) [![Formatting](https://github.com/Novum/vkQuake/actions/workflows/clang-format-check.yml/badge.svg)](https://github.com/Novum/vkQuake/actions/workflows/clang-format-check.yml)
 
 vkQuake is a port of id Software's [Quake](https://en.wikipedia.org/wiki/Quake_(video_game)) using Vulkan instead of OpenGL for rendering. It is based on the popular [QuakeSpasm](http://quakespasm.sourceforge.net/) and [QuakeSpasm-Spiked](https://triptohell.info/moodles/qss/) ports and runs all mods compatible with QuakeSpasm like [Arcane Dimensions](http://www.moddb.com/mods/arcane-dimensions). 

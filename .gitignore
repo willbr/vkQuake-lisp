@@ -43,3 +43,14 @@ helgrind.log
 
 # Visual Studio per-user settings
 *.user
+
+# Pinned QuakeC reference repositories fetched by tools/quakec/setup.sh
+/third_party/quake-tools/
+/third_party/fteqw/
+/third_party/quake/
+
+# Python bytecode caches
+__pycache__/
+
+# Local Quake installers
+/installers/

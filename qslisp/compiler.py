@@ -1,0 +1,430 @@
+"""Lexical resolution and direct emission for a small, dynamically tagged core."""
+from dataclasses import dataclass
+from contextlib import contextmanager
+
+from .bytecode import (Program, Frame, Local, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
+                       OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
+                       OP_RETURN, OP_NOT, OP_IF, OP_CALL0, OP_GOTO, OP_AND)
+from .reader import CompileError, Location, read
+from .heap import PairHeap
+
+SYNTAX = {'define', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
+          'define-syntax', 'syntax-rules', 'quasiquote'}
+ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
+COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
+PRIMITIVES = set(ARITHMETIC) | set(COMPARISONS) | {'not', 'cons', 'car', 'cdr', 'pair?'}
+
+
+@dataclass(frozen=True)
+class Value:
+    slot: object
+    kind: str = 'unknown'
+
+
+@dataclass
+class Function:
+    name: str
+    parameters: tuple
+    body: tuple
+    location: Location
+    public: int
+    private: int
+    reference: int
+    request: int
+
+
+def symbol(node, purpose):
+    if not isinstance(node.value, str):
+        raise CompileError(node.location, f'expected an identifier for {purpose}')
+    return node.value
+
+
+def binding_name(node):
+    name = symbol(node, 'binding')
+    if name in SYNTAX:
+        raise CompileError(node.location, f'{name} is reserved syntax in this dialect')
+    return name
+
+
+class Compiler:
+    def __init__(self, forms, filename, *, heap_pairs=256, root_slots=256):
+        location = forms[0].location if forms else Location(filename, 1, 1)
+        if any(type(n) is not int or n < 1 for n in (heap_pairs, root_slots)):
+            raise CompileError(location, 'heap-pairs and root-slots must be positive integers')
+        self.program = Program(location)
+        self.functions = {}
+        self.zero = self.program.constant(0)
+        self.one = self.program.constant(1)
+        for form in forms:
+            self.declare(form)
+        if not self.functions:
+            raise CompileError(location, 'expected at least one function definition')
+        # A bytecode trampoline drains tail requests without retaining the
+        # requesting function's frame. The mailbox is published only after all
+        # arguments have been evaluated; nested ordinary calls may reuse it.
+        self.mailbox = [self.program.define(f'__qslisp_argument_{i}', 3, [0, 0, 0])
+                        for i in range(8)]
+        self.dispatch = self.program.function('__qslisp_dispatch', filename, 1)
+        self.dispatch_reference = self.program.define('__qslisp_dispatch', 6, [self.dispatch])
+        uses_heap = any(self.needs_heap(node) for f in self.functions.values() for node in f.body)
+        self.heap = PairHeap(self.program, heap_pairs, root_slots) if uses_heap else None
+        self.pending = []
+
+    @staticmethod
+    def needs_heap(node):
+        if not isinstance(node.value, tuple) or not node.value:
+            return False
+        form = node.value
+        name = form[0].value
+        if isinstance(name, str):
+            if name in ('cons', 'car', 'cdr'):
+                return True
+            if name == 'let' and len(form) >= 3 and isinstance(form[1].value, tuple):
+                initializers = [binding.value[1] for binding in form[1].value
+                                if isinstance(binding.value, tuple) and len(binding.value) == 2]
+                return any(Compiler.needs_heap(n) for n in (*initializers, *form[2:]))
+        return any(Compiler.needs_heap(n) for n in form)
+
+    def declare(self, node):
+        form = node.value
+        if not isinstance(form, tuple) or len(form) < 3 or form[0].value != 'define':
+            raise CompileError(node.location, 'top level requires (define (name arguments...) body...)')
+        signature = form[1].value
+        if not isinstance(signature, tuple) or not signature:
+            raise CompileError(form[1].location, 'only named function definitions are supported yet')
+        name = binding_name(signature[0])
+        if name.startswith('__qslisp') or name in PRIMITIVES:
+            raise CompileError(signature[0].location, f'reserved function name {name}')
+        if name in self.functions:
+            raise CompileError(signature[0].location, f'duplicate function {name}')
+        abi = self.program.kinds.get(name)
+        if name in self.program.names and abi != 6:
+            raise CompileError(signature[0].location, f'{name} is reserved by the stock Quake ABI')
+        parameters = tuple(binding_name(p) for p in signature[1:])
+        if len(parameters) > 8:
+            raise CompileError(form[1].location, 'stock VM supports at most eight arguments')
+        if len(set(parameters)) != len(parameters):
+            raise CompileError(form[1].location, 'duplicate function parameter')
+        if name in self.program.names and parameters:
+            raise CompileError(form[1].location, 'stock engine entry functions require zero arguments')
+        public = self.program.function(name, node.location.filename, len(parameters))
+        # Keep body symbols separate from dispatcher/request/error symbols,
+        # even when a user function is named dispatch, error, or request_leaf.
+        private_name = '__qslisp_fn_' + name
+        private = self.program.function(private_name, node.location.filename, len(parameters))
+        if name in self.program.names:
+            self.program.globals[self.program.names[name]] = public
+        else:
+            self.program.define(name, 6, [public])
+        reference = self.program.define(private_name, 6, [private])
+        # Normal values have a zero third word. A request instead carries a raw
+        # function reference in word 0 and float32 one in word 2. It is private
+        # control data, never a Scheme value or an argument to a Scheme function.
+        request = self.program.define('__qslisp_request_' + name, 3,
+                                      [private, 0, self.program.globals[self.one]])
+        self.functions[name] = Function(name, parameters, form[2:], node.location,
+                                        public, private, reference, request)
+
+    def compile(self):
+        for function in self.functions.values():
+            frame = Frame(self.program, function.private, function.location, len(function.parameters), 3)
+            environment = {name: Value(Local(i * 3)) for i, name in enumerate(function.parameters)}
+            self.tail_sequence(frame, function.body, environment, function)
+            frame.finish()
+
+            # Native entry wrappers preserve the CLI/engine ABI. Internal calls
+            # use three-word values; native callers supply ordinary float args.
+            wrapper = Frame(self.program, function.public, function.location, len(function.parameters), 1)
+            args = []
+            for i in range(len(function.parameters)):
+                value = wrapper.allocate()
+                wrapper.emit(OP_STORE, Local(i), value)
+                wrapper.emit(OP_STORE, self.zero, advance(value, 1))
+                wrapper.emit(OP_STORE, self.zero, advance(value, 2))
+                args.append(Value(value, 'number'))
+            result = self.call(wrapper, function, args)
+            wrapper.emit(OP_RETURN, result.slot)
+            wrapper.finish()
+        self.compile_dispatch()
+        if self.heap:
+            self.heap.compile()
+        return self.program.encode()
+
+    def statistics(self):
+        return {
+            'global_slots': len(self.program.globals),
+            'statements': len(self.program.statements),
+            'instruction_bytes': len(self.program.statements) * 8,
+            'pair_capacity': self.heap.capacity if self.heap else 0,
+            'pair_storage_slots': 9 * self.heap.capacity if self.heap else 0,
+            'root_capacity': self.heap.root_capacity if self.heap else 0,
+            'root_storage_slots': 3 * self.heap.root_capacity if self.heap else 0,
+            'heap_runtime_statements': self.heap.generated_statements if self.heap else 0,
+        }
+
+    @contextmanager
+    def keep(self, values):
+        self.pending.append(values)
+        try:
+            yield
+        finally:
+            self.pending.pop()
+
+    def values(self, frame, nodes, environment):
+        values = []
+        with self.keep(values):
+            for node in nodes:
+                values.append(self.expression(frame, node, environment))
+        return values
+
+    def roots(self, environment, arguments):
+        return [*environment.values(), *arguments,
+                *(value for context in self.pending for value in context)]
+
+    def compile_dispatch(self):
+        # The sole parameter is a three-word request so the CLI cannot mistake
+        # its raw function reference for an ordinary numeric argument. The VM
+        # saves the target local during nested trampoline invocations.
+        frame = Frame(self.program, self.dispatch, self.program.location, 1, 3)
+        loop = len(frame.code)
+        for i, source in enumerate(self.mailbox):
+            frame.emit(OP_STORE_V, source, 4 + i * 3)
+        # Stock calls copy the callee's declared parameter widths, independently
+        # of the CALL opcode's argument count. All internal functions take <=8.
+        frame.emit(OP_CALL0 + 8, Local(0))
+        pending = frame.emit(OP_IF, 3)  # OFS_RETURN + 2: request flag.
+        frame.emit(OP_RETURN, 1)
+        frame.patch(pending, 2, len(frame.code))
+        frame.emit(OP_STORE, 1, Local(0))  # New raw target from request payload.
+        again = frame.emit(OP_GOTO)
+        frame.patch(again, 1, loop)
+        frame.finish()
+
+    def sequence(self, frame, nodes, environment):
+        result = None
+        for node in nodes:
+            result = self.expression(frame, node, environment)
+        return result
+
+    def tail_sequence(self, frame, nodes, environment, function):
+        for node in nodes[:-1]:
+            self.expression(frame, node, environment)
+        self.tail_expression(frame, nodes[-1], environment, function)
+
+    def application(self, node, environment):
+        form = node.value
+        if not form:
+            raise CompileError(node.location, 'empty application; list values are not supported yet')
+        name = symbol(form[0], 'call or special form')
+        if name in environment:
+            raise CompileError(form[0].location, 'calling local values is not supported yet')
+        return name, form[1:]
+
+    def let_environment(self, frame, node, args, environment):
+        if len(args) < 2 or not isinstance(args[0].value, tuple):
+            raise CompileError(node.location, 'let requires a binding list and body')
+        bindings = {}
+        with self.keep(bindings.values()):
+            for binding in args[0].value:
+                pair = binding.value
+                if not isinstance(pair, tuple) or len(pair) != 2:
+                    raise CompileError(binding.location, 'let binding requires (name expression)')
+                label = binding_name(pair[0])
+                if label in bindings:
+                    raise CompileError(pair[0].location, f'duplicate let binding {label}')
+                bindings[label] = self.expression(frame, pair[1], environment)
+        return environment | bindings
+
+    def arguments(self, frame, node, name, args, environment):
+        function = self.functions[name]
+        if len(args) != len(function.parameters):
+            raise CompileError(node.location, f'{name} expects {len(function.parameters)} arguments, got {len(args)}')
+        values = self.values(frame, args, environment)
+        return function, values
+
+    def tail_expression(self, frame, node, environment, function):
+        if isinstance(node.value, tuple):
+            name, args = self.application(node, environment)
+            if name == 'if':
+                if len(args) != 3:
+                    raise CompileError(node.location, 'if requires a condition and two branches')
+                condition = self.expression(frame, args[0], environment)
+                to_else = frame.emit(OP_IF, self.false_test(frame, condition))
+                self.tail_expression(frame, args[1], environment, function)
+                frame.patch(to_else, 2, len(frame.code))
+                self.tail_expression(frame, args[2], environment, function)
+                return
+            if name == 'let':
+                scope = self.let_environment(frame, node, args, environment)
+                self.tail_sequence(frame, args[1:], scope, function)
+                return
+            if name == 'begin':
+                if not args:
+                    raise CompileError(node.location, 'begin requires at least one expression')
+                self.tail_sequence(frame, args, environment, function)
+                return
+            if name in self.functions:
+                target, values = self.arguments(frame, node, name, args, environment)
+                if target is function:
+                    # Argument registers provide a parallel-copy staging area:
+                    # (loop n b a) must not overwrite a before it is copied.
+                    for i, value in enumerate(values):
+                        frame.emit(OP_STORE_V, value.slot, 4 + i * 3)
+                    for i in range(len(values)):
+                        frame.emit(OP_STORE_V, 4 + i * 3, Local(i * 3))
+                    again = frame.emit(OP_GOTO)
+                    frame.patch(again, 1, 0)
+                else:
+                    self.publish(frame, values)
+                    frame.emit(OP_RETURN, target.request)
+                return
+        result = self.expression(frame, node, environment)
+        frame.emit(OP_RETURN, result.slot)
+
+    def tagged(self, frame, kind):
+        value = Value(frame.allocate(), kind)
+        frame.emit(OP_STORE, self.one if kind == 'boolean' else self.zero, advance(value.slot, 1))
+        frame.emit(OP_STORE, self.zero, advance(value.slot, 2))
+        return value
+
+    def false_test(self, frame, value):
+        if value.kind in ('number', 'pair'):
+            return self.zero  # Only booleans can be false, including for pair index zero.
+        result = frame.allocate(1)
+        frame.emit(OP_NOT, value.slot, 0, result)
+        if value.kind != 'boolean':
+            boolean = frame.allocate(1)
+            frame.emit(OP_EQ, advance(value.slot, 1), self.one, boolean)
+            frame.emit(OP_AND, result, boolean, result)
+        return result
+
+    def number(self, frame, value, node):
+        if value.kind in ('boolean', 'pair'):
+            raise CompileError(node.location, f'arithmetic and comparisons require numbers, got a {value.kind}')
+        if value.kind == 'unknown':
+            wrong = frame.allocate(1)
+            frame.emit(OP_NOT, advance(value.slot, 1), 0, wrong)
+            skip = frame.emit(OP_IF, wrong)
+            message = self.program.message(f'{node.location}: expected a number\n')
+            frame.emit(OP_STORE, message, 4)
+            frame.emit(OP_CALL0 + 1, self.program.error_function)
+            frame.patch(skip, 2, len(frame.code))
+
+    def call(self, frame, function, args, environment=None):
+        # Stage arguments only after evaluating ALL of them. Nested calls also
+        # use the shared argument/return registers and must not clobber siblings.
+        base = self.heap.pin(frame, self.roots(environment or {}, args)) if self.heap else None
+        self.publish(frame, args)
+        frame.emit(OP_STORE_V, function.request, 4)
+        frame.emit(OP_CALL0 + 1, self.dispatch_reference)
+        result = Value(frame.allocate())
+        frame.emit(OP_STORE_V, 1, result.slot)
+        if self.heap:
+            self.heap.unpin(frame, base)
+        return result
+
+    def publish(self, frame, args):
+        for i, destination in enumerate(self.mailbox):
+            frame.emit(OP_STORE_V, args[i].slot if i < len(args) else self.zero, destination)
+
+    def expression(self, frame, node, environment):
+        # An inner let may shadow a binding still needed by the enclosing
+        # expression's continuation. Keep those outer environments as well as
+        # already evaluated arguments; scanning only the innermost scope loses
+        # such pairs during collection.
+        with self.keep(environment.values()):
+            return self.expression_body(frame, node, environment)
+
+    def expression_body(self, frame, node, environment):
+        form = node.value
+        if isinstance(form, bool):
+            return Value(self.program.constant(float(form), True), 'boolean')
+        if isinstance(form, float):
+            return Value(self.program.constant(form, location=node.location), 'number')
+        if isinstance(form, str):
+            if form not in environment:
+                message = 'function values are not supported yet' if form in self.functions else f'unbound variable {form}'
+                raise CompileError(node.location, message)
+            return environment[form]
+        name, args = self.application(node, environment)
+        if name == 'if':
+            if len(args) != 3:
+                raise CompileError(node.location, 'if requires a condition and two branches')
+            condition = self.expression(frame, args[0], environment)
+            to_else = frame.emit(OP_IF, self.false_test(frame, condition))
+            result = frame.allocate()
+            yes = self.expression(frame, args[1], environment)
+            frame.emit(OP_STORE_V, yes.slot, result)
+            to_end = frame.emit(OP_GOTO)
+            frame.patch(to_else, 2, len(frame.code))
+            no = self.expression(frame, args[2], environment)
+            frame.emit(OP_STORE_V, no.slot, result)
+            frame.patch(to_end, 1, len(frame.code))
+            return Value(result, yes.kind if yes.kind == no.kind else 'unknown')
+        if name == 'let':
+            scope = self.let_environment(frame, node, args, environment)
+            return self.sequence(frame, args[1:], scope)
+        if name == 'begin':
+            if not args:
+                raise CompileError(node.location, 'begin requires at least one expression')
+            return self.sequence(frame, args, environment)
+        if name == 'not':
+            if len(args) != 1:
+                raise CompileError(node.location, 'not requires one argument')
+            value = self.expression(frame, args[0], environment)
+            result = self.tagged(frame, 'boolean')
+            frame.emit(OP_STORE, self.false_test(frame, value), result.slot)
+            return result
+        if name in ('cons', 'car', 'cdr', 'pair?'):
+            arity = 2 if name == 'cons' else 1
+            if len(args) != arity:
+                raise CompileError(node.location, f'{name} requires {arity} argument(s)')
+            values = self.values(frame, args, environment)
+            if name == 'pair?':
+                result = self.tagged(frame, 'boolean')
+                frame.emit(OP_EQ, advance(values[0].slot, 1), self.program.constant(2), result.slot)
+                return result
+            if name in ('car', 'cdr'):
+                if values[0].kind in ('number', 'boolean'):
+                    raise CompileError(node.location, f'{name} requires a pair, got a {values[0].kind}')
+                message = self.program.message(f'{node.location}: {name} requires an allocated pair\n')
+                slot = self.heap.call(frame, name, [values[0].slot, message])
+                return Value(slot)
+            message = self.program.message(f'{node.location}: pair heap exhausted ({self.heap.capacity} cells)\n')
+            base = self.heap.pin(frame, self.roots(environment, values))
+            slot = self.heap.call(frame, 'cons', [values[0].slot, values[1].slot, message])
+            self.heap.unpin(frame, base)
+            return Value(slot, 'pair')
+        if name in ARITHMETIC or name in COMPARISONS:
+            if name in COMPARISONS and len(args) != 2:
+                raise CompileError(node.location, f'{name} requires exactly two arguments in this release')
+            if name in ('-', '/') and not args:
+                raise CompileError(node.location, f'{name} requires at least one argument')
+            values = self.values(frame, args, environment)
+            for value, argument in zip(values, args):
+                self.number(frame, value, argument)
+            if name in COMPARISONS:
+                result = self.tagged(frame, 'boolean')
+                frame.emit(COMPARISONS[name], values[0].slot, values[1].slot, result.slot)
+                return result
+            if not values:
+                return Value(self.zero if name == '+' else self.one, 'number')
+            if len(values) == 1 and name in ('-', '/'):
+                values.insert(0, Value(self.zero if name == '-' else self.one, 'number'))
+            result = values[0]
+            for value in values[1:]:
+                temporary = self.tagged(frame, 'number')
+                frame.emit(ARITHMETIC[name], result.slot, value.slot, temporary.slot)
+                result = temporary
+            return result
+        if name in SYNTAX:
+            raise CompileError(node.location, f'{name} is not supported here yet')
+        if name not in self.functions:
+            raise CompileError(form[0].location, f'undefined function {name}')
+        function, values = self.arguments(frame, node, name, args, environment)
+        return self.call(frame, function, values, environment)
+
+
+def compile_source(source, filename='<input>', *, heap_pairs=256, root_slots=256):
+    return Compiler(read(source, filename), filename,
+                    heap_pairs=heap_pairs, root_slots=root_slots).compile()
