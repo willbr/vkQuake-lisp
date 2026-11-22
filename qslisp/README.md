@@ -132,11 +132,12 @@ You can also build the BSP directly with
 `python3 tools/quakec/build-signal.py build/signal.bsp`.
 
 The scripted client checks walking, takeoff, landing while the jump key is
-held, ammo use on a miss, gate opening on a hit, completion through the exit,
-and a reset followed by a second successful hit. It saves stock engine
-screenshots, state snapshots,
-and `measurements.json` under `build/quakec/map-boot/`. The snapshots serve as
-test observations. Heap-backed save and reload remain future work.
+held, ammo use on a miss, gate opening on a hit, and completion through the
+exit. It saves and reloads both locked and open gate states and checks that
+Quake restores ammo, the target, and native entity fields. It also checks that
+reset restores the original state. Stock engine screenshots, state snapshots,
+and `measurements.json` are under `build/quakec/map-boot/`. Heap-backed save and
+reload remain future work.
 
 The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
@@ -237,7 +238,7 @@ pair metadata, keeping graph traversal iterative rather than recursing on the
 small stock stack. Sweeping resets marks, clears dead fields, and rebuilds the
 free list. Pair handles remain stable. Only pair references are traced in this
 milestone; future heap types and global value definitions must extend the root
-and tracing rules. Stock save/load integration is not implemented.
+and tracing rules. Stock save/load for the pair heap is still future work.
 
 ### Measured cost
 

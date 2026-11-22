@@ -4,7 +4,8 @@ import math
 import re
 import struct
 
-SAVES = ('spawned', 'walked', 'rise', 'landed', 'missed', 'cleared', 'finished', 'reset', 'replay')
+SAVES = ('spawned', 'walked', 'rise', 'landed', 'missed', 'locksave', 'cleared',
+         'lockload', 'reopened', 'openload', 'finished', 'reset', 'replay')
 PROFILES = {
     'jump': ('qslisp: jump',),
     'shot': ('qslisp: fired', 'qslisp: target hit'),
@@ -26,8 +27,13 @@ def verification_commands():
     commands += ['save landed', '-jump', 'wait', 'wait']
     commands += ['+left'] + ['wait'] * 12 + ['-left', '+attack', 'wait', '-attack']
     commands += ['wait'] * 8 + ['save missed', '+right'] + ['wait'] * 12 + ['-right', 'wait']
+    commands += ['save locksave']
     commands += profile('shot', ['+attack'])
-    commands += ['-attack'] + ['wait'] * 12 + ['save cleared', 'screenshot', '+forward']
+    commands += ['-attack'] + ['wait'] * 12 + ['save cleared', 'screenshot', 'load locksave']
+    commands += ['wait'] * 35 + ['save lockload', '+attack', 'wait', '-attack']
+    commands += ['wait'] * 12 + ['save reopened', 'map signal']
+    commands += ['wait'] * 35 + ['load cleared']
+    commands += ['wait'] * 35 + ['save openload', '+forward']
     commands += ['wait'] * 45 + ['-forward', 'wait', 'save finished', 'map signal']
     commands += ['wait'] * 35 + ['save reset']
     commands += profile('combined', ['+jump', '+attack'])
@@ -94,7 +100,7 @@ def verify_challenge(output, lines):
     walked = states['walked']
     require(spawn['rounds'] == 3 and spawn['weapon'] == 'progs/v_shot.mdl' and spawn['targets'] == 1,
             'player did not start with a weapon, three shells, and a target')
-    for name in ('spawned', 'missed', 'reset'):
+    for name in ('spawned', 'missed', 'locksave', 'lockload', 'reset'):
         state = states[name]
         require((state['gate_open'], state['gate_solid'], state['complete']) == (0, 4, 0),
                 f'{name} gate must block the exit')
@@ -104,7 +110,7 @@ def verify_challenge(output, lines):
     require(lines.count('qslisp: jump') == 2, 'expected one jump per press, including a held press through landing')
     require(states['missed']['targets'] == 1 and states['missed']['rounds'] == 2,
             'a missed shot must spend one shell and leave the target intact')
-    for name, rounds in (('cleared', 1), ('replay', 2)):
+    for name, rounds in (('cleared', 1), ('reopened', 1), ('openload', 1), ('replay', 2)):
         require(states[name]['targets'] == 0 and states[name]['rounds'] == rounds,
                 f'expected the hit to spend one shell and clear the target in {name}')
         state = states[name]
@@ -112,11 +118,13 @@ def verify_challenge(output, lines):
                 f'{name} gate should be open with the exit still ahead')
     require(states['finished']['origin'][0] > 224 and states['finished']['complete'] == 1,
             'walking through the gate did not complete the level')
-    require(lines.count('qslisp: gate open') == 2 and lines.count('qslisp: level complete') == 1,
-            'expected the gate to open twice and the exit callback to complete the level once')
+    require(states['lockload'] == states['locksave'] and states['openload'] == states['cleared'],
+            'stock load did not restore ammo, position, model, target, and gate state')
+    require(lines.count('qslisp: gate open') == 3 and lines.count('qslisp: level complete') == 1,
+            'expected three gate openings and one exit callback')
     require(states['reset'] == spawn, 'reset did not restore player position, ammo, and target')
-    require(lines.count('qslisp: fired') == 3 and lines.count('qslisp: target hit') == 2,
-            'expected one miss and one hit in the first round, then one hit after reset')
+    require(lines.count('qslisp: fired') == 4 and lines.count('qslisp: target hit') == 3,
+            'expected one miss, the initial hit, and a hit after each restore or reset of the target')
     require(all((output / f'quake0{i}.pcx').is_file() for i in range(2)), 'missing stock client screenshots')
 
     report = measured_profiles(lines, (output / 'progs.dat').read_bytes())
