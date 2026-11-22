@@ -9,8 +9,13 @@
 (define-field bike-camera entity)
 (define-field bike-view entity)
 (define-field bike-next-view)
+(define-field bike-key-mode)
+(define-field bike-next-keys)
+(define-field bike-reverse-request)
+(define-field bike-front-angle)
 
 (define bike-top-speed 408)
+(define bike-reverse-speed 108)
 (define bike-wheelbase 48)
 (define bike-solid 2)
 
@@ -50,6 +55,8 @@
       (quake:set-field! player bike-heading (bike-wrap-angle (quake:field bike angles_y)))
       (quake:set-field! player bike-vx 0)
       (quake:set-field! player bike-vy 0)
+      (quake:set-field! player bike-front-angle 0)
+      (quake:set-field! player bike-reverse-request 0)
       (quake:set-field! player bike-skidding 0)
       (quake:set-field! player velocity (quake:vector 0 0 0))
       (quake:set-field! player angles (quake:vector 28 (quake:field player bike-heading) 0))
@@ -59,7 +66,7 @@
       (quake:set-origin player (quake:field bike origin))
       (quake:set-field! player weaponmodel "")
       (quake:set-field! player weaponframe 0)
-      (quake:centerprint player "Left and Right arrows to steer\nF or Mouse1 to pedal   Space to brake\nE to dismount when stopped")
+      (quake:centerprint player "Up to pedal  Down to brake or back up\nLeft and Right to steer\nE to dismount when stopped")
       (quake:dprint "qslisp: bike mounted\n"))))
 
 (define (clear-rider player)
@@ -73,6 +80,8 @@
   (quake:set-field! player riding (quake:world))
   (quake:set-field! player bike-vx 0)
   (quake:set-field! player bike-vy 0)
+  (quake:set-field! player bike-front-angle 0)
+  (quake:set-field! player bike-reverse-request 0)
   (quake:set-field! player bike-skidding 0)
   (quake:set-field! player frame 0)
   (quake:set-field! player angles_z 0)
@@ -128,6 +137,46 @@
 (define (bike-abs x)
   (if (< x 0) (- x) x))
 
+(define (bike-approach current target step)
+  (+ current (bike-clamp (- target current) (- step) step)))
+
+(define (bike-sync-arrows player riding)
+  (let* ((mode (if riding 2 1))
+         (changed (not (= mode (quake:field player bike-key-mode)))))
+    (when (or changed (>= (quake:time) (quake:field player bike-next-keys)))
+      (when changed
+        (if riding
+            (quake:client-command player "-forward\n-back\n")
+            (quake:client-command player "-attack 128\n-jump 129\n")))
+      ; Keep the same physical key identifier in both halves of the Down alias.
+      (if riding
+          (quake:client-command player "alias +bikeback \"+jump 129; impulse 4\"\nalias -bikeback \"-jump 129; impulse 5\"\nbind UPARROW +attack\nbind DOWNARROW +bikeback\n")
+          (quake:client-command player "bind UPARROW +forward\nbind DOWNARROW +back\n"))
+      (quake:set-field! player bike-key-mode mode)
+      ; A load or reconnect can restore the server state in a fresh client.
+      (quake:set-field! player bike-next-keys (+ (quake:time) 1)))))
+
+(define (bike-reverse-input player braking)
+  (let ((impulse (quake:field player impulse)))
+    (cond
+      ((= impulse 4)
+       (quake:set-field! player impulse 0)
+       (quake:set-field! player bike-reverse-request 1))
+      ((= impulse 5)
+       (quake:set-field! player impulse 0)
+       (quake:set-field! player bike-reverse-request 0)))
+    (when (not braking)
+      (quake:set-field! player bike-reverse-request 0))
+    (and braking (= (quake:field player bike-reverse-request) 1))))
+
+(define (bike-drive-speed speed dt pedal brake reverse)
+  (cond
+    ((and brake (> speed 0)) (bike-approach speed 0 (* 480 dt)))
+    ((and brake reverse) (bike-approach speed (- bike-reverse-speed) (* 225 dt)))
+    (brake (bike-approach speed 0 (* 480 dt)))
+    (pedal (bike-approach speed bike-top-speed (* 525 dt)))
+    (else (bike-approach speed 0 (* 115 dt)))))
+
 (define (bike-steering-pose player steer)
   ; The world model starts centered, followed by three turn poses on each side.
   (let* ((degrees (bike-abs steer))
@@ -179,27 +228,22 @@
          (heading (quake:field player bike-heading))
          (aim (quake:field player v_angle_y))
          (turn (bike-wrap-angle (- aim heading)))
-         (steer (bike-clamp turn -32 32))
          (grounded (not (= (quake:bit-and (quake:field player flags) flag-ground) 0)))
          (braking (> (quake:field player button2) 0))
+         (reversing (bike-reverse-input player braking))
          (pedaling (and (not braking) (> (quake:field player button0) 0))))
     (if grounded
         (begin
           (quake:make-vectors (quake:vector 0 heading 0))
-          (let* ((speed (bike-clamp (+ (* vx (quake:forward-x)) (* vy (quake:forward-y))) 0 bike-top-speed))
+          (let* ((speed (+ (* vx (quake:forward-x)) (* vy (quake:forward-y))))
                  (locked (and braking (> speed 105)))
-                 (stopped (< (+ (* vx vx) (* vy vy)) 144))
+                 (backwards (or (< speed -1) (and reversing (<= speed 1))))
+                 (target (bike-clamp (if backwards (- turn) turn) -32 32))
+                 (front (bike-approach (quake:field player bike-front-angle) target (* 360 dt)))
                  (limit (* 360 dt))
-                 (rotation (cond
-                             ; Under hard braking, keep the bicycle model and let momentum carry the rear.
-                             (locked (* (/ speed bike-wheelbase) steer dt))
-                             (stopped (if pedaling turn 0))
-                             (else (bike-clamp turn (- limit) limit))))
-                 (yaw (bike-wrap-angle (+ heading rotation)))
-                 (front (cond
-                          (stopped steer)
-                          ((> dt 0) (bike-clamp (/ (* rotation bike-wheelbase) (* dt (+ speed 20))) -32 32))
-                          (else 0))))
+                 ; Signed travel speed turns the frame. The front wheel can steer at rest.
+                 (rotation (bike-clamp (* (/ speed bike-wheelbase) front dt (if locked 1 1.8)) (- limit) limit))
+                 (yaw (bike-wrap-angle (+ heading rotation))))
             (quake:make-vectors (quake:vector 0 yaw 0))
             (let* ((fx (quake:forward-x))
                    (fy (quake:forward-y))
@@ -207,11 +251,12 @@
                    (lateral (- (* vy fx) (* vx fy)))
                    (grip (if locked 1.35 18))
                    (slide (* lateral (bike-clamp (- 1 (* grip dt)) 0 1)))
-                   (accel (cond (braking -480) (pedaling 525) (else -115)))
-                   (forward (bike-clamp (+ longitudinal (* accel dt)) 0 bike-top-speed)))
+                   (forward (bike-drive-speed longitudinal dt pedaling braking
+                                (and reversing (< (bike-abs slide) 40)))))
               (quake:set-field! player velocity_x (- (* forward fx) (* slide fy)))
               (quake:set-field! player velocity_y (+ (* forward fy) (* slide fx)))
               (quake:set-field! player bike-heading yaw)
+              (quake:set-field! player bike-front-angle front)
               (quake:set-field! player angles_y yaw)
               (quake:set-field! player angles_z (bike-clamp (* front speed -0.0016) -18 18))
               (bike-steering-pose player front)
@@ -220,7 +265,7 @@
           (quake:set-field! player velocity_x vx)
           (quake:set-field! player velocity_y vy)
           (quake:set-field! player angles_y heading)
-          (bike-steering-pose player steer)
+          (bike-steering-pose player (quake:field player bike-front-angle))
           (bike-skid player #f)))
     (when (= (quake:field player fixangle) 0)
       (quake:set-field! player angles_x 0))))

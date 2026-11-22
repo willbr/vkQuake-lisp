@@ -7,7 +7,8 @@ from challenge import read_edicts, require
 SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplies',
          'pulse', 'switched', 'checked', 'dooropen', 'guarded', 'reset',
          'rtmoved', 'rtload', 'rtresume',
-         'bkdock', 'bkstart', 'bksteer', 'bkgrip', 'bkfast', 'bkslide', 'bkrelay', 'bkpark', 'bkreload', 'bkresp')
+         'bkdock', 'bkstart', 'bkbrake', 'bkback', 'bkaim', 'bkpush', 'bksteer', 'bkgrip',
+         'bkfast', 'bkslide', 'bkrelay', 'bkdepot', 'bkpark', 'bkreload', 'bkresp')
 
 
 def verification_commands():
@@ -32,14 +33,21 @@ def verification_commands():
     commands += ['+moveleft'] + ['wait'] * 5 + ['-moveleft'] + ['wait'] * 10
     commands += ['+attack'] + ['wait'] * 16 + ['-attack', '+forward'] + ['wait'] * 15
     commands += ['-forward'] + ['wait'] * 12 + ['save bkdock', 'impulse 3'] + ['wait'] * 2
-    commands += ['save bkstart', 'screenshot', '+left'] + ['wait'] * 9
-    commands += ['-left', '+attack'] + ['wait'] * 5 + ['save bksteer', '+right'] + ['wait'] * 5
-    commands += ['save bkgrip', '-right', '-attack', 'load bkstart'] + ['wait'] * 16
+    commands += ['save bkstart', 'screenshot', '+attack 128'] + ['wait'] * 9
+    # NetQuake appends client commands behind this cfg. Send the same button
+    # and impulse as the Down binding while the scripted ride owns the queue.
+    commands += ['-attack 128', '+jump 129', 'impulse 4'] + ['wait'] * 5 + ['save bkbrake']
+    commands += ['wait'] * 24 + ['save bkback', '-jump 129', 'impulse 5', 'wait', 'load bkstart'] + ['wait'] * 16
+    commands += ['+left'] + ['wait'] * 7 + ['-left', 'save bkaim', '+attack 128', 'wait', 'save bkpush']
+    commands += ['wait'] * 8 + ['save bksteer', '+right'] + ['wait'] * 4
+    commands += ['save bkgrip', '-right', '-attack 128', 'load bkstart'] + ['wait'] * 16
     commands += ['+attack'] + ['wait'] * 17
     commands += ['-attack', 'save bkfast', 'impulse 3', '+jump', '+left'] + ['wait'] * 7
     commands += ['save bkslide', 'screenshot', '-jump', '+attack'] + ['wait'] * 6 + ['-left'] + ['wait'] * 14
-    commands += ['-attack', 'save bkrelay', '+jump'] + ['wait'] * 24
-    commands += ['-jump', 'impulse 3'] + ['wait'] * 2 + ['save bkpark', 'load bkslide']
+    commands += ['save bkrelay'] + ['wait'] * 10
+    commands += ['-attack', 'save bkdepot', 'screenshot', '+jump'] + ['wait'] * 24
+    commands += ['-jump', 'impulse 3'] + ['wait'] * 2
+    commands += ['save bkpark', 'load bkslide']
     commands += ['wait'] * 16 + ['save bkreload', 'kill'] + ['wait'] * 12
     commands += ['+attack', 'wait', '-attack'] + ['wait'] * 10 + ['save bkresp', 'toggleconsole', 'quit']
     return '\n'.join(commands) + '\n'
@@ -153,17 +161,26 @@ def verify_bike(states, lines, output):
     require(start['bike_camera'] > 1 and start['bike_view'] == start['bike_camera'] and
             start['camera_origin'][0] < start['player_origin'][0] - 65,
             'the mounted client did not get a separate world-space view behind the bike')
+    brake, reverse = states['bkbrake'], states['bkback']
+    require(brake['bike_velocity'][0] > 40 and reverse['bike_velocity'][0] < -60 and
+            reverse['player_origin'][0] < brake['player_origin'][0] - 30,
+            'Down did not brake first and then back the bike up')
+    aim, push = states['bkaim'], states['bkpush']
+    require(aim['view_yaw'] > 30 and aim['player_frame'] >= 4 and
+            abs(aim['bike_heading'] - start['bike_heading']) < 1 and
+            abs(push['bike_heading'] - aim['bike_heading']) < 3 and push['bike_velocity'][0] > 0,
+            'turning the view at the dock snapped the bike heading')
     steered, gripped = states['bksteer'], states['bkgrip']
-    require(steered['view_yaw'] > 45 and steered['player_origin'][1] > start['player_origin'][1] + 10 and
+    require(steered['view_yaw'] > 38 and steered['player_origin'][1] > start['player_origin'][1] + 12 and
             gripped['view_yaw'] < steered['view_yaw'] - 20,
             'the keyboard did not steer the stopped and rolling bike')
     for sample in (steered, gripped):
         vx, vy = sample['bike_velocity']
         bearing = math.degrees(math.atan2(vy, vx))
         require(sample['riding'] and not sample['bike_skidding'] and
-                abs(sample['view_yaw'] - bearing) < 8 and abs(sample['view_yaw'] - sample['bike_heading']) < 6,
-                'normal pedaling did not travel in the aim direction')
-    require(steered['player_frame'] == 0 and 1 <= gripped['player_frame'] <= 3,
+                abs(sample['view_yaw'] - bearing) < 15 and abs(sample['view_yaw'] - sample['bike_heading']) < 14,
+                'the bike did not come around toward the riding direction')
+    require(1 <= gripped['player_frame'] <= 3,
             'the world model did not show the handlebars turn right')
     vx, vy = slide['bike_velocity']
     motion_bearing = math.degrees(math.atan2(vy, vx))
@@ -176,6 +193,9 @@ def verify_bike(states, lines, output):
             'braking into the corner did not produce controlled sideways momentum')
     require(relay['bike_relay'] == 1 and relay['player_origin'][1] >= 332,
             'the rider did not reach and activate the relay around the corner')
+    depot = states['bkdepot']
+    require(depot['riding'] and depot['player_origin'][1] > 540 and math.hypot(*depot['bike_velocity']) > 220,
+            'the bike could not continue at speed into the depot beyond the relay')
     require(not park['riding'] and not park['bike_rider'] and not park['bike_camera'] and park['bike_solid'] == 2 and
             park['player_model'] == 'progs/player.mdl' and park['weapon'] == 'progs/v_shot.mdl' and
             math.dist(park['player_origin'], park['bike_origin']) >= 48,
@@ -194,3 +214,4 @@ def verify_bike(states, lines, output):
         event = lines.index(message, event) + 1
     require((output / 'quake01.pcx').is_file(), 'missing mounted chase view screenshot')
     require((output / 'quake02.pcx').is_file(), 'missing brake slide chase view screenshot')
+    require((output / 'quake03.pcx').is_file(), 'missing depot riding screenshot')

@@ -186,9 +186,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 9,564 instructions against the 100,000-instruction watchdog. The
-program uses 11,088 of 32,768 global slots and its largest individual frame uses
-557 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 9,894 instructions against the 100,000-instruction watchdog. The
+program uses 11,446 of 32,768 global slots and its largest individual frame uses
+572 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -223,19 +223,24 @@ Its Lisp procedures destructure these records with `match`.
 ### Service bicycle
 
 Follow the service lane past the guard to the bike dock. Look at the bike
-and press **E** to mount. Hold **F** or **Mouse1** to pedal, steer with the
-**Left** and **Right** arrows or the **mouse**, and hold **Space** to brake.
-Approach the marked bend at speed, then brake while steering left. Release
-the brake to regain grip and pedal through the relay arch to bring it online.
-Slow down and press **E** to park and step off.
+and press **E** to mount. Hold **Up** to pedal and steer with **Left** and
+**Right**. Hold **Down** to brake, then keep holding it to back up after
+the bike stops. **F** and **Mouse1** also pedal, **Space** brakes, and the
+**mouse** can steer. Up and Down resume their walking controls on foot.
+
+Approach the marked bend at speed, then brake while steering left. Pedal
+through the relay arch to bring it online and enter the depot. The depot
+has a wide loop around a service island. Slow down and press **E** to park
+and step off.
 
 The chase camera shows the bike and rider in the world. The handlebars,
-fork, and front wheel steer together on the mounted model. Normal pedaling
-follows the aim direction. Hard braking reduces rear-wheel grip at speed,
-so the bike keeps sliding sideways as it turns. Quake's player hull still
-handles walls and the floor. The camera moves closer when walls get in its way.
-The Annex verification checks steering from a stop, ordinary turns, sideways
-momentum under braking, the relay, parking, save and reload, and respawn.
+fork, and front wheel can turn while the frame stays still. Once the bike
+rolls, its speed and front-wheel angle determine how fast the frame changes
+heading. Hard braking reduces rear-wheel grip at speed, so the bike keeps
+sliding sideways as it turns. Quake's player hull handles walls and the floor.
+The camera moves closer when walls get in its way. The Annex verification
+checks gradual steering, braking and reverse, the relay, the depot entrance,
+parking, save and reload, and respawn.
 
 ### Saved Lisp lists
 
@@ -279,6 +284,8 @@ with `(quake:world? entity)`. `(quake:time)`, `(quake:frametime)`, and
 `(quake:coop)` read the stock time, frame duration, and co-op globals.
 `(quake:spawn)` allocates an entity. `(quake:set-view client viewpoint)`
 assigns a networked view entity to a client through the stock protocol.
+`(quake:client-command client "text")` sends a literal console command to a
+client. End each command with a newline.
 `(quake:field entity field)` reads numeric, string, and entity fields, including
 vector components such as `origin_z`. `(quake:set-field! entity field value)`
 also supports vector fields. Strings can be bound, passed through functions,

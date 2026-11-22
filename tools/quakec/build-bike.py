@@ -31,7 +31,8 @@ class Model:
         normal = self.nearest_normal(cross)
         first = len(self.vertices)
         self.vertices.extend((point, normal, material) for point in points)
-        self.triangles.extend((1, first, first + i, first + i + 1) for i in range(1, len(points) - 1))
+        # Stock alias triangles wind clockwise from the outside.
+        self.triangles.extend((1, first, first + i + 1, first + i) for i in range(1, len(points) - 1))
 
     def nearest_normal(self, direction):
         return max(range(len(self.normals)), key=lambda i: sum(x * y for x, y in zip(direction, self.normals[i])))

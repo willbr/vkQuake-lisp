@@ -38,6 +38,7 @@ ENGINE_CALLS = {
     'quake:find': (18, ('entity', 'string-field', 'string-value')),
     'quake:precache-sound': (19, ('sample',)),
     'quake:precache-model': (20, ('model',)),
+    'quake:client-command': (21, ('entity', 'command')),
     'quake:dprint': (25, ('string',)),
     'quake:walkmove': (32, ('number', 'number')),
     'quake:drop-to-floor': (34, ()),
@@ -864,7 +865,7 @@ class Compiler:
             raise CompileError(literal.location, f'{name} requires a string literal here')
         text = literal.value.text
         encoded = text.encode('utf-8')
-        if name in ('quake:dprint', 'quake:error', 'quake:centerprint') and len(encoded) > 255:
+        if name in ('quake:dprint', 'quake:error', 'quake:centerprint', 'quake:client-command') and len(encoded) > 255:
             raise CompileError(literal.location, f'{name} text exceeds the stock 255-byte limit')
         if kind in ('model', 'sample') and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
             raise CompileError(literal.location, f'{name} requires a stock {kind} path of 1–63 bytes')
