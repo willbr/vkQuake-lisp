@@ -186,9 +186,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 9,894 instructions against the 100,000-instruction watchdog. The
-program uses 11,446 of 32,768 global slots and its largest individual frame uses
-572 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 10,050 instructions against the 100,000-instruction watchdog. The
+program uses 11,825 of 32,768 global slots and its largest individual frame uses
+599 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -229,18 +229,20 @@ the bike stops. **F** and **Mouse1** also pedal, **Space** brakes, and the
 **mouse** can steer. Up and Down resume their walking controls on foot.
 
 Approach the marked bend at speed, then brake while steering left. Pedal
-through the relay arch to bring it online and enter the depot. The depot
-has a wide loop around a service island. Slow down and press **E** to park
-and step off.
+through the relay arch to bring it online and enter the depot. Turn right
+for two eastbound jump ramps. The north corners bank up toward the outer
+walls, with a flat route around the service island. Slow down and press **E**
+to park and step off.
 
 The chase camera shows the bike and rider in the world. The handlebars,
 fork, and front wheel can turn while the frame stays still. Once the bike
 rolls, its speed and front-wheel angle determine how fast the frame changes
-heading. Hard braking reduces rear-wheel grip at speed, so the bike keeps
-sliding sideways as it turns. Quake's player hull handles walls and the floor.
-The camera moves closer when walls get in its way. The Annex verification
-checks gradual steering, braking and reverse, the relay, the depot entrance,
-parking, save and reload, and respawn.
+heading. Hard braking builds rear-wheel slip. Releasing the brake restores
+grip gradually, so the bike keeps drifting as you steer out of the turn.
+Quake's player hull handles the banks and the ramp launches. The rider model
+leans with the bank and follows the jump's pitch. The camera moves closer
+when walls get in its way. The stock-engine test checks the slide recovery,
+both takeoffs and landings, and a turn on the northeast bank.
 
 ### Saved Lisp lists
 
@@ -312,8 +314,10 @@ float slots. `quake:make-vectors` takes a stock angle vector and sets the
 components read by `quake:forward-x`, `quake:forward-y`, and `quake:forward-z`.
 `(quake:traceline start end mode ignore)` returns the hit entity or the world
 entity. `(quake:trace-fraction)` reads how far the last trace traveled, with
-`1` indicating a clear path. Use `quake:entity=?` to compare references and
-`quake:remove` to remove an entity. `(quake:precache-sound "path.wav")` runs during map loading and
+`1` indicating a clear path. `quake:trace-normal-x`, `quake:trace-normal-y`,
+and `quake:trace-normal-z` read the hit plane's normal. Use `quake:entity=?`
+to compare references and `quake:remove` to remove an entity.
+`(quake:precache-sound "path.wav")` runs during map loading and
 `(quake:sound entity channel "path.wav" volume attenuation)` plays the sample.
 `(quake:centerprint client "message")` shows a message to that client.
 

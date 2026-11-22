@@ -195,6 +195,7 @@
     (when riding
       (quake:set-field! player bike-vx (quake:field player velocity_x))
       (quake:set-field! player bike-vy (quake:field player velocity_y))
+      (bike-surface-pose player)
       (bike-chase-view player))))
 
 (define (PutClientInServer)

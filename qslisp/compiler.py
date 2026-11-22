@@ -49,6 +49,9 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:world': ('world', 'entity'),
                   'quake:time': ('time', 'number'), 'quake:frametime': ('frametime', 'number'),
                   'quake:coop': ('coop', 'number'), 'quake:trace-fraction': ('trace_fraction', 'number'),
+                  'quake:trace-normal-x': ('trace_plane_normal_x', 'number'),
+                  'quake:trace-normal-y': ('trace_plane_normal_y', 'number'),
+                  'quake:trace-normal-z': ('trace_plane_normal_z', 'number'),
                   'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
 ENTITY_RESULTS = {'quake:spawn': 1, 'quake:find': 1, 'quake:traceline': 'trace_ent'}

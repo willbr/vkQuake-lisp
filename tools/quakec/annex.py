@@ -8,7 +8,8 @@ SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplie
          'pulse', 'switched', 'checked', 'dooropen', 'guarded', 'reset',
          'rtmoved', 'rtload', 'rtresume',
          'bkdock', 'bkstart', 'bkbrake', 'bkback', 'bkaim', 'bkpush', 'bksteer', 'bkgrip',
-         'bkfast', 'bkslide', 'bkrelay', 'bkdepot', 'bkpark', 'bkreload', 'bkresp')
+         'bkfast', 'bkslide', 'bksettle', 'bkrelay', 'bkdepot', 'bkjump1', 'bkland1',
+         'bkjump2', 'bkland2', 'bkbank', 'bkcurve', 'bkpark', 'bkreload', 'bkresp')
 
 
 def verification_commands():
@@ -43,9 +44,14 @@ def verification_commands():
     commands += ['save bkgrip', '-right', '-attack 128', 'load bkstart'] + ['wait'] * 16
     commands += ['+attack'] + ['wait'] * 17
     commands += ['-attack', 'save bkfast', 'impulse 3', '+jump', '+left'] + ['wait'] * 7
-    commands += ['save bkslide', 'screenshot', '-jump', '+attack'] + ['wait'] * 6 + ['-left'] + ['wait'] * 14
-    commands += ['save bkrelay'] + ['wait'] * 10
-    commands += ['-attack', 'save bkdepot', 'screenshot', '+jump'] + ['wait'] * 24
+    commands += ['save bkslide', 'screenshot', '-jump', '+attack', 'wait', 'wait', 'save bksettle']
+    commands += ['wait'] * 4 + ['-left'] + ['wait'] * 14
+    commands += ['save bkrelay', '+right'] + ['wait'] * 13 + ['-right', 'save bkdepot', 'screenshot']
+    commands += ['wait'] * 12 + ['save bkjump1'] + ['wait'] * 6 + ['save bkland1']
+    commands += ['wait'] * 10 + ['save bkjump2', 'screenshot', '+left'] + ['wait'] * 13
+    commands += ['-left', 'save bkland2'] + ['wait'] * 36 + ['save bkbank', '+left']
+    commands += ['wait'] * 6 + ['save bkcurve', 'screenshot'] + ['wait'] * 8
+    commands += ['-left', '-attack', '+jump'] + ['wait'] * 24
     commands += ['-jump', 'impulse 3'] + ['wait'] * 2
     commands += ['save bkpark', 'load bkslide']
     commands += ['wait'] * 16 + ['save bkreload', 'kill'] + ['wait'] * 12
@@ -92,6 +98,10 @@ def state(path):
         'bike_view': int(player.get('bike-view', '0')),
         'camera_origin': tuple(float(x) for x in entities[camera]['origin'].split()) if camera else None,
         'bike_skidding': int(float(player.get('bike-skidding', '0'))),
+        'bike_slip': float(player.get('bike-slip', '0')),
+        'bike_bank': float(player.get('bike-bank', '0')),
+        'vertical_speed': float(player.get('velocity', '0 0 0').split()[2]),
+        'grounded': bool(int(float(player.get('flags', '0'))) & 512),
         'bike_origin': tuple(float(x) for x in bike['origin'].split()),
         'bike_relay': int(float(relay.get('bike-relay-active', '0'))),
     }
@@ -191,11 +201,27 @@ def verify_bike(states, lines, output):
             abs(motion_bearing - slide['bike_heading']) > 22 and
             100 < math.hypot(vx, vy) < math.hypot(*fast['bike_velocity']),
             'braking into the corner did not produce controlled sideways momentum')
+    settle = states['bksettle']
+    settle_bearing = math.degrees(math.atan2(settle['bike_velocity'][1], settle['bike_velocity'][0]))
+    require(0 < settle['bike_slip'] < slide['bike_slip'] and settle['bike_skidding'] == 1 and
+            abs(settle_bearing - settle['bike_heading']) > 16 and relay['bike_slip'] == 0,
+            'brake release did not ease the bike from a slide back to normal grip')
     require(relay['bike_relay'] == 1 and relay['player_origin'][1] >= 332,
             'the rider did not reach and activate the relay around the corner')
     depot = states['bkdepot']
     require(depot['riding'] and depot['player_origin'][1] > 540 and math.hypot(*depot['bike_velocity']) > 220,
             'the bike could not continue at speed into the depot beyond the relay')
+    for jump_name, land_name, lip in (('bkjump1', 'bkland1', 1152), ('bkjump2', 'bkland2', 1472)):
+        jump, landing = states[jump_name], states[land_name]
+        require(jump['riding'] and not jump['grounded'] and jump['player_origin'][2] > 52 and
+                jump['player_origin'][0] > lip + 20 and landing['grounded'] and
+                landing['player_origin'][2] < 30 and landing['player_origin'][0] > jump['player_origin'][0] + 95,
+                f'the bike did not take off and land across the ramp at x={lip}')
+    bank, curve = states['bkbank'], states['bkcurve']
+    require(bank['grounded'] and bank['player_origin'][2] > 45 and abs(bank['bike_bank']) > 12 and
+            curve['riding'] and curve['grounded'] and curve['player_origin'][2] > 45 and
+            curve['bike_heading'] > bank['bike_heading'] + 20,
+            'the bike did not climb and turn on the bank')
     require(not park['riding'] and not park['bike_rider'] and not park['bike_camera'] and park['bike_solid'] == 2 and
             park['player_model'] == 'progs/player.mdl' and park['weapon'] == 'progs/v_shot.mdl' and
             math.dist(park['player_origin'], park['bike_origin']) >= 48,
@@ -215,3 +241,5 @@ def verify_bike(states, lines, output):
     require((output / 'quake01.pcx').is_file(), 'missing mounted chase view screenshot')
     require((output / 'quake02.pcx').is_file(), 'missing brake slide chase view screenshot')
     require((output / 'quake03.pcx').is_file(), 'missing depot riding screenshot')
+    require((output / 'quake04.pcx').is_file(), 'missing jump screenshot')
+    require((output / 'quake05.pcx').is_file(), 'missing bank screenshot')
