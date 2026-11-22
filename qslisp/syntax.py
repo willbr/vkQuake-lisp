@@ -8,6 +8,12 @@ class DerivedForms:
     def __init__(self):
         self.temporary = 0
 
+    def fresh(self, location):
+        # The reader rejects this prefix, so generated identifiers cannot
+        # capture or be shadowed by a source identifier.
+        self.temporary += 1
+        return Node(f'#temporary-{self.temporary}', location)
+
     def expand(self, name, args, location):
         def atom(value):
             return Node(value, location)
@@ -16,10 +22,7 @@ class DerivedForms:
             return Node((atom(head), *items), location)
 
         def binding(value, body):
-            # The reader rejects this prefix, so the generated name cannot
-            # capture or be shadowed by a source identifier.
-            self.temporary += 1
-            temp = atom(f'#temporary-{self.temporary}')
+            temp = self.fresh(location)
             return form('let', atom((atom((temp, value)),)), body(temp))
 
         false = atom(False)
@@ -63,3 +66,25 @@ class DerivedForms:
             else:
                 result = form('if', test, form('begin', *body), result)
         return result
+
+    def named_let(self, args, location):
+        if len(args) < 3 or not isinstance(args[1].value, tuple):
+            raise CompileError(location, 'named let requires a name, binding list, and body')
+        loop, entries, *body = args
+        parameters, initializers, temporaries = [], [], []
+        for entry in entries.value:
+            if not isinstance(entry.value, tuple) or len(entry.value) != 2:
+                raise CompileError(entry.location, 'named let binding requires (name expression)')
+            parameter, value = entry.value
+            temp = self.fresh(entry.location)
+            parameters.append(parameter)
+            temporaries.append(temp)
+            initializers.append(Node((temp, value), entry.location))
+
+        def form(name, *items):
+            return Node((Node(name, location), *items), location)
+
+        function = form('lambda', Node(tuple(parameters), entries.location), *body)
+        recursive = Node((Node((loop, function), location),), location)
+        call = Node((loop, *temporaries), location)
+        return form('let', Node(tuple(initializers), entries.location), form('letrec', recursive, call))

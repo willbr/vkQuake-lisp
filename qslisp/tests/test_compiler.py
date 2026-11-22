@@ -162,7 +162,7 @@ class CompilerTests(CompilerCase):
             ('(define (test) (let ((x)) x))', 'let binding requires'),
             ('(define (test) (if #t 1))', 'two branches'),
             ('(define (test) (+ #t 1))', 'require numbers'),
-            ('(define (test) (lambda (x) x))', 'lambda is not supported'),
+            ('(define (test) (lambda (x x) x))', 'duplicate lambda parameter'),
             ("(define (test) '(1 . 2 3))", 'a dotted list requires'),
             ('(define (test) (let ((f 1)) (f 2)))', 'expected a procedure, got a number'),
             ('(define (test) (begin))', 'begin requires'),
@@ -362,6 +362,39 @@ class CompilerTests(CompilerCase):
         (define (accumulate total n) (+ total n))
         (define (test) (fold accumulate 0 (map square '(2 3 6))))
         ''', 49, filename=str(ROOT / 'examples/list-test.scm'))
+
+    def test_escaping_closures_share_mutable_bindings_through_collection(self):
+        self.value('''
+        (define (counter n)
+          (cons (lambda () (set! n (+ n 1)))
+                (lambda () n)))
+        (define (test)
+          (let* ((state (counter 40)) (step (car state)) (peek (cdr state)))
+            (cons 1 2) (cons 3 4) (cons 5 6)
+            (step)
+            (cons 7 8) (cons 9 10) (cons 11 12)
+            (step)
+            (if (and (procedure? step) (not (equal? step peek))) (+ (peek) 7) 0)))
+        ''', 49, heap_pairs=8, root_slots=64)
+
+    def test_named_let_can_capture_and_preserves_initializer_scope(self):
+        self.value('''
+        (define (test)
+          (let ((loop 49))
+            (let loop ((n 300) (result loop))
+              (if (= n 0) result (loop (- n 1) result)))))
+        ''', 49, heap_pairs=8)
+        result = self.execute('(define (test) (letrec ((x x)) x))')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('binding used before initialization', result.stderr)
+
+    def test_assignment_keeps_prior_argument_values_and_lexical_scopes(self):
+        self.value('''
+        (define (sum x y z) (+ x y z))
+        (define (test)
+          (let* ((n 1) (copy n))
+            (+ (sum n (begin (set! n 6) 7) copy) (* n 6) 4)))
+        ''', 49, heap_pairs=4)
 
     def test_imports_are_relative_and_shared_dependencies_load_once(self):
         with tempfile.TemporaryDirectory(dir=self.work) as directory:

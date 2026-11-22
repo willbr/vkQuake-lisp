@@ -39,11 +39,16 @@ header; executing the result also needs the built interpreter CLI.
   Functions can refer to later definitions and recurse, including mutual recursion.
   Calls in tail position use constant stack space, including calls between
   different functions and different arities.
-- A function name is also a procedure value. Bind it, return it, pass it as
+- A function name or `lambda` is a procedure value. Bind it, return it, pass it as
   an argument, or use it from a computed operator position. Indirect calls
   check argument counts and support constant-stack tail calls. `procedure?`
   checks the value kind. Import the [list library](list.scm) for `map` and
   left-to-right `fold`, whose combiner receives the accumulator and item.
+- Anonymous functions capture lexical bindings and can outlive their caller.
+  `set!` changes a lexical binding and returns the assigned value. Closures
+  that capture the same mutable binding share it. `letrec` introduces mutually
+  visible bindings and checks for reads before initialization. Named `let`
+  evaluates initializers in the outer scope and supports tail-recursive loops.
 - Decimal numbers, scientific notation, `#t`, and `#f`. All numbers use the VM's
   inexact IEEE float32 arithmetic. Literals round to float32; out-of-range finite
   literals are diagnosed. Exact integers, rationals, and bignums are not provided.
@@ -92,7 +97,7 @@ a nonnumeric value, with a source location. Runtime diagnostics are bounded to
 fit the original engine's 256-byte error-message buffer.
 
 This is a scoped Scheme-style language, not a conforming Scheme implementation.
-`lambda`, closures, mutation, and macros are not implemented. Non-tail recursion
+User-defined macros remain future work. Non-tail recursion
 uses the stock call/local stacks; all execution remains subject to the original
 instruction watchdog. Syntax keywords,
 primitive function names, `__qslisp*` global names, and stock ABI global/field names
@@ -375,8 +380,9 @@ Inside compiled Scheme code, each value uses three VM words:
 
 The tag is float32 `0` for a number, `1` for a boolean, `2` for a pair, or `3`
 for an entity, `4` for a string, `5` for the empty list, `6` for a symbol,
-`7` for a vector, or `8` for a named procedure. Numbers and booleans use float32 payloads. Pairs and
-vectors use opaque cell indices,
+`7` for a vector, `8` for code without captures, or `9` for a closure.
+Numbers and booleans use float32 payloads. Pairs, vectors, and closures use
+opaque cell indices,
 entities use the raw edict reference, and strings and interned symbols use
 stock string offsets. These values
 fit the VM's three-word parameter and return areas. Entity references use
@@ -392,8 +398,11 @@ to forge a pair reference.
 Native entry arguments are numeric, so CLI argument `0` is Scheme's number zero,
 not `#f`.
 
-Named procedure payloads hold a raw function reference, and their third word
-holds the arity plus two. Other normal values have a zero third word. Private tail requests use
+Code values hold a raw function reference, and their third word holds the
+arity plus two. A closure stores that code value and the captured values in
+the heap. The trampoline stages captures before entering the function body.
+Mutable bindings use shared cells, and the collector traces captures and
+boxes, including recursive closure cycles. Other normal values have a zero third word. Private tail requests use
 `[raw-function-reference, 0, 1]` instead. The dispatcher consumes this marker
 before any return to a Scheme caller or native entry wrapper. Request records
 are control data, not Scheme values, and internal entries are not a public CLI

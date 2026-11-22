@@ -141,7 +141,8 @@ class PairHeap:
         left_kind, right_kind = advance(left, 1), advance(right, 1)
         same_kind = self.compare(frame, OP_EQ, left_kind, right_kind)
         mismatch_kind = frame.emit(OP_IFNOT, same_kind)
-        aggregate = self.has_heap_tag(frame, left_kind, self.boxed_kinds)
+        structural_kinds = tuple(kind for kind in self.boxed_kinds if kind != 'closure')
+        aggregate = self.has_heap_tag(frame, left_kind, structural_kinds)
         mismatch_atom = frame.emit(OP_IFNOT, aggregate)
         # The pairs are immutable. Store both handles to revisit their cdrs
         # after the car comparison. Pending depth cannot exceed the heap size.

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 
 from .bytecode import (Program, Frame, Local, TAGS, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
                        OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
-                       OP_RETURN, OP_NOT, OP_NOT_ENT, OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND,
+                       OP_RETURN, OP_NOT, OP_NOT_ENT, OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND, OP_OR,
                        OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V,
                        OP_STOREP_S, OP_EQ_ENT, OP_EQ_STR, OP_BITAND, OP_BITOR,
                        OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC, OP_STOREP_ENT, OP_STOREP_FNC,
@@ -61,10 +61,23 @@ FIELD_READS = {1: ('string', OP_LOAD_S), 2: ('number', OP_LOAD_F), 4: ('entity',
 FIELD_WRITES = {1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V, 4: OP_STOREP_ENT}
 
 
+def expression_names(node, *, mutations=False):
+    form = node.value
+    if isinstance(form, str) and not mutations:
+        yield form
+    if not isinstance(form, tuple) or not form or form[0].value == 'quote':
+        return
+    if mutations and form[0].value == 'set!' and len(form) == 3 and isinstance(form[1].value, str):
+        yield form[1].value
+    for child in form:
+        yield from expression_names(child, mutations=mutations)
+
+
 @dataclass(frozen=True)
 class Value:
     slot: object
     kind: str = 'unknown'
+    boxed: bool = False
 
 
 @dataclass
@@ -77,6 +90,15 @@ class Function:
     private: int
     reference: int
     request: int
+
+
+@dataclass(frozen=True)
+class LambdaBody:
+    index: int
+    parameters: tuple
+    captures: dict
+    body: tuple
+    location: Location
 
 
 def symbol(node, purpose):
@@ -102,6 +124,7 @@ class Compiler:
         self.constants = {}
         self.derived_forms = DerivedForms()
         self.uses_procedures = False
+        self.lambdas = []
         self.zero = self.program.constant(0)
         self.one = self.program.constant(1)
         for form in forms:
@@ -115,9 +138,12 @@ class Compiler:
                         for i in range(8)]
         self.dispatch = self.program.function('__qslisp_dispatch', filename, 1)
         self.dispatch_reference = self.program.define('__qslisp_dispatch', 6, [self.dispatch])
-        features = set().union(*(self.heap_features(node) for function in self.functions.values()
-                               for node in function.body))
-        kinds = ('vector',) if 'vector' in features else ()
+        bodies = [node for function in self.functions.values() for node in function.body]
+        features = set().union(*(self.heap_features(node) for node in bodies))
+        self.mutable_names = {name for node in bodies for name in expression_names(node, mutations=True)}
+        self.closure_mailbox = (self.program.define('__qslisp_captured_values', 3, [0, 0, 0])
+                                if 'closure' in features else None)
+        kinds = tuple(kind for kind in ('vector', 'closure') if kind in features)
         self.heap = (PairHeap(self.program, heap_pairs, root_slots, deep_equal='equal' in features, boxed_kinds=kinds)
                      if 'pair' in features or kinds else None)
         self.pending = []
@@ -151,6 +177,10 @@ class Compiler:
             result.add('vector')
         if name in ('cons', 'car', 'cdr') or (name == 'list' and len(form) > 1):
             result.add('pair')
+        if name == 'set!':
+            result.add('pair')
+        if name in ('lambda', 'letrec') or (name == 'let' and len(form) > 1 and isinstance(form[1].value, str)):
+            result.add('closure')
         if name == 'equal?':
             result.add('equal')
         return result
@@ -220,7 +250,7 @@ class Compiler:
     def compile(self):
         for function in self.functions.values():
             frame = Frame(self.program, function.private, function.location, len(function.parameters), 3)
-            environment = {name: Value(Local(i * 3)) for i, name in enumerate(function.parameters)}
+            environment = self.frame_environment(frame, function.parameters, {})
             self.tail_sequence(frame, function.body, environment, function)
             frame.finish()
 
@@ -237,10 +267,35 @@ class Compiler:
             result = self.call(wrapper, function, args)
             wrapper.emit(OP_RETURN, result.slot)
             wrapper.finish()
+        for function in self.lambdas:
+            self.compile_lambda(function)
         self.compile_dispatch()
         if self.heap:
             self.heap.compile()
         return self.program.encode()
+
+    def frame_environment(self, frame, parameters, captures):
+        environment = captures.copy()
+        arguments = {name: Value(Local(i * 3)) for i, name in enumerate(parameters)}
+        with self.keep(arguments.values()):
+            for name, argument in arguments.items():
+                environment[name] = self.bind_local(frame, name, argument, frame.location, environment)
+        return environment
+
+    def compile_lambda(self, function):
+        frame = Frame(self.program, function.index, function.location, len(function.parameters), 3)
+        environment = {}
+        if function.captures:
+            chain = frame.allocate()
+            frame.emit(OP_STORE_V, self.closure_mailbox, chain)
+            message = self.program.message(f'{function.location}: invalid closure environment\n')
+            for name, original in function.captures.items():
+                value = self.heap.call(frame, 'car', [chain, message])
+                environment[name] = Value(value, original.kind, original.boxed)
+                chain = self.heap.call(frame, 'cdr', [chain, message])
+        scope = self.frame_environment(frame, function.parameters, environment)
+        self.tail_sequence(frame, function.body, scope, function)
+        frame.finish()
 
     def statistics(self):
         return {
@@ -327,8 +382,50 @@ class Compiler:
                 label = binding_name(pair[0])
                 if label in bindings:
                     raise CompileError(pair[0].location, f'duplicate let binding {label}')
-                bindings[label] = self.expression(frame, pair[1], environment)
+                value = self.expression(frame, pair[1], environment)
+                bindings[label] = self.bind_local(frame, label, value, binding.location, environment)
         return environment | bindings
+
+    def bind_local(self, frame, name, value, location, environment):
+        if name not in self.mutable_names:
+            return value
+        pair = self.make_pair(frame, value, self.empty_list(), location, environment)
+        return Value(pair.slot, 'pair', boxed=True)
+
+    def recursive_environment(self, frame, node, args, environment):
+        if len(args) < 2 or not isinstance(args[0].value, tuple):
+            raise CompileError(node.location, 'letrec requires a binding list and body')
+        scope = environment.copy()
+        entries = []
+        names = set()
+        uninitialized = Value(self.program.tagged_literal('__qslisp_uninitialized', 0, 'uninitialized'), 'uninitialized')
+        for binding in args[0].value:
+            if not isinstance(binding.value, tuple) or len(binding.value) != 2:
+                raise CompileError(binding.location, 'letrec binding requires (name expression)')
+            name, initializer = binding.value
+            label = binding_name(name)
+            if label in names:
+                raise CompileError(name.location, f'duplicate letrec binding {label}')
+            names.add(label)
+            box = self.make_pair(frame, uninitialized, self.empty_list(), name.location, scope)
+            scope[label] = Value(box.slot, 'pair', boxed=True)
+            entries.append((box.slot, initializer))
+        for box, initializer in entries:
+            value = self.expression(frame, initializer, scope)
+            self.heap.call(frame, 'car_set', [box, value.slot])
+        return scope
+
+    def local_value(self, frame, value, location):
+        if not value.boxed:
+            return value
+        message = self.program.message(f'{location}: invalid lexical binding\n')
+        result = self.heap.call(frame, 'car', [value.slot, message])
+        pending = frame.allocate(1)
+        frame.emit(OP_EQ, advance(result, 1), self.program.constant(TAGS['uninitialized']), pending)
+        ready = frame.emit(OP_IFNOT, pending)
+        self.heap.error(frame, self.program.message(f'{location}: binding used before initialization\n'))
+        frame.patch(ready, 2, len(frame.code))
+        return Value(result)
 
     def arguments(self, frame, node, name, args, environment):
         function = self.functions[name]
@@ -356,7 +453,15 @@ class Compiler:
                 self.tail_expression(frame, args[2], environment, function)
                 return
             if name == 'let':
+                if args and isinstance(args[0].value, str):
+                    lowered = self.derived_forms.named_let(args, node.location)
+                    self.tail_expression(frame, lowered, environment, function)
+                    return
                 scope = self.let_environment(frame, node, args, environment)
+                self.tail_sequence(frame, args[1:], scope, function)
+                return
+            if name == 'letrec':
+                scope = self.recursive_environment(frame, node, args, environment)
                 self.tail_sequence(frame, args[1:], scope, function)
                 return
             if name == 'begin':
@@ -436,21 +541,43 @@ class Compiler:
         return result
 
     def named_procedure(self, function):
+        return self.procedure_value(function.private, len(function.parameters))
+
+    def procedure_value(self, index, arity):
         self.uses_procedures = True
-        slot = self.program.tagged_literal(f'__qslisp_procedure_{function.private}', function.private,
-                                           'procedure', len(function.parameters) + 2)
+        slot = self.program.tagged_literal(f'__qslisp_procedure_{index}', index, 'procedure', arity + 2)
         return Value(slot, 'procedure')
+
+    def make_lambda(self, frame, node, args, environment):
+        if len(args) < 2 or not isinstance(args[0].value, tuple):
+            raise CompileError(node.location, 'lambda requires a parameter list and body')
+        parameters = tuple(binding_name(parameter) for parameter in args[0].value)
+        if len(parameters) > 8:
+            raise CompileError(args[0].location, 'stock VM supports at most eight arguments')
+        if len(parameters) != len(set(parameters)):
+            raise CompileError(args[0].location, 'duplicate lambda parameter')
+        used = {name for item in args[1:] for name in expression_names(item)}
+        captures = {name: value for name, value in environment.items() if name in used and name not in parameters}
+        label = f'__qslisp_lambda_{len(self.lambdas)}'
+        index = self.program.function(label, node.location.filename, len(parameters))
+        self.lambdas.append(LambdaBody(index, parameters, captures, args[1:], node.location))
+        procedure = self.procedure_value(index, len(parameters))
+        if not captures:
+            return procedure
+        chain = self.empty_list()
+        for value in reversed(captures.values()):
+            chain = self.make_pair(frame, value, chain, node.location, environment)
+        storage = self.make_pair(frame, procedure, chain, node.location, environment)
+        return self.retag(frame, storage, 'closure')
 
     def call_indirect(self, frame, node, args, environment, *, tail=False):
         if len(args) > 8:
             raise CompileError(node.location, 'stock VM supports at most eight arguments')
         self.uses_procedures = True
         target = node.value[0]
-        procedure = self.expression(frame, target, environment)
-        if procedure.kind not in ('procedure', 'unknown'):
-            raise CompileError(target.location, f'expected a procedure, got a {procedure.kind}')
-        self.require_tag(frame, procedure, target, 'procedure')
-        with self.keep((procedure,)):
+        callable_value = self.expression(frame, target, environment)
+        procedure, captures = self.resolve_procedure(frame, callable_value, target)
+        with self.keep((callable_value, captures)):
             values = self.values(frame, args, environment)
 
         arity = frame.allocate(1)
@@ -465,11 +592,46 @@ class Compiler:
         frame.emit(OP_STORE, procedure.slot, request)
         frame.emit(OP_STORE, self.zero, advance(request, 1))
         frame.emit(OP_STORE, self.one, advance(request, 2))
+        if self.closure_mailbox is not None:
+            frame.emit(OP_STORE_V, captures.slot, self.closure_mailbox)
         if tail:
             self.publish(frame, values)
             frame.emit(OP_RETURN, request)
             return None
         return self.invoke(frame, request, values, environment)
+
+    def closure_parts(self, frame, value, location):
+        pair = self.retag(frame, value, 'pair')
+        message = self.program.message(f'{location}: invalid closure\n')
+        procedure = self.heap.call(frame, 'car', [pair.slot, message])
+        captures = self.heap.call(frame, 'cdr', [pair.slot, message])
+        return Value(procedure, 'procedure'), Value(captures, 'pair')
+
+    def resolve_procedure(self, frame, value, target):
+        if value.kind not in ('procedure', 'closure', 'unknown'):
+            raise CompileError(target.location, f'expected a procedure, got a {value.kind}')
+        if value.kind == 'closure':
+            return self.closure_parts(frame, value, target.location)
+        empty = self.empty_list()
+        if value.kind == 'procedure' or self.closure_mailbox is None:
+            self.require_tag(frame, value, target, 'procedure')
+            return value, empty
+
+        check = frame.allocate(1)
+        code, captures = frame.allocate(), frame.allocate()
+        frame.emit(OP_EQ, advance(value.slot, 1), self.program.constant(TAGS['procedure']), check)
+        plain = frame.emit(OP_IF, check)
+        frame.emit(OP_EQ, advance(value.slot, 1), self.program.constant(TAGS['closure']), check)
+        self.heap.guard(frame, check, self.program.message(f'{target.location}: expected a procedure\n'))
+        closed_code, closed_captures = self.closure_parts(frame, value, target.location)
+        frame.emit(OP_STORE_V, closed_code.slot, code)
+        frame.emit(OP_STORE_V, closed_captures.slot, captures)
+        done = frame.emit(OP_GOTO)
+        frame.patch(plain, 2, len(frame.code))
+        frame.emit(OP_STORE_V, value.slot, code)
+        frame.emit(OP_STORE_V, empty.slot, captures)
+        frame.patch(done, 1, len(frame.code))
+        return Value(code, 'procedure'), Value(captures)
 
     def publish(self, frame, args):
         for i, destination in enumerate(self.mailbox):
@@ -755,12 +917,24 @@ class Compiler:
                 if form in self.functions:
                     return self.named_procedure(self.functions[form])
                 raise CompileError(node.location, f'unbound variable {form}')
-            return environment[form]
+            return self.local_value(frame, environment[form], node.location)
         name, args = self.application(node, environment)
         if name is None:
             return self.call_indirect(frame, node, args, environment)
         if name in DERIVED_FORMS:
             return self.expression(frame, self.derived_forms.expand(name, args, node.location), environment)
+        if name == 'lambda':
+            return self.make_lambda(frame, node, args, environment)
+        if name == 'set!':
+            if len(args) != 2:
+                raise CompileError(node.location, 'set! requires a binding name and value')
+            label = symbol(args[0], 'assignment target')
+            binding = environment.get(label)
+            if binding is None or not binding.boxed:
+                raise CompileError(args[0].location, f'set! requires a mutable lexical binding, got {label}')
+            value = self.expression(frame, args[1], environment)
+            self.heap.call(frame, 'car_set', [binding.slot, value.slot])
+            return value
         if name == 'quote':
             if len(args) != 1:
                 raise CompileError(node.location, 'quote requires one datum')
@@ -781,6 +955,10 @@ class Compiler:
             result = self.tagged(frame, 'boolean')
             tag = self.program.constant(TAGS[VALUE_PREDICATES[name]])
             frame.emit(OP_EQ, advance(value.slot, 1), tag, result.slot)
+            if name == 'procedure?' and self.closure_mailbox is not None:
+                closed = frame.allocate(1)
+                frame.emit(OP_EQ, advance(value.slot, 1), self.program.constant(TAGS['closure']), closed)
+                frame.emit(OP_OR, result.slot, closed, result.slot)
             return result
         if name in ('eq?', 'equal?'):
             if len(args) != 2:
@@ -853,7 +1031,12 @@ class Compiler:
             frame.patch(to_end, 1, len(frame.code))
             return Value(result, yes.kind if yes.kind == no.kind else 'unknown')
         if name == 'let':
+            if args and isinstance(args[0].value, str):
+                return self.expression(frame, self.derived_forms.named_let(args, node.location), environment)
             scope = self.let_environment(frame, node, args, environment)
+            return self.sequence(frame, args[1:], scope)
+        if name == 'letrec':
+            scope = self.recursive_environment(frame, node, args, environment)
             return self.sequence(frame, args[1:], scope)
         if name == 'begin':
             if not args:
