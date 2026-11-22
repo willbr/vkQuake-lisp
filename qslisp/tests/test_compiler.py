@@ -34,8 +34,14 @@ class CompilerCase(unittest.TestCase):
         path.write_bytes(data)
         return path
 
-    def execute(self, source, name='test', *arguments, **options):
+    def execute(self, source, name='test', *arguments, seed_self=False, **options):
         path = self.program(source, **options)
+        if seed_self:
+            data = bytearray(path.read_bytes())
+            header = STOCK.validate(data)
+            # The CLI host starts with zeroed entities. Point self at its second edict.
+            struct.pack_into('<i', data, header[12] + 28 * 4, header[14] * 4)
+            path.write_bytes(data)
         return subprocess.run([str(ROOT / 'tools/quakec/run-stock.sh'), str(path), name,
                                *map(str, arguments)], capture_output=True, text=True, timeout=10)
 
@@ -47,6 +53,30 @@ class CompilerCase(unittest.TestCase):
 
 
 class CompilerTests(CompilerCase):
+
+    def test_persistent_entity_list_validates_and_reconstructs_the_snapshot(self):
+        library = (ROOT / 'qslisp/persistence.scm').read_text()
+        source = library + """
+        (define-saved-entity-list restore remember! path-length (path-a path-b))
+        (define (test)
+          (let* ((owner (quake:self))
+                 (path (list owner (quake:world))))
+            (remember! owner path)
+            (let ((loaded (restore owner)))
+              (if (and (equal? path loaded) (not (eq? path loaded)))
+                  (begin
+                    (remember! owner ())
+                    (if (null? (restore owner)) 49 0))
+                  0))))
+        (define (bad-value) (remember! (quake:self) (list 7)))
+        (define (too-long) (remember! (quake:self) (list (quake:world) (quake:world) (quake:world))))
+        """
+        self.value(source, 49, seed_self=True)
+        for name in ('bad-value', 'too-long'):
+            with self.subTest(name=name):
+                result = self.execute(source, name)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('saved entity list requires a proper list', result.stdout + result.stderr)
 
     def test_records_check_types_and_compare_by_schema_and_value(self):
         source = """

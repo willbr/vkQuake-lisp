@@ -1,12 +1,13 @@
 ; The Annex sentry uses engine-scheduled callbacks and authored waypoints.
-(define-field patrol-point entity)
+(define-saved-entity-list sentry-route remember-sentry-route! patrol-route-length
+  (patrol-route-0 patrol-route-1 patrol-route-2 patrol-route-3))
 (define-field patrol-count)
 (define-field sentry-state)
 (define-field attack-time)
 (define-field respawn-ready)
 
 (define-record damage-event (victim entity) (source entity) (amount number))
-(define-record patrol-leg (waypoint entity) (following entity))
+(define-record patrol-leg (waypoint entity) (remaining list))
 (define-record attack-state (phase number) (deadline number))
 
 (define move-step 4)
@@ -101,20 +102,35 @@
 
 (define (finish-patrol-leg actor leg)
   (match leg
-    ((patrol-leg _ following)
-     (quake:set-field! actor patrol-point following)
+    ((patrol-leg waypoint remaining)
+     (remember-sentry-route! actor (append-waypoint remaining waypoint))
      (quake:set-field! actor patrol-count (+ (quake:field actor patrol-count) 1)))))
 
 (define (patrol actor)
-  (when (quake:world? (quake:field actor patrol-point))
-    (quake:set-field! actor patrol-point (find-linked actor)))
-  (let ((point (quake:field actor patrol-point)))
+  (when (= (quake:field actor patrol-route-length) 0) (start-patrol-route actor))
+  (let ((point (quake:field actor patrol-route-0)))
     (when (not (quake:world? point))
       (if (< (sentry-distance-squared actor point) 64)
-          (finish-patrol-leg actor (make-patrol-leg point (find-linked point)))
+          (finish-patrol-leg actor (make-patrol-leg point (cdr (sentry-route actor))))
           (sentry-step actor point 7)))))
 
 (define (enter-attack-state actor state)
+(define (append-waypoint route point)
+  (match route
+    (() (list point))
+    ((cons head tail) (cons head (append-waypoint tail point)))))
+
+(define (collect-patrol-route first next remaining)
+  (cond
+    ((or (quake:world? next) (quake:entity=? first next)) ())
+    ((= remaining 0) (quake:error "sentry patrol route must contain at most four waypoints\n"))
+    (else (cons next (collect-patrol-route first (find-linked next) (- remaining 1))))))
+
+(define (start-patrol-route actor)
+  (let ((first (find-linked actor)))
+    (when (not (quake:world? first))
+      (remember-sentry-route! actor (cons first (collect-patrol-route first (find-linked first) 3))))))
+
   (match state
     ((attack-state phase deadline)
      (quake:set-field! actor sentry-state phase)

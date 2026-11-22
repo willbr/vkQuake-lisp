@@ -1,5 +1,5 @@
 ; Explore stock Quake and play the original Signal Room challenge.
-(import "../qslisp/actors.scm" "sentry.scm" "progression.scm")
+(import "../qslisp/actors.scm" "../qslisp/persistence.scm" "sentry.scm" "progression.scm")
 
 (define-field next-shot)
 (define-field gate-open)

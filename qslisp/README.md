@@ -169,9 +169,8 @@ held, ammo use on a miss, gate opening on a hit, and completion through the
 exit. It saves and reloads both locked and open gate states and checks that
 Quake restores ammo, the target, and native entity fields. It also checks that
 reset restores the original state and that the completed room leads to Relay
-Annex. Stock engine screenshots, state snapshots,
-and `measurements.json` are under `build/quakec/map-boot/`. Heap-backed save and
-reload remain future work.
+Annex. Stock engine screenshots, state snapshots, and `measurements.json`
+are under `build/quakec/map-boot/`.
 
 The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
@@ -210,6 +209,21 @@ stores the next named callback and time on the entity. Steps can span frames
 using entity fields for shared state.
 Annex defines typed records for damage events, patrol legs, and attack states.
 Its Lisp procedures destructure these records with `match`.
+
+### Saved Lisp lists
+
+Import [persistence.scm](persistence.scm) and declare a bounded list of entity
+references with `(define-saved-entity-list read write length-field (slot ...))`.
+The declaration creates the stock edict fields and two Lisp procedures.
+`(write owner values)` validates the entire list before storing its length and
+references. `(read owner)` rebuilds a fresh Lisp list in the pair heap. The
+snapshot is saved with its owner by the original engine, so references should
+point to entities that remain alive. Closures and arbitrary heap objects are
+transient.
+
+The Annex sentry uses a saved Lisp list to keep the order of its authored
+waypoints. The stock-engine test saves the route, lets the sentry rotate to
+the next waypoint, then reloads the old order and checks that patrol continues.
 
 ### Entity and gameplay forms
 
@@ -305,7 +319,8 @@ pair metadata, keeping graph traversal iterative rather than recursing on the
 small stock stack. Sweeping resets marks, clears dead fields, and rebuilds the
 free list. Pair handles remain stable. Only pair references are traced in this
 milestone; future heap types and global value definitions must extend the root
-and tracing rules. Stock save/load for the pair heap is still future work.
+and tracing rules. The saved-list library snapshots selected Lisp data to entity
+fields and reconstructs it in the heap after a load.
 
 ### Measured cost
 

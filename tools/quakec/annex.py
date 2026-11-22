@@ -4,7 +4,8 @@ import json
 from challenge import read_edicts, require
 
 SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplies',
-         'pulse', 'switched', 'checked', 'dooropen', 'guarded', 'reset')
+         'pulse', 'switched', 'checked', 'dooropen', 'guarded', 'reset',
+         'rtmoved', 'rtload', 'rtresume')
 
 
 def verification_commands():
@@ -23,7 +24,9 @@ def verification_commands():
     commands += ['wait'] * 12 + ['save checked', 'impulse 3']
     commands += ['wait'] * 14 + ['save dooropen', '+moveright'] + ['wait'] * 5
     commands += ['-moveright'] + ['wait'] * 24 + ['save guarded', 'restart']
-    commands += ['wait'] * 35 + ['save reset', 'toggleconsole', 'quit']
+    commands += ['wait'] * 35 + ['save reset'] + ['wait'] * 27 + ['save rtmoved', 'load reset']
+    commands += ['wait'] * 14 + ['save rtload'] + ['wait'] * 21
+    commands += ['save rtresume', 'toggleconsole', 'quit']
     return '\n'.join(commands) + '\n'
 
 
@@ -48,6 +51,8 @@ def state(path):
         'sentry_health': int(float(sentry.get('health', '0'))) if sentry else None,
         'sentry_state': int(float(sentry.get('sentry-state', '0'))) if sentry else None,
         'patrol_count': int(float(sentry.get('patrol-count', '0'))) if sentry else None,
+        'patrol_route': [entities[int(sentry[f'patrol-route-{i}'])]['targetname']
+                         for i in range(int(float(sentry.get('patrol-route-length', '0'))))] if sentry else None,
     }
 
 
@@ -90,5 +95,14 @@ def verify_annex(output, lines):
             states['reset']['sentry_health'] == 45 and states['reset']['sentry_state'] == 0 and
             states['reset']['checkpoint'] == states['reset']['gate_open'] == 0,
             'reset did not restore the sentry encounter')
+    saved, moved, loaded, resumed = (states[name] for name in ('reset', 'rtmoved', 'rtload', 'rtresume'))
+    require(saved['patrol_route'] == ['patrol_near', 'patrol_far'] and
+            moved['patrol_route'] == ['patrol_far', 'patrol_near'] and
+            moved['patrol_count'] == saved['patrol_count'] + 1,
+            'patrol did not rotate away from the saved list')
+    require(loaded['patrol_route'] == saved['patrol_route'] and loaded['patrol_count'] == saved['patrol_count'],
+            'loading did not restore the Lisp route before reaching the saved waypoint')
+    require(resumed['patrol_route'] == moved['patrol_route'] and resumed['patrol_count'] == moved['patrol_count'],
+            'the saved Lisp route did not point the sentry to the next waypoint')
     require((output / 'quake00.pcx').is_file(), 'missing sentry screenshot')
     (output / 'encounter.json').write_text(json.dumps(states, indent=2) + '\n', encoding='utf-8')
