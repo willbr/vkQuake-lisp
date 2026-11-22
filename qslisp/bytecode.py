@@ -9,10 +9,13 @@ from .reader import CompileError
 ROOT = Path(__file__).resolve().parents[1]
 OP_MUL, OP_DIV, OP_ADD, OP_SUB = 1, 5, 6, 8
 OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT = 10, 20, 21, 22, 23
+OP_EQ_ENT = 13
 OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V = 24, 25, 30, 37, 38
+OP_STOREP_S = 39
 OP_STORE, OP_STORE_V, OP_RETURN, OP_NOT = 31, 32, 43, 44
 OP_NOT_ENT = 47
 OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND = 49, 50, 51, 61, 62
+OP_BITAND, OP_BITOR = 64, 65
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,14 @@ class Program:
 
     def literal_string(self, text):
         return self.define(f'__qslisp_string_{len(self.globaldefs)}', 1, [self.string(text)])
+
+    def float_field(self, name, location):
+        if self.entityfields == 32768:
+            raise CompileError(location, 'stock entity field storage limit exceeded')
+        self.fielddefs.append((2, self.entityfields, self.string(name)))
+        self.field_kinds[name] = 2
+        self.define(name, 5, [self.entityfields])
+        self.entityfields += 1
 
     def function(self, name, filename, arity):
         index = len(self.functions)

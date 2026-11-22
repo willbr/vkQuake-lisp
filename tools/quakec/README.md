@@ -180,6 +180,9 @@ The first [compiler milestone](../../qslisp/README.md) implements CLI execution
 of arithmetic, conditionals, lexically scoped variables, and named functions.
 It emits bytecode directly; FTEQCC provides reference output. The map boot
 example exercises `worldspawn`, model precaching, and `StartFrame` in stock Quake.
+The [Signal Room verification](../../qslisp/README.md#play-and-verify-the-signal-room)
+also drives a local client through walking, jumping, firing, and resetting and
+samples the original engine's instruction counters.
 
 The [pair heap prototype](../../qslisp/README.md#pair-heap-and-collection) uses
 fixed global storage, checked accessor trees, compiler-managed shadow roots,

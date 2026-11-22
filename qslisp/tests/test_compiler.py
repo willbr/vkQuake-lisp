@@ -233,16 +233,18 @@ class CompilerTests(CompilerCase):
 
     def test_native_field_writes_and_vector_component_reads(self):
         path = self.program('''
+        (define-field charge)
         (define (identity x) x)
         (define (test)
           (let ((entity (quake:self)))
-            (quake:set-field! entity health (identity 100))
+            (quake:set-field! entity charge (identity 100))
             (quake:set-field! entity view_ofs (quake:vector 0 0 (identity 22)))
             (quake:set-field! entity velocity (quake:field entity view_ofs))
-            (+ (quake:field entity health) (quake:field entity velocity_z))))
+            (+ (quake:field entity charge) (quake:field entity velocity_z))))
         ''')
         data = bytearray(path.read_bytes())
         header = STOCK.validate(data)
+        self.assertEqual(header[14], 106)
         # The CLI host starts with zeroed entities. Point self at its second edict.
         struct.pack_into('<i', data, header[12] + 28 * 4, header[14] * 4)
         path.write_bytes(data)
@@ -250,6 +252,19 @@ class CompilerTests(CompilerCase):
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('return: 122\n', result.stdout)
+
+    def test_custom_fields_cannot_shadow_stock_or_scheme_names(self):
+        cases = ('(define-field health)', '(define-field extra) (define-field extra)',
+                 '(define-field quake:time)', '(define-field test)')
+        for fields in cases:
+            with self.subTest(fields=fields), self.assertRaisesRegex(CompileError, 'entity field'):
+                compile_source(f'(define (test) 0) {fields}')
+
+    def test_quake_bitwise_flags(self):
+        self.value('''
+        (define (test)
+          (quake:bit-and (quake:bit-or 8 512) 512))
+        ''', 512)
 
     def test_stock_frame_and_reader_depth_limits_are_diagnostics(self):
         with self.assertRaisesRegex(CompileError, 'saved-locals limit'):

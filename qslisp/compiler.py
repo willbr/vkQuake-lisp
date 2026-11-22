@@ -5,27 +5,39 @@ from contextlib import contextmanager
 from .bytecode import (Program, Frame, Local, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
                        OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
                        OP_RETURN, OP_NOT, OP_NOT_ENT, OP_IF, OP_CALL0, OP_GOTO, OP_AND,
-                       OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V)
+                       OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V,
+                       OP_STOREP_S, OP_EQ_ENT, OP_BITAND, OP_BITOR)
 from .reader import CompileError, Location, StringLiteral, read
 from .heap import PairHeap
 
-SYNTAX = {'define', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
+SYNTAX = {'define', 'define-field', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
           'define-syntax', 'syntax-rules', 'quasiquote'}
 ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
 COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
+BITWISE = {'quake:bit-and': OP_BITAND, 'quake:bit-or': OP_BITOR}
 ENGINE_CALLS = {
+    'quake:make-vectors': (1, ('vector',)),
     'quake:set-origin': (2, ('entity', 'vector')),
     'quake:set-model': (3, ('entity', 'model')),
     'quake:set-size': (4, ('entity', 'vector', 'vector')),
+    'quake:sound': (8, ('entity', 'number', 'sample', 'number', 'number')),
     'quake:error': (10, ('string',)),
+    'quake:remove': (15, ('entity',)),
+    'quake:traceline': (16, ('vector', 'vector', 'number', 'entity')),
     'quake:find': (18, ('entity', 'string-field', 'string')),
+    'quake:precache-sound': (19, ('sample',)),
     'quake:precache-model': (20, ('model',)),
     'quake:dprint': (25, ('string',)),
+    'quake:centerprint': (73, ('entity', 'string')),
 }
 ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:world': ('world', 'entity'),
-                  'quake:time': ('time', 'number')}
-PRIMITIVES = ARITHMETIC.keys() | COMPARISONS.keys() | ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys() | {
-    'not', 'cons', 'car', 'cdr', 'pair?', 'quake:world?', 'quake:field', 'quake:set-field!', 'quake:vector',
+                  'quake:time': ('time', 'number'), 'quake:forward-x': ('v_forward_x', 'number'),
+                  'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
+ENTITY_RESULTS = {'quake:find': 1, 'quake:traceline': 'trace_ent'}
+PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
+              ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
+    'not', 'cons', 'car', 'cdr', 'pair?', 'quake:world?', 'quake:entity=?',
+    'quake:field', 'quake:set-field!', 'quake:vector',
 }
 TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3}
 FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector'}
@@ -103,6 +115,14 @@ class Compiler:
 
     def declare(self, node):
         form = node.value
+        if isinstance(form, tuple) and form and form[0].value == 'define-field':
+            if len(form) != 2:
+                raise CompileError(node.location, 'define-field requires one numeric field name')
+            name = binding_name(form[1])
+            if name.startswith('__qslisp') or name in self.program.names or name in PRIMITIVES:
+                raise CompileError(form[1].location, f'duplicate or reserved entity field {name}')
+            self.program.float_field(name, form[1].location)
+            return
         if not isinstance(form, tuple) or len(form) < 3 or form[0].value != 'define':
             raise CompileError(node.location, 'top level requires (define (name arguments...) body...)')
         signature = form[1].value
@@ -356,10 +376,10 @@ class Compiler:
             raise CompileError(literal.location, f'{name} requires a string literal here')
         text = literal.value.text
         encoded = text.encode('utf-8')
-        if name in ('quake:dprint', 'quake:error') and len(encoded) > 255:
+        if name in ('quake:dprint', 'quake:error', 'quake:centerprint') and len(encoded) > 255:
             raise CompileError(literal.location, f'{name} text exceeds the stock 255-byte limit')
-        if kind == 'model' and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
-            raise CompileError(literal.location, f'{name} requires a stock model path of 1–63 bytes')
+        if kind in ('model', 'sample') and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
+            raise CompileError(literal.location, f'{name} requires a stock {kind} path of 1–63 bytes')
         return self.program.literal_string(text)
 
     def engine_field(self, node, kinds):
@@ -407,9 +427,11 @@ class Compiler:
     def write_field(self, frame, node, args, environment):
         if len(args) != 3:
             raise CompileError(node.location, 'quake:set-field! requires an entity, a field name, and a value')
-        field, kind = self.engine_field(args[1], (2, 3))
+        field, kind = self.engine_field(args[1], (1, 2, 3))
         entity = self.entity(frame, args[0], environment)
-        if kind == 3:
+        if kind == 1:
+            value_slot = self.engine_string('quake:set-field!', args[2], 'string')
+        elif kind == 3:
             value_slot = self.vector(frame, args[2], environment)
         else:
             value = self.expression(frame, args[2], environment)
@@ -417,12 +439,12 @@ class Compiler:
             value_slot = value.slot
         address = frame.allocate(1)
         frame.emit(OP_ADDRESS, entity, field, address)
-        frame.emit(OP_STOREP_V if kind == 3 else OP_STOREP_F, value_slot, address)
+        frame.emit({1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V}[kind], value_slot, address)
         return Value(self.zero, 'number')
 
     def engine_call(self, frame, node, name, args, environment):
         number, kinds = ENGINE_CALLS[name]
-        if kinds in (('string',), ('model',)) and (len(args) != 1 or not isinstance(args[0].value, StringLiteral)):
+        if kinds in (('string',), ('model',), ('sample',)) and (len(args) != 1 or not isinstance(args[0].value, StringLiteral)):
             raise CompileError(node.location, f'{name} requires one string literal')
         if len(args) != len(kinds):
             raise CompileError(node.location, f'{name} requires {len(kinds)} arguments')
@@ -434,6 +456,10 @@ class Compiler:
                 slot = self.vector(frame, arg, environment)
             elif kind == 'string-field':
                 slot, _ = self.engine_field(arg, (1,))
+            elif kind == 'number':
+                value = self.expression(frame, arg, environment)
+                self.number(frame, value, arg)
+                slot = value.slot
             else:
                 slot = self.engine_string(name, arg, kind)
             operands.append(slot)
@@ -442,9 +468,12 @@ class Compiler:
         builtin = (self.program.error_function if number == 10 else
                    self.program.builtin(f'__qslisp_builtin_{number}', number, len(kinds)))
         frame.emit(OP_CALL0 + len(kinds), builtin)
-        if name == 'quake:find':
+        if name in ENTITY_RESULTS:
+            source = ENTITY_RESULTS[name]
+            if isinstance(source, str):
+                source = self.program.names[source]
             result = self.tagged(frame, 'entity')
-            frame.emit(OP_STORE, 1, result.slot)
+            frame.emit(OP_STORE, source, result.slot)
             return result
         return Value(self.zero, 'number')
 
@@ -485,6 +514,13 @@ class Compiler:
             entity = self.entity(frame, args[0], environment)
             result = self.tagged(frame, 'boolean')
             frame.emit(OP_NOT_ENT, entity, 0, result.slot)
+            return result
+        if name == 'quake:entity=?':
+            if len(args) != 2:
+                raise CompileError(node.location, 'quake:entity=? requires two entities')
+            left, right = (self.entity(frame, arg, environment) for arg in args)
+            result = self.tagged(frame, 'boolean')
+            frame.emit(OP_EQ_ENT, left, right, result.slot)
             return result
         if name == 'quake:field':
             return self.read_field(frame, node, args, environment)
@@ -540,8 +576,8 @@ class Compiler:
             slot = self.heap.call(frame, 'cons', [values[0].slot, values[1].slot, message])
             self.heap.unpin(frame, base)
             return Value(slot, 'pair')
-        if name in ARITHMETIC or name in COMPARISONS:
-            if name in COMPARISONS and len(args) != 2:
+        if name in ARITHMETIC or name in COMPARISONS or name in BITWISE:
+            if name in (COMPARISONS.keys() | BITWISE.keys()) and len(args) != 2:
                 raise CompileError(node.location, f'{name} requires exactly two arguments in this release')
             if name in ('-', '/') and not args:
                 raise CompileError(node.location, f'{name} requires at least one argument')
@@ -551,6 +587,10 @@ class Compiler:
             if name in COMPARISONS:
                 result = self.tagged(frame, 'boolean')
                 frame.emit(COMPARISONS[name], values[0].slot, values[1].slot, result.slot)
+                return result
+            if name in BITWISE:
+                result = self.tagged(frame, 'number')
+                frame.emit(BITWISE[name], values[0].slot, values[1].slot, result.slot)
                 return result
             if not values:
                 return Value(self.zero if name == '+' else self.one, 'number')

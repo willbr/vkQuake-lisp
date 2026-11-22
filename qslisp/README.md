@@ -63,6 +63,8 @@ header; executing the result also needs the built interpreter CLI.
   map loading. It takes a model path of up to 63 bytes and requires the game
   engine. Both Quake forms take one direct string literal and return Scheme `0`.
   Literals support `\"`, `\\`, `\n`, `\r`, and `\t` escapes.
+- `(define-field name)` adds a numeric field to each entity after the stock
+  fields. Its initial value is zero. Read and write it through the entity forms.
 
 Arithmetic on a known boolean is a compile error. When a parameter or function
 result has an unknown type, generated checks call stock builtin #10 (`error`) on
@@ -102,10 +104,43 @@ python3 tools/quakec/test-map-boot.py --play /path/to/dosbox /path/to/quake
 ```
 
 Click the game window to capture the mouse. Use **WASD** to walk, the mouse to
-look around, and the Escape menu to quit. The Lisp code places the local player
-at the map's `info_player_start` and uses stock walking physics and collision.
-This example covers exploration. Quake skips gameplay entities that have no
-Lisp spawn function, so doors, teleporters, and combat are outside its scope.
+look around, **Space** to jump, **left click** to fire, and **R** to restart the
+map. The Lisp code spawns the local player at `info_player_start`, handles input,
+and uses stock walking physics and collision. On `start`, Quake skips original
+gameplay entities that lack a Lisp spawn function.
+
+## Play and verify the Signal Room
+
+The original [Signal Room map](../examples/signal.map) has a lit signal plate
+and a practice step. You start with three shells. Hit the plate to restore the
+signal, then press **R** to reset the room, player, and ammo.
+
+```sh
+python3 tools/quakec/test-map-boot.py --play --map signal /path/to/dosbox /path/to/quake
+python3 tools/quakec/test-map-boot.py --verify /path/to/dosbox /path/to/quake
+```
+
+The launcher builds the BSP with the pinned Quake map tools and a native C
+compiler. The room geometry and texture generator live in this repository.
+The demo loads the player model, weapon model, and sounds from your Quake PAKs.
+You can also build the BSP directly with
+`python3 tools/quakec/build-signal.py build/signal.bsp`.
+
+The scripted client checks walking, takeoff, landing while the jump key is
+held, ammo use on a miss, a hit that removes the target, and a reset followed by
+a second successful run. It saves stock engine screenshots, state snapshots,
+and `measurements.json` under `build/quakec/map-boot/`. The snapshots serve as
+test observations. Heap-backed save and reload remain future work.
+
+The report samples stock `profile` counters during a jump, a hit, and both
+actions in the same frame. Stock Quake displays the ten highest function
+counts. The report bounds the omitted counts and uses the total for the frame
+as an upper bound on any VM entry in that frame. The current combined sample
+is bounded by 746 instructions against the 100,000-instruction watchdog. The
+program uses 824 of 32,768 global slots and its largest individual frame uses
+92 slots. The engine shares 2,048 saved-local slots across active frames.
+
+### Entity and gameplay forms
 
 The example also shows how to use the stock entity ABI. `(quake:self)` and
 `(quake:world)` return entity values. `(quake:find start field "value")` searches
@@ -113,11 +148,21 @@ a string field and returns the world entity when there is no match. Test this
 with `(quake:world? entity)`. `(quake:time)` returns the engine's time global.
 `(quake:field entity field)` reads a numeric field, including vector components
 such as `origin_z`. Use `(quake:set-field! entity field value)` to write numeric
-or vector fields. Vector operands can be constructed with `(quake:vector x y z)`
-or read directly from a vector field within another native form. Use
+or vector fields, or to assign a direct literal to a string field. Vector operands
+can be constructed with `(quake:vector x y z)` or read directly from a vector
+field within another native form. Use
 `quake:set-origin`, `quake:set-size`, and `quake:set-model` for changes that
 must update the engine's collision links or model index. `quake:error` reports
 a literal string through the stock runtime error builtin.
+
+`quake:bit-and` and `quake:bit-or` take two integers representable in stock VM
+float slots. `quake:make-vectors` takes a stock angle vector and sets the
+components read by `quake:forward-x`, `quake:forward-y`, and `quake:forward-z`.
+`(quake:traceline start end mode ignore)` returns the hit entity or the world
+entity. Use `quake:entity=?` to compare references and `quake:remove` to remove
+an entity. `(quake:precache-sound "path.wav")` runs during map loading and
+`(quake:sound entity channel "path.wav" volume attenuation)` plays the sample.
+`(quake:centerprint client "message")` shows a message to that client.
 
 ## Pair heap and collection
 
