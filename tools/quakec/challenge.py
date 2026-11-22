@@ -4,7 +4,7 @@ import math
 import re
 import struct
 
-SAVES = ('spawned', 'walked', 'rise', 'landed', 'missed', 'cleared', 'reset', 'replay')
+SAVES = ('spawned', 'walked', 'rise', 'landed', 'missed', 'cleared', 'finished', 'reset', 'replay')
 PROFILES = {
     'jump': ('qslisp: jump',),
     'shot': ('qslisp: fired', 'qslisp: target hit'),
@@ -27,7 +27,8 @@ def verification_commands():
     commands += ['+left'] + ['wait'] * 12 + ['-left', '+attack', 'wait', '-attack']
     commands += ['wait'] * 8 + ['save missed', '+right'] + ['wait'] * 12 + ['-right', 'wait']
     commands += profile('shot', ['+attack'])
-    commands += ['-attack', 'wait', 'wait', 'save cleared', 'screenshot', 'map signal']
+    commands += ['-attack'] + ['wait'] * 12 + ['save cleared', 'screenshot', '+forward']
+    commands += ['wait'] * 45 + ['-forward', 'wait', 'save finished', 'map signal']
     commands += ['wait'] * 35 + ['save reset']
     commands += profile('combined', ['+jump', '+attack'])
     commands += ['-attack', '-jump'] + ['wait'] * 25
@@ -46,11 +47,16 @@ def save_state(path):
     require(len(blocks) >= 3, f'missing player edict in {path.name}')
     entities = [dict(re.findall(r'^"([^"]*)"\s+"([^"]*)"', block, re.M)) for block in blocks[1:]]
     player = entities[1]
+    gate, = (ent for ent in entities if ent.get('classname') == 'qslisp_gate')
+    exit_trigger, = (ent for ent in entities if ent.get('classname') == 'qslisp_exit')
     return {
         'origin': tuple(float(x) for x in player['origin'].split()),
         'rounds': int(float(player['ammo_shells'])),
         'weapon': player.get('weaponmodel'),
         'targets': sum(ent.get('classname') == 'qslisp_target' for ent in entities),
+        'gate_open': int(float(gate.get('gate-open', '0'))),
+        'gate_solid': int(float(gate.get('solid', '0'))),
+        'complete': int(float(exit_trigger.get('room-complete', '0'))),
     }
 
 
@@ -88,6 +94,10 @@ def verify_challenge(output, lines):
     walked = states['walked']
     require(spawn['rounds'] == 3 and spawn['weapon'] == 'progs/v_shot.mdl' and spawn['targets'] == 1,
             'player did not start with a weapon, three shells, and a target')
+    for name in ('spawned', 'missed', 'reset'):
+        state = states[name]
+        require((state['gate_open'], state['gate_solid'], state['complete']) == (0, 4, 0),
+                f'{name} gate must block the exit')
     require(walked['origin'][0] - spawn['origin'][0] > 32, 'forward input did not move the player')
     require(states['rise']['origin'][2] - walked['origin'][2] > 16, 'the player did not jump')
     require(abs(states['landed']['origin'][2] - walked['origin'][2]) < 1, 'the player did not land')
@@ -97,6 +107,13 @@ def verify_challenge(output, lines):
     for name, rounds in (('cleared', 1), ('replay', 2)):
         require(states[name]['targets'] == 0 and states[name]['rounds'] == rounds,
                 f'expected the hit to spend one shell and clear the target in {name}')
+        state = states[name]
+        require((state['gate_open'], state['gate_solid'], state['complete']) == (2, 0, 0),
+                f'{name} gate should be open with the exit still ahead')
+    require(states['finished']['origin'][0] > 224 and states['finished']['complete'] == 1,
+            'walking through the gate did not complete the level')
+    require(lines.count('qslisp: gate open') == 2 and lines.count('qslisp: level complete') == 1,
+            'expected the gate to open twice and the exit callback to complete the level once')
     require(states['reset'] == spawn, 'reset did not restore player position, ammo, and target')
     require(lines.count('qslisp: fired') == 3 and lines.count('qslisp: target hit') == 2,
             'expected one miss and one hit in the first round, then one hit after reset')

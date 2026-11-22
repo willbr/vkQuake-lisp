@@ -4,43 +4,50 @@ from contextlib import contextmanager
 
 from .bytecode import (Program, Frame, Local, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
                        OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
-                       OP_RETURN, OP_NOT, OP_NOT_ENT, OP_IF, OP_CALL0, OP_GOTO, OP_AND,
+                       OP_RETURN, OP_NOT, OP_NOT_ENT, OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND,
                        OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V,
-                       OP_STOREP_S, OP_EQ_ENT, OP_BITAND, OP_BITOR)
+                       OP_STOREP_S, OP_EQ_ENT, OP_EQ_STR, OP_BITAND, OP_BITOR,
+                       OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC, OP_STOREP_ENT, OP_STOREP_FNC)
 from .reader import CompileError, Location, StringLiteral, read
 from .heap import PairHeap
+from .syntax import DERIVED_FORMS, DerivedForms
 
-SYNTAX = {'define', 'define-field', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
-          'define-syntax', 'syntax-rules', 'quasiquote'}
+SYNTAX = DERIVED_FORMS | {'define', 'define-field', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
+                          'define-syntax', 'syntax-rules', 'quasiquote'}
 ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
 COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
 BITWISE = {'quake:bit-and': OP_BITAND, 'quake:bit-or': OP_BITOR}
 ENGINE_CALLS = {
     'quake:make-vectors': (1, ('vector',)),
     'quake:set-origin': (2, ('entity', 'vector')),
-    'quake:set-model': (3, ('entity', 'model')),
+    'quake:set-model': (3, ('entity', 'precache-name')),
     'quake:set-size': (4, ('entity', 'vector', 'vector')),
     'quake:sound': (8, ('entity', 'number', 'sample', 'number', 'number')),
     'quake:error': (10, ('string',)),
     'quake:remove': (15, ('entity',)),
     'quake:traceline': (16, ('vector', 'vector', 'number', 'entity')),
-    'quake:find': (18, ('entity', 'string-field', 'string')),
+    'quake:find': (18, ('entity', 'string-field', 'string-value')),
     'quake:precache-sound': (19, ('sample',)),
     'quake:precache-model': (20, ('model',)),
     'quake:dprint': (25, ('string',)),
     'quake:centerprint': (73, ('entity', 'string')),
 }
-ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:world': ('world', 'entity'),
+ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'entity'),
+                  'quake:world': ('world', 'entity'),
                   'quake:time': ('time', 'number'), 'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
 ENTITY_RESULTS = {'quake:find': 1, 'quake:traceline': 'trace_ent'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
     'not', 'cons', 'car', 'cdr', 'pair?', 'quake:world?', 'quake:entity=?',
-    'quake:field', 'quake:set-field!', 'quake:vector',
+    'quake:field', 'quake:set-field!', 'quake:vector', 'string=?',
+    'quake:set-callback!', 'quake:call-callback',
 }
-TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3}
-FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector'}
+TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4}
+FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector', 4: 'entity', 6: 'function'}
+CUSTOM_FIELDS = {'number': 2, 'entity': 4}
+FIELD_READS = {1: ('string', OP_LOAD_S), 2: ('number', OP_LOAD_F), 4: ('entity', OP_LOAD_ENT)}
+FIELD_WRITES = {1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V, 4: OP_STOREP_ENT}
 
 
 @dataclass(frozen=True)
@@ -81,6 +88,8 @@ class Compiler:
             raise CompileError(location, 'heap-pairs and root-slots must be positive integers')
         self.program = Program(location)
         self.functions = {}
+        self.constants = {}
+        self.derived_forms = DerivedForms()
         self.zero = self.program.constant(0)
         self.one = self.program.constant(1)
         for form in forms:
@@ -116,20 +125,31 @@ class Compiler:
     def declare(self, node):
         form = node.value
         if isinstance(form, tuple) and form and form[0].value == 'define-field':
-            if len(form) != 2:
-                raise CompileError(node.location, 'define-field requires one numeric field name')
+            if len(form) not in (2, 3):
+                raise CompileError(node.location, 'define-field requires a name and optional number or entity type')
             name = binding_name(form[1])
-            if name.startswith('__qslisp') or name in self.program.names or name in PRIMITIVES:
+            kind = symbol(form[2], 'entity field type') if len(form) == 3 else 'number'
+            if kind not in CUSTOM_FIELDS:
+                raise CompileError(form[2].location, f'unsupported entity field type {kind}')
+            if name.startswith('__qslisp') or name in self.program.names or name in self.constants or name in PRIMITIVES:
                 raise CompileError(form[1].location, f'duplicate or reserved entity field {name}')
-            self.program.float_field(name, form[1].location)
+            self.program.define_field(name, CUSTOM_FIELDS[kind], form[1].location)
             return
         if not isinstance(form, tuple) or len(form) < 3 or form[0].value != 'define':
             raise CompileError(node.location, 'top level requires (define (name arguments...) body...)')
         signature = form[1].value
+        if isinstance(signature, str):
+            name = binding_name(form[1])
+            if name.startswith('__qslisp') or name in self.program.names or name in self.constants or name in PRIMITIVES:
+                raise CompileError(form[1].location, f'duplicate or reserved constant {name}')
+            if len(form) != 3 or not isinstance(form[2].value, (bool, float, StringLiteral)):
+                raise CompileError(form[2].location, 'top-level constants require one number, boolean, or string literal')
+            self.constants[name] = form[2]
+            return
         if not isinstance(signature, tuple) or not signature:
             raise CompileError(form[1].location, 'only named function definitions are supported yet')
         name = binding_name(signature[0])
-        if name.startswith('__qslisp') or name in PRIMITIVES:
+        if name.startswith('__qslisp') or name in PRIMITIVES or name in self.constants:
             raise CompileError(signature[0].location, f'reserved function name {name}')
         if name in self.functions:
             raise CompileError(signature[0].location, f'duplicate function {name}')
@@ -281,6 +301,9 @@ class Compiler:
     def tail_expression(self, frame, node, environment, function):
         if isinstance(node.value, tuple):
             name, args = self.application(node, environment)
+            if name in DERIVED_FORMS:
+                self.tail_expression(frame, self.derived_forms.expand(name, args, node.location), environment, function)
+                return
             if name == 'if':
                 if len(args) != 3:
                     raise CompileError(node.location, 'if requires a condition and two branches')
@@ -324,7 +347,7 @@ class Compiler:
         return value
 
     def false_test(self, frame, value):
-        if value.kind in ('number', 'pair', 'entity'):
+        if value.kind in ('number', 'pair', 'entity', 'string'):
             return self.zero  # Only booleans can be false, including for pair index zero.
         result = frame.allocate(1)
         frame.emit(OP_NOT, value.slot, 0, result)
@@ -397,6 +420,13 @@ class Compiler:
         self.require_tag(frame, value, node, 'entity')
         return value.slot
 
+    def string_value(self, frame, node, environment):
+        value = self.expression(frame, node, environment)
+        if value.kind not in ('unknown', 'string'):
+            raise CompileError(node.location, f'expected a string, got a {value.kind}')
+        self.require_tag(frame, value, node, 'string')
+        return value.slot
+
     def vector(self, frame, node, environment):
         if isinstance(node.value, tuple):
             name, args = self.application(node, environment)
@@ -414,32 +444,75 @@ class Compiler:
     def read_field(self, frame, node, args, environment, *, vector=False):
         if len(args) != 2:
             raise CompileError(node.location, 'quake:field requires an entity and a field name')
-        field, _ = self.engine_field(args[1], (3,) if vector else (2,))
+        field, kind = self.engine_field(args[1], (3,) if vector else tuple(FIELD_READS))
         entity = self.entity(frame, args[0], environment)
         if vector:
             result = frame.allocate()
             frame.emit(OP_LOAD_V, entity, field, result)
             return result
-        result = self.tagged(frame, 'number')
-        frame.emit(OP_LOAD_F, entity, field, result.slot)
+        tag, opcode = FIELD_READS[kind]
+        result = self.tagged(frame, tag)
+        frame.emit(opcode, entity, field, result.slot)
         return result
 
     def write_field(self, frame, node, args, environment):
         if len(args) != 3:
             raise CompileError(node.location, 'quake:set-field! requires an entity, a field name, and a value')
-        field, kind = self.engine_field(args[1], (1, 2, 3))
+        field, kind = self.engine_field(args[1], tuple(FIELD_WRITES))
         entity = self.entity(frame, args[0], environment)
         if kind == 1:
-            value_slot = self.engine_string('quake:set-field!', args[2], 'string')
+            value_slot = self.string_value(frame, args[2], environment)
         elif kind == 3:
             value_slot = self.vector(frame, args[2], environment)
+        elif kind == 4:
+            value_slot = self.entity(frame, args[2], environment)
         else:
             value = self.expression(frame, args[2], environment)
             self.number(frame, value, args[2])
             value_slot = value.slot
         address = frame.allocate(1)
         frame.emit(OP_ADDRESS, entity, field, address)
-        frame.emit({1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V}[kind], value_slot, address)
+        frame.emit(FIELD_WRITES[kind], value_slot, address)
+        return Value(self.zero, 'number')
+
+    def callback(self, frame, node, name, args, environment):
+        if len(args) != 3:
+            raise CompileError(node.location, f'{name} requires an entity, function field, and callback argument')
+        field, _ = self.engine_field(args[1], (6,))
+        entity = self.entity(frame, args[0], environment)
+        if name == 'quake:set-callback!':
+            target = args[2]
+            if target.value is False:
+                reference = self.zero
+            else:
+                label = symbol(target, 'named callback or #f')
+                function = self.functions.get(label) if label not in environment else None
+                if function is None or function.parameters:
+                    raise CompileError(target.location, 'expected an unshadowed, zero-argument callback name')
+                reference = self.program.names[label]
+            address = frame.allocate(1)
+            frame.emit(OP_ADDRESS, entity, field, address)
+            frame.emit(OP_STOREP_FNC, reference, address)
+            return Value(self.zero, 'number')
+
+        other = self.entity(frame, args[2], environment)
+        reference = frame.allocate(1)
+        frame.emit(OP_LOAD_FNC, entity, field, reference)
+        missing = frame.emit(OP_IFNOT, reference)
+        self_slot, other_slot = (self.program.names[key] for key in ('self', 'other'))
+        saved_self, saved_other = frame.allocate(1), frame.allocate(1)
+        frame.emit(OP_STORE, self_slot, saved_self)
+        frame.emit(OP_STORE, other_slot, saved_other)
+        # A named callback can allocate on the shared Scheme heap.
+        base = self.heap.pin(frame, self.roots(environment, ())) if self.heap else None
+        frame.emit(OP_STORE, entity, self_slot)
+        frame.emit(OP_STORE, other, other_slot)
+        frame.emit(OP_CALL0, reference)
+        frame.emit(OP_STORE, saved_self, self_slot)
+        frame.emit(OP_STORE, saved_other, other_slot)
+        if self.heap:
+            self.heap.unpin(frame, base)
+        frame.patch(missing, 2, len(frame.code))
         return Value(self.zero, 'number')
 
     def engine_call(self, frame, node, name, args, environment):
@@ -460,6 +533,10 @@ class Compiler:
                 value = self.expression(frame, arg, environment)
                 self.number(frame, value, arg)
                 slot = value.slot
+            elif kind == 'precache-name' and isinstance(arg.value, StringLiteral):
+                slot = self.engine_string(name, arg, 'model')
+            elif kind in ('precache-name', 'string-value'):
+                slot = self.string_value(frame, arg, environment)
             else:
                 slot = self.engine_string(name, arg, kind)
             operands.append(slot)
@@ -492,13 +569,19 @@ class Compiler:
         if isinstance(form, float):
             return Value(self.program.constant(form, location=node.location), 'number')
         if isinstance(form, StringLiteral):
-            raise CompileError(node.location, 'string literals are only supported as direct Quake builtin arguments')
+            result = self.tagged(frame, 'string')
+            frame.emit(OP_STORE, self.program.literal_string(form.text), result.slot)
+            return result
         if isinstance(form, str):
+            if form in self.constants and form not in environment:
+                return self.expression_body(frame, self.constants[form], environment)
             if form not in environment:
                 message = 'function values are not supported yet' if form in self.functions else f'unbound variable {form}'
                 raise CompileError(node.location, message)
             return environment[form]
         name, args = self.application(node, environment)
+        if name in DERIVED_FORMS:
+            return self.expression(frame, self.derived_forms.expand(name, args, node.location), environment)
         if name in ENGINE_CALLS:
             return self.engine_call(frame, node, name, args, environment)
         if name in ENGINE_GLOBALS:
@@ -522,10 +605,19 @@ class Compiler:
             result = self.tagged(frame, 'boolean')
             frame.emit(OP_EQ_ENT, left, right, result.slot)
             return result
+        if name == 'string=?':
+            if len(args) != 2:
+                raise CompileError(node.location, 'string=? requires two strings')
+            left, right = (self.string_value(frame, arg, environment) for arg in args)
+            result = self.tagged(frame, 'boolean')
+            frame.emit(OP_EQ_STR, left, right, result.slot)
+            return result
         if name == 'quake:field':
             return self.read_field(frame, node, args, environment)
         if name == 'quake:set-field!':
             return self.write_field(frame, node, args, environment)
+        if name in ('quake:set-callback!', 'quake:call-callback'):
+            return self.callback(frame, node, name, args, environment)
         if name == 'quake:vector':
             raise CompileError(node.location, 'quake:vector requires a native vector argument or field assignment')
         if name == 'if':

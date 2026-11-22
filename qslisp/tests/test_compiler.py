@@ -182,14 +182,13 @@ class CompilerTests(CompilerCase):
         for source, message in [
             ('(define (test) 1', 'unclosed parenthesis'),
             (')', 'unexpected closing parenthesis'),
-            ('(define (test) "hello")', 'string literals'),
             ('(define (test) "hello)', 'unterminated string literal'),
             ('(define (test) "bad\\q")', 'unsupported string escape'),
             ('(define (test) "bad\0")', 'string literals cannot contain a NUL byte'),
             ('(define (test) #unknown)', 'unsupported token'),
             ("'", 'expected a datum'),
             ('', 'at least one function'),
-            ('(define x 1)', 'named function definitions'),
+            ('(define x 1)', 'at least one function'),
         ]:
             with self.subTest(source=source):
                 with self.assertRaisesRegex(CompileError, message):
@@ -265,6 +264,57 @@ class CompilerTests(CompilerCase):
         (define (test)
           (quake:bit-and (quake:bit-or 8 512) 512))
         ''', 512)
+
+    def test_derived_forms_preserve_truth_and_tail_calls(self):
+        source = '''
+        (define count 1000)
+        (define (add-one x) (+ x 1))
+        (define (loop n)
+          (cond ((= n 0) (cond ((or #f 0 (quake:error "evaluated")) => add-one)))
+                (else (when (and #t n) (loop (- n 1))))))
+        (define (test)
+          (let* ((first (loop count)) (second (+ first 10)))
+            (if (and (not (and #f (quake:error "evaluated"))) (and)) second 0)))
+        '''
+        self.value(source, 11)
+
+    def test_strings_can_be_passed_through_procedures_and_pairs(self):
+        self.value('''
+        (define label "signal")
+        (define (identity x) x)
+        (define (test)
+          (if (and (string=? (car (cons (identity label) #f)) "signal")
+                   (not (string=? "signal" "other")))
+              49 0))
+        ''', 49)
+
+    def test_callback_context_and_entity_reference_field(self):
+        path = self.program('''
+        (define-field owner-ref entity)
+        (define (remember)
+          (cons 1 2)
+          (cons 3 4)
+          (quake:set-field! (quake:self) owner-ref (quake:other))
+          (quake:set-field! (quake:self) count (+ (quake:field (quake:self) count) 1)))
+        (define-field count)
+        (define (test)
+          (let ((player (quake:self)) (world (quake:world)) (live (cons 4 5)))
+            (quake:set-callback! player use remember)
+            (quake:call-callback player use player)
+            (quake:set-callback! player use #f)
+            (quake:call-callback player use world)
+            (if (and (quake:entity=? (quake:field player owner-ref) player)
+                     (quake:entity=? (quake:other) world))
+                (+ (car live) (quake:field player count)) 0)))
+        ''', heap_pairs=2, root_slots=64)
+        data = bytearray(path.read_bytes())
+        header = STOCK.validate(data)
+        struct.pack_into('<i', data, header[12] + 28 * 4, header[14] * 4)
+        path.write_bytes(data)
+        result = subprocess.run([str(ROOT / 'tools/quakec/run-stock.sh'), str(path), 'test'],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('return: 5\n', result.stdout)
 
     def test_stock_frame_and_reader_depth_limits_are_diagnostics(self):
         with self.assertRaisesRegex(CompileError, 'saved-locals limit'):

@@ -53,6 +53,10 @@ header; executing the result also needs the built interpreter CLI.
 - `begin` and function/let bodies evaluate expressions in order and return the
   last value. Calls evaluate arguments left to right, snapshotting return values
   before subsequent calls. There are at most eight parameters per function.
+- `and` and `or` short-circuit and return the selected operand. `cond` supports
+  `else`, test-only clauses, and `=>` with a named receiver. `when` returns `#f`
+  when skipped. `let*` introduces sequential bindings. A top-level `(define
+  name value)` binds an immutable number, boolean, or string literal.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
   numbers, booleans, entity references, and other pairs. A pair is always true,
@@ -64,7 +68,8 @@ header; executing the result also needs the built interpreter CLI.
   engine. Both Quake forms take one direct string literal and return Scheme `0`.
   Literals support `\"`, `\\`, `\n`, `\r`, and `\t` escapes.
 - `(define-field name)` adds a numeric field to each entity after the stock
-  fields. Its initial value is zero. Read and write it through the entity forms.
+  fields, initially zero. `(define-field name entity)` adds an entity reference,
+  initially the world entity. Read and write both through the entity forms.
 
 Arithmetic on a known boolean is a compile error. When a parameter or function
 result has an unknown type, generated checks call stock builtin #10 (`error`) on
@@ -73,8 +78,7 @@ fit the original engine's 256-byte error-message buffer.
 
 This is a scoped Scheme-style language, not a conforming Scheme implementation.
 First-class procedures, `lambda`, closures, empty-list/list literal syntax,
-quotation, first-class strings, mutation,
-macros, and global value definitions are not implemented. Non-tail recursion
+quotation, mutation, and macros are not implemented. Non-tail recursion
 uses the stock call/local stacks; all execution remains subject to the original
 instruction watchdog. Syntax keywords,
 primitive function names, `__qslisp*` global names, and stock ABI global/field names
@@ -112,8 +116,9 @@ gameplay entities that lack a Lisp spawn function.
 ## Play and verify the Signal Room
 
 The original [Signal Room map](../examples/signal.map) has a lit signal plate
-and a practice step. You start with three shells. Hit the plate to restore the
-signal, then press **R** to reset the room, player, and ammo.
+and a practice step. You start with three shells. Hit the plate to open the
+gate and walk through the exit to complete the level. Press **R** to reset the
+room, player, and ammo.
 
 ```sh
 python3 tools/quakec/test-map-boot.py --play --map signal /path/to/dosbox /path/to/quake
@@ -127,8 +132,9 @@ You can also build the BSP directly with
 `python3 tools/quakec/build-signal.py build/signal.bsp`.
 
 The scripted client checks walking, takeoff, landing while the jump key is
-held, ammo use on a miss, a hit that removes the target, and a reset followed by
-a second successful run. It saves stock engine screenshots, state snapshots,
+held, ammo use on a miss, gate opening on a hit, completion through the exit,
+and a reset followed by a second successful hit. It saves stock engine
+screenshots, state snapshots,
 and `measurements.json` under `build/quakec/map-boot/`. The snapshots serve as
 test observations. Heap-backed save and reload remain future work.
 
@@ -136,24 +142,33 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 746 instructions against the 100,000-instruction watchdog. The
-program uses 824 of 32,768 global slots and its largest individual frame uses
-92 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 977 instructions against the 100,000-instruction watchdog. The
+program uses 1,066 of 32,768 global slots and its largest individual frame uses
+103 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Entity and gameplay forms
 
-The example also shows how to use the stock entity ABI. `(quake:self)` and
-`(quake:world)` return entity values. `(quake:find start field "value")` searches
+The example also shows how to use the stock entity ABI. `(quake:self)`,
+`(quake:other)`, and `(quake:world)` return entity values. `(quake:find start field value)` searches
 a string field and returns the world entity when there is no match. Test this
 with `(quake:world? entity)`. `(quake:time)` returns the engine's time global.
-`(quake:field entity field)` reads a numeric field, including vector components
-such as `origin_z`. Use `(quake:set-field! entity field value)` to write numeric
-or vector fields, or to assign a direct literal to a string field. Vector operands
+`(quake:field entity field)` reads numeric, string, and entity fields, including
+vector components such as `origin_z`. `(quake:set-field! entity field value)`
+also supports vector fields. Strings can be bound, passed through functions,
+stored in pairs, and compared by content with `string=?`. Vector operands
 can be constructed with `(quake:vector x y z)` or read directly from a vector
 field within another native form. Use
 `quake:set-origin`, `quake:set-size`, and `quake:set-model` for changes that
 must update the engine's collision links or model index. `quake:error` reports
 a literal string through the stock runtime error builtin.
+
+`(quake:set-callback! entity field name)` installs a named zero-argument
+function in a stock function field such as `think`, `touch`, or `use`. Pass
+`#f` to clear it. `(quake:call-callback entity field activator)` runs an
+installed callback with the entity and activator as `self` and `other` and
+restores the caller's values afterward. The stock engine can also invoke these
+callbacks directly. Signal Room reads brush models and `target`/`targetname`
+links from the map entities.
 
 `quake:bit-and` and `quake:bit-or` take two integers representable in stock VM
 float slots. `quake:make-vectors` takes a stock angle vector and sets the
@@ -318,8 +333,9 @@ Inside compiled Scheme code, each value uses three VM words:
 ```
 
 The tag is float32 `0` for a number, `1` for a boolean, `2` for a pair, or `3`
-for an entity. Numbers and booleans use float32 payloads, pairs use opaque cell
-indices, and entities use the stock engine's raw edict reference. These values
+for an entity, or `4` for a string. Numbers and booleans use float32 payloads,
+pairs use opaque cell indices, entities use the raw edict reference, and strings
+use the stock engine's string offset. These values
 fit the VM's three-word parameter and return areas. Entity references use
 engine-managed storage and can be passed through Scheme functions and pairs.
 
