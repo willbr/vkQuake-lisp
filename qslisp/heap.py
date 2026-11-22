@@ -6,9 +6,9 @@ trees replace the general indexed global loads/stores missing from stock Quake.
 """
 import struct
 
-from .bytecode import (Frame, Local, advance, OP_ADD, OP_SUB, OP_EQ, OP_LT, OP_GE,
+from .bytecode import (Frame, Local, TAGS, advance, OP_ADD, OP_SUB, OP_EQ, OP_LT, OP_GE,
                        OP_GT, OP_STORE, OP_STORE_V, OP_RETURN, OP_IF, OP_IFNOT,
-                       OP_CALL0, OP_GOTO, emit_shallow_equality)
+                       OP_CALL0, OP_GOTO, OP_OR, emit_shallow_equality)
 from .reader import CompileError
 
 
@@ -17,8 +17,9 @@ def bits(number):
 
 
 class PairHeap:
-    def __init__(self, program, capacity, root_capacity, *, deep_equal=False):
+    def __init__(self, program, capacity, root_capacity, *, deep_equal=False, boxed_kinds=()):
         self.program, self.capacity, self.root_capacity = program, capacity, root_capacity
+        self.boxed_kinds = ('pair', *boxed_kinds)
         cell_words = 12 if deep_equal else 9
         if cell_words * capacity + 3 * root_capacity + len(program.globals) > 32768:
             raise CompileError(program.location, 'pair/root pools exceed stock global storage (32,768 slots)')
@@ -94,7 +95,7 @@ class PairHeap:
         # a saved pointer, so recursive invocations and duplicates are safe.
         unique = {}
         for value in values:
-            if value.kind in ('unknown', 'pair'):
+            if value.kind == 'unknown' or value.kind in self.boxed_kinds:
                 unique.setdefault(value.slot, value)
         if not unique:
             return None
@@ -137,10 +138,11 @@ class PairHeap:
         loop = len(frame.code)
         emit_shallow_equality(frame, left, right, same, compare_strings=True)
         matched = frame.emit(OP_IF, same)
-        left_pair = self.compare(frame, OP_EQ, advance(left, 1), self.two)
-        mismatch_left = frame.emit(OP_IFNOT, left_pair)
-        right_pair = self.compare(frame, OP_EQ, advance(right, 1), self.two)
-        mismatch_right = frame.emit(OP_IFNOT, right_pair)
+        left_kind, right_kind = advance(left, 1), advance(right, 1)
+        same_kind = self.compare(frame, OP_EQ, left_kind, right_kind)
+        mismatch_kind = frame.emit(OP_IFNOT, same_kind)
+        aggregate = self.has_heap_tag(frame, left_kind, self.boxed_kinds)
+        mismatch_atom = frame.emit(OP_IFNOT, aggregate)
         # The pairs are immutable. Store both handles to revisit their cdrs
         # after the car comparison. Pending depth cannot exceed the heap size.
         frame.emit(OP_STORE, left, pending)
@@ -166,7 +168,7 @@ class PairHeap:
         self.go(frame, loop)
         frame.patch(matched_all, 2, len(frame.code))
         frame.emit(OP_RETURN, self.program.constant(1, boolean=True))
-        for branch in (mismatch_left, mismatch_right):
+        for branch in (mismatch_kind, mismatch_atom):
             frame.patch(branch, 2, len(frame.code))
         frame.emit(OP_RETURN, self.program.constant(0, boolean=True))
         frame.finish()
@@ -201,10 +203,17 @@ class PairHeap:
         frame.emit(OP_RETURN, self.zero)
         frame.finish()
 
+    def has_heap_tag(self, frame, tag, kinds):
+        matched = self.compare(frame, OP_EQ, tag, self.program.constant(TAGS[kinds[0]]))
+        for kind in kinds[1:]:
+            other = self.compare(frame, OP_EQ, tag, self.program.constant(TAGS[kind]))
+            frame.emit(OP_OR, matched, other, matched)
+        return matched
+
     def compile_root_push(self):
         frame = self.frame('root_push')
-        pair = self.compare(frame, OP_EQ, Local(1), self.two)
-        body = frame.emit(OP_IF, pair)
+        reference = self.has_heap_tag(frame, Local(1), self.boxed_kinds)
+        body = frame.emit(OP_IF, reference)
         frame.emit(OP_RETURN, self.zero)
         frame.patch(body, 2, len(frame.code))
         room = self.compare(frame, OP_LT, self.root_sp, self.program.constant(self.root_capacity))
@@ -217,8 +226,8 @@ class PairHeap:
 
     def compile_mark(self):
         frame = self.frame('mark')
-        pair = self.compare(frame, OP_EQ, Local(1), self.two)
-        body = frame.emit(OP_IF, pair)
+        reference = self.has_heap_tag(frame, Local(1), self.boxed_kinds)
+        body = frame.emit(OP_IF, reference)
         frame.emit(OP_RETURN, self.zero)
         frame.patch(body, 2, len(frame.code))
         meta = self.call(frame, 'meta_get', [Local(0)])

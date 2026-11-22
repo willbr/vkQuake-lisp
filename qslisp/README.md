@@ -67,7 +67,7 @@ header; executing the result also needs the built interpreter CLI.
   proper list. Quotation supports symbols, lists, nested data, and dotted
   tails. Pairs and the empty list are true in conditionals.
 - `eq?` compares identity and scalar values. `equal?` also compares string
-  contents and walks both sides of pairs with an explicit work stack. It uses
+  contents and walks pairs and boxed vectors with an explicit work stack. It uses
   three extra global words per configured pair cell when the program needs
   structural equality on pairs. `symbol?` and `string?` check value kinds.
 - `(quake:dprint "text\n")` calls stock builtin #25. It prints when `developer`
@@ -189,9 +189,12 @@ with `(quake:world? entity)`. `(quake:time)` returns the engine's time global.
 `(quake:field entity field)` reads numeric, string, and entity fields, including
 vector components such as `origin_z`. `(quake:set-field! entity field value)`
 also supports vector fields. Strings can be bound, passed through functions,
-stored in pairs, and compared by content with `string=?`. Vector operands
-can be constructed with `(quake:vector x y z)` or read directly from a vector
-field within another native form. Use
+stored in pairs, and compared by content with `string=?`. `(quake:vector x y z)`
+and vector field reads produce vectors that can be bound, passed, returned, and
+stored in pairs. `quake:vector?` checks the kind and `quake:vector-x`,
+`quake:vector-y`, and `quake:vector-z` read components. When a constructor or
+field is used directly as a native vector operand, the compiler emits three
+raw words with zero heap allocation. Use
 `quake:set-origin`, `quake:set-size`, and `quake:set-model` for changes that
 must update the engine's collision links or model index. `quake:error` reports
 a literal string through the stock runtime error builtin.
@@ -367,8 +370,9 @@ Inside compiled Scheme code, each value uses three VM words:
 ```
 
 The tag is float32 `0` for a number, `1` for a boolean, `2` for a pair, or `3`
-for an entity, `4` for a string, `5` for the empty list, or `6` for a symbol.
-Numbers and booleans use float32 payloads, pairs use opaque cell indices,
+for an entity, `4` for a string, `5` for the empty list, `6` for a symbol,
+or `7` for a vector. Numbers and booleans use float32 payloads. Pairs and
+vectors use opaque cell indices,
 entities use the raw edict reference, and strings and interned symbols use
 stock string offsets. These values
 fit the VM's three-word parameter and return areas. Entity references use

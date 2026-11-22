@@ -314,6 +314,30 @@ class CompilerTests(CompilerCase):
             (if (and (equal? a b) (not (equal? b c))) 49 0)))
         ''', 49)
 
+    def test_vector_values_pass_through_calls_and_survive_collection(self):
+        self.value('''
+        (define (identity x) x)
+        (define (test)
+          (let* ((vector (identity (quake:vector 20 21 8)))
+                 (bag (list vector)))
+            (cons 1 2)
+            (cons 3 4)
+            (if (and (quake:vector? (car bag)) (not (pair? vector)))
+                (+ (quake:vector-x vector) (quake:vector-y (car bag))
+                   (quake:vector-z (identity vector)))
+                0)))
+        ''', 49, heap_pairs=4, root_slots=64)
+
+    def test_equal_compares_vector_components(self):
+        self.value('''
+        (define (test)
+          (let ((a (quake:vector 1 -0.0 3)))
+            (if (and (equal? a (quake:vector 1 0 3))
+                     (not (equal? a (quake:vector 1 0 4)))
+                     (not (equal? a (cons 1 (cons 0 3)))))
+                49 0)))
+        ''', 49)
+
     def test_imports_are_relative_and_shared_dependencies_load_once(self):
         with tempfile.TemporaryDirectory(dir=self.work) as directory:
             root = Path(directory)

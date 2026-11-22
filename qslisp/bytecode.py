@@ -15,10 +15,10 @@ OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC = 26, 27, 29
 OP_STOREP_S, OP_STOREP_ENT, OP_STOREP_FNC = 39, 40, 42
 OP_STORE, OP_STORE_V, OP_RETURN, OP_NOT = 31, 32, 43, 44
 OP_NOT_ENT = 47
-OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND = 49, 50, 51, 61, 62
+OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND, OP_OR = 49, 50, 51, 61, 62, 63
 OP_BITAND, OP_BITOR = 64, 65
 TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4,
-        'null': 5, 'symbol': 6}
+        'null': 5, 'symbol': 6, 'vector': 7}
 
 
 @dataclass(frozen=True)

@@ -48,21 +48,17 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
     'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?',
     'quake:world?', 'quake:entity=?',
-    'quake:field', 'quake:set-field!', 'quake:vector', 'string=?',
+    'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
+    'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
     'quake:set-callback!', 'quake:call-callback',
 }
-VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string'}
+VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
+                    'quake:vector?': 'vector'}
+VECTOR_COMPONENTS = {'quake:vector-x': 0, 'quake:vector-y': 1, 'quake:vector-z': 2}
 FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector', 4: 'entity', 6: 'function'}
 CUSTOM_FIELDS = {'number': 2, 'entity': 4, 'string': 1}
 FIELD_READS = {1: ('string', OP_LOAD_S), 2: ('number', OP_LOAD_F), 4: ('entity', OP_LOAD_ENT)}
 FIELD_WRITES = {1: OP_STOREP_S, 2: OP_STOREP_F, 3: OP_STOREP_V, 4: OP_STOREP_ENT}
-
-
-def contains_form(node, name):
-    form = node.value
-    if not isinstance(form, tuple) or not form or form[0].value == 'quote':
-        return False
-    return form[0].value == name or any(contains_form(item, name) for item in form)
 
 
 @dataclass(frozen=True)
@@ -118,30 +114,46 @@ class Compiler:
                         for i in range(8)]
         self.dispatch = self.program.function('__qslisp_dispatch', filename, 1)
         self.dispatch_reference = self.program.define('__qslisp_dispatch', 6, [self.dispatch])
-        bodies = [node for function in self.functions.values() for node in function.body]
-        uses_heap = any(self.needs_heap(node) for node in bodies)
-        deep_equal = uses_heap and any(contains_form(node, 'equal?') for node in bodies)
-        self.heap = PairHeap(self.program, heap_pairs, root_slots, deep_equal=deep_equal) if uses_heap else None
+        features = set().union(*(self.heap_features(node) for function in self.functions.values()
+                               for node in function.body))
+        kinds = ('vector',) if 'vector' in features else ()
+        self.heap = (PairHeap(self.program, heap_pairs, root_slots, deep_equal='equal' in features, boxed_kinds=kinds)
+                     if 'pair' in features or kinds else None)
         self.pending = []
 
-    @staticmethod
-    def needs_heap(node):
+    def heap_features(self, node, *, native=False):
         if not isinstance(node.value, tuple) or not node.value:
-            return False
+            return {'vector'} if native else set()
         form = node.value
-        name = form[0].value
-        if isinstance(name, str):
-            if name in ('cons', 'car', 'cdr'):
-                return True
-            if name == 'list':
-                return len(form) > 1
-            if name == 'quote':
-                return len(form) == 2 and isinstance(form[1].value, tuple) and bool(form[1].value)
-            if name == 'let' and len(form) >= 3 and isinstance(form[1].value, tuple):
-                initializers = [binding.value[1] for binding in form[1].value
-                                if isinstance(binding.value, tuple) and len(binding.value) == 2]
-                return any(Compiler.needs_heap(n) for n in (*initializers, *form[2:]))
-        return any(Compiler.needs_heap(n) for n in form)
+        name = form[0].value if isinstance(form[0].value, str) else None
+        if name == 'quote':
+            if len(form) == 2 and isinstance(form[1].value, tuple) and form[1].value:
+                return {'pair'}
+            return {'vector'} if native else set()
+        if name in ('let', 'let*') and len(form) >= 3 and isinstance(form[1].value, tuple):
+            initializers = [binding.value[1] for binding in form[1].value
+                            if isinstance(binding.value, tuple) and len(binding.value) == 2]
+            result = set().union(*(self.heap_features(n) for n in (*initializers, *form[2:])))
+            return result | ({'vector'} if native else set())
+
+        kinds = ENGINE_CALLS[name][1] if name in ENGINE_CALLS else ()
+        if name in VECTOR_COMPONENTS:
+            kinds = ('vector',)
+        if name == 'quake:set-field!' and len(form) == 4 and self.vector_field(form[2]):
+            kinds = ('entity', 'field', 'vector')
+        result = set().union(*(self.heap_features(arg, native=i < len(kinds) and kinds[i] == 'vector')
+                               for i, arg in enumerate(form[1:])))
+        raw_source = name == 'quake:vector' or (name == 'quake:field' and len(form) == 3 and self.vector_field(form[2]))
+        if native != raw_source:
+            result.add('vector')
+        if name in ('cons', 'car', 'cdr') or (name == 'list' and len(form) > 1):
+            result.add('pair')
+        if name == 'equal?':
+            result.add('equal')
+        return result
+
+    def vector_field(self, node):
+        return isinstance(node.value, str) and self.program.field_kinds.get(node.value) == 3
 
     def declare(self, node):
         form = node.value
@@ -504,6 +516,22 @@ class Compiler:
         self.require_tag(frame, value, node, 'string')
         return value.slot
 
+    def retag(self, frame, value, kind):
+        result = self.tagged(frame, kind)
+        frame.emit(OP_STORE, value.slot, result.slot)
+        return result
+
+    def box_vector(self, frame, raw, location, environment):
+        coordinates = []
+        for i in range(3):
+            scalar = self.tagged(frame, 'number')
+            frame.emit(OP_STORE, advance(raw, i), scalar.slot)
+            coordinates.append(scalar)
+        x, y, z = coordinates
+        tail = self.make_pair(frame, y, z, location, environment)
+        storage = self.make_pair(frame, x, tail, location, environment)
+        return self.retag(frame, storage, 'vector')
+
     def vector(self, frame, node, environment):
         if isinstance(node.value, tuple):
             name, args = self.application(node, environment)
@@ -516,17 +544,30 @@ class Compiler:
                     self.number(frame, value, arg)
                     frame.emit(OP_STORE, value.slot, advance(result, i))
                 return result
-        raise CompileError(node.location, 'expected (quake:vector x y z) or a vector field read')
+        value = self.expression(frame, node, environment)
+        if value.kind not in ('unknown', 'vector'):
+            raise CompileError(node.location, f'expected a vector, got a {value.kind}')
+        self.require_tag(frame, value, node, 'vector')
+        storage = self.retag(frame, value, 'pair')
+        message = self.program.message(f'{node.location}: invalid vector storage\n')
+        x = self.heap.call(frame, 'car', [storage.slot, message])
+        tail = self.heap.call(frame, 'cdr', [storage.slot, message])
+        y = self.heap.call(frame, 'car', [tail, message])
+        z = self.heap.call(frame, 'cdr', [tail, message])
+        result = frame.allocate()
+        for i, coordinate in enumerate((x, y, z)):
+            frame.emit(OP_STORE, coordinate, advance(result, i))
+        return result
 
     def read_field(self, frame, node, args, environment, *, vector=False):
         if len(args) != 2:
             raise CompileError(node.location, 'quake:field requires an entity and a field name')
-        field, kind = self.engine_field(args[1], (3,) if vector else tuple(FIELD_READS))
+        field, kind = self.engine_field(args[1], (3,) if vector else (*FIELD_READS, 3))
         entity = self.entity(frame, args[0], environment)
-        if vector:
+        if kind == 3:
             result = frame.allocate()
             frame.emit(OP_LOAD_V, entity, field, result)
-            return result
+            return result if vector else self.box_vector(frame, result, node.location, environment)
         tag, opcode = FIELD_READS[kind]
         result = self.tagged(frame, tag)
         frame.emit(opcode, entity, field, result.slot)
@@ -736,7 +777,16 @@ class Compiler:
         if name in ('quake:set-callback!', 'quake:call-callback'):
             return self.callback(frame, node, name, args, environment)
         if name == 'quake:vector':
-            raise CompileError(node.location, 'quake:vector requires a native vector argument or field assignment')
+            if len(args) != 3:
+                raise CompileError(node.location, 'quake:vector requires three coordinates')
+            return self.box_vector(frame, self.vector(frame, node, environment), node.location, environment)
+        if name in VECTOR_COMPONENTS:
+            if len(args) != 1:
+                raise CompileError(node.location, f'{name} requires one vector')
+            raw = self.vector(frame, args[0], environment)
+            result = self.tagged(frame, 'number')
+            frame.emit(OP_STORE, advance(raw, VECTOR_COMPONENTS[name]), result.slot)
+            return result
         if name == 'if':
             if len(args) != 3:
                 raise CompileError(node.location, 'if requires a condition and two branches')
