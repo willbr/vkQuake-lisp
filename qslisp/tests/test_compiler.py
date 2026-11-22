@@ -220,6 +220,37 @@ class CompilerTests(CompilerCase):
                 with self.assertRaisesRegex(CompileError, message):
                     compile_source(f'(define (test) {call})', 'builtin.scm')
 
+    def test_entity_tags_survive_scheme_calls_and_pairs(self):
+        self.value('''
+        (define (identity x) x)
+        (define (test)
+          (let ((entity (identity (car (cons (quake:self) #f)))))
+            (if (quake:world? entity) 49 0)))
+        ''', 49)
+        result = self.execute('(define (test x) (quake:world? x))', 'test', 0)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('expected an entity', result.stderr)
+
+    def test_native_field_writes_and_vector_component_reads(self):
+        path = self.program('''
+        (define (identity x) x)
+        (define (test)
+          (let ((entity (quake:self)))
+            (quake:set-field! entity health (identity 100))
+            (quake:set-field! entity view_ofs (quake:vector 0 0 (identity 22)))
+            (quake:set-field! entity velocity (quake:field entity view_ofs))
+            (+ (quake:field entity health) (quake:field entity velocity_z))))
+        ''')
+        data = bytearray(path.read_bytes())
+        header = STOCK.validate(data)
+        # The CLI host starts with zeroed entities. Point self at its second edict.
+        struct.pack_into('<i', data, header[12] + 28 * 4, header[14] * 4)
+        path.write_bytes(data)
+        result = subprocess.run([str(ROOT / 'tools/quakec/run-stock.sh'), str(path), 'test'],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('return: 122\n', result.stdout)
+
     def test_stock_frame_and_reader_depth_limits_are_diagnostics(self):
         with self.assertRaisesRegex(CompileError, 'saved-locals limit'):
             compile_source('(define (test) (+ ' + ' '.join(['1'] * 800) + '))', 'large.scm')

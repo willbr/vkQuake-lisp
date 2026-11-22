@@ -55,7 +55,8 @@ header; executing the result also needs the built interpreter CLI.
   before subsequent calls. There are at most eight parameters per function.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
-  numbers, booleans, or other pairs; a pair is always true, including handle zero.
+  numbers, booleans, entity references, and other pairs. A pair is always true,
+  including handle zero.
 - `(quake:dprint "text\n")` calls stock builtin #25. It prints when `developer`
   is enabled in the game engine and accepts up to 255 UTF-8 bytes.
 - `(quake:precache-model "progs/player.mdl")` calls stock builtin #20 during
@@ -93,8 +94,30 @@ python3 tools/quakec/test-map-boot.py /path/to/dosbox /path/to/quake
 The smoke test uses an isolated data directory and checks the Quake console log
 for `worldspawn`, two startup frames, `Server spawned.`, and a subsequent
 frame. It saves `progs.dat` and the logs under `build/quakec/map-boot/`.
-This dedicated-server example covers map startup. The `start` map's gameplay
-entities have no Lisp spawn functions and stock Quake skips them.
+
+Add `--play` to open the 3D client and explore `start`.
+
+```sh
+python3 tools/quakec/test-map-boot.py --play /path/to/dosbox /path/to/quake
+```
+
+Click the game window to capture the mouse. Use **WASD** to walk, the mouse to
+look around, and the Escape menu to quit. The Lisp code places the local player
+at the map's `info_player_start` and uses stock walking physics and collision.
+This example covers exploration. Quake skips gameplay entities that have no
+Lisp spawn function, so doors, teleporters, and combat are outside its scope.
+
+The example also shows how to use the stock entity ABI. `(quake:self)` and
+`(quake:world)` return entity values. `(quake:find start field "value")` searches
+a string field and returns the world entity when there is no match. Test this
+with `(quake:world? entity)`. `(quake:time)` returns the engine's time global.
+`(quake:field entity field)` reads a numeric field, including vector components
+such as `origin_z`. Use `(quake:set-field! entity field value)` to write numeric
+or vector fields. Vector operands can be constructed with `(quake:vector x y z)`
+or read directly from a vector field within another native form. Use
+`quake:set-origin`, `quake:set-size`, and `quake:set-model` for changes that
+must update the engine's collision links or model index. `quake:error` reports
+a literal string through the stock runtime error builtin.
 
 ## Pair heap and collection
 
@@ -249,10 +272,11 @@ Inside compiled Scheme code, each value uses three VM words:
 [payload, type-tag, reserved-zero]
 ```
 
-The payload is a float32. The tag is float32 `0` for a number, `1` for a boolean,
-and `2` for a pair. A boolean payload is `0` or `1`; a pair payload is an opaque
-cell index. This uses the existing vector-copy instruction and three-word
-parameter/return areas. Numbers and booleans do not allocate heap objects.
+The tag is float32 `0` for a number, `1` for a boolean, `2` for a pair, or `3`
+for an entity. Numbers and booleans use float32 payloads, pairs use opaque cell
+indices, and entities use the stock engine's raw edict reference. These values
+fit the VM's three-word parameter and return areas. Entity references use
+engine-managed storage and can be passed through Scheme functions and pairs.
 
 Internal function-body names start with `__qslisp_fn_` and accept these tagged values.
 Public names are native entry wrappers: each CLI argument is a scalar float,

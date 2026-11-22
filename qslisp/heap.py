@@ -88,7 +88,7 @@ class PairHeap:
         # a saved pointer, so recursive invocations and duplicates are safe.
         unique = {}
         for value in values:
-            if value.kind not in ('number', 'boolean'):
+            if value.kind in ('unknown', 'pair'):
                 unique.setdefault(value.slot, value)
         if not unique:
             return None

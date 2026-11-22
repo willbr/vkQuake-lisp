@@ -4,7 +4,8 @@ from contextlib import contextmanager
 
 from .bytecode import (Program, Frame, Local, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
                        OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
-                       OP_RETURN, OP_NOT, OP_IF, OP_CALL0, OP_GOTO, OP_AND)
+                       OP_RETURN, OP_NOT, OP_NOT_ENT, OP_IF, OP_CALL0, OP_GOTO, OP_AND,
+                       OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V)
 from .reader import CompileError, Location, StringLiteral, read
 from .heap import PairHeap
 
@@ -12,8 +13,22 @@ SYNTAX = {'define', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
           'define-syntax', 'syntax-rules', 'quasiquote'}
 ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
 COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
-ENGINE_CALLS = {'quake:dprint': 25, 'quake:precache-model': 20}
-PRIMITIVES = ARITHMETIC.keys() | COMPARISONS.keys() | ENGINE_CALLS.keys() | {'not', 'cons', 'car', 'cdr', 'pair?'}
+ENGINE_CALLS = {
+    'quake:set-origin': (2, ('entity', 'vector')),
+    'quake:set-model': (3, ('entity', 'model')),
+    'quake:set-size': (4, ('entity', 'vector', 'vector')),
+    'quake:error': (10, ('string',)),
+    'quake:find': (18, ('entity', 'string-field', 'string')),
+    'quake:precache-model': (20, ('model',)),
+    'quake:dprint': (25, ('string',)),
+}
+ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:world': ('world', 'entity'),
+                  'quake:time': ('time', 'number')}
+PRIMITIVES = ARITHMETIC.keys() | COMPARISONS.keys() | ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys() | {
+    'not', 'cons', 'car', 'cdr', 'pair?', 'quake:world?', 'quake:field', 'quake:set-field!', 'quake:vector',
+}
+TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3}
+FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector'}
 
 
 @dataclass(frozen=True)
@@ -284,12 +299,12 @@ class Compiler:
 
     def tagged(self, frame, kind):
         value = Value(frame.allocate(), kind)
-        frame.emit(OP_STORE, self.one if kind == 'boolean' else self.zero, advance(value.slot, 1))
+        frame.emit(OP_STORE, self.program.constant(TAGS[kind]), advance(value.slot, 1))
         frame.emit(OP_STORE, self.zero, advance(value.slot, 2))
         return value
 
     def false_test(self, frame, value):
-        if value.kind in ('number', 'pair'):
+        if value.kind in ('number', 'pair', 'entity'):
             return self.zero  # Only booleans can be false, including for pair index zero.
         result = frame.allocate(1)
         frame.emit(OP_NOT, value.slot, 0, result)
@@ -300,13 +315,21 @@ class Compiler:
         return result
 
     def number(self, frame, value, node):
-        if value.kind in ('boolean', 'pair'):
+        if value.kind not in ('unknown', 'number'):
             raise CompileError(node.location, f'arithmetic and comparisons require numbers, got a {value.kind}')
+        self.require_tag(frame, value, node, 'number')
+
+    def require_tag(self, frame, value, node, kind):
         if value.kind == 'unknown':
-            wrong = frame.allocate(1)
-            frame.emit(OP_NOT, advance(value.slot, 1), 0, wrong)
-            skip = frame.emit(OP_IF, wrong)
-            message = self.program.message(f'{node.location}: expected a number\n')
+            tag = advance(value.slot, 1)
+            matches = frame.allocate(1)
+            if kind == 'number':
+                frame.emit(OP_NOT, tag, 0, matches)
+            else:
+                frame.emit(OP_EQ, tag, self.program.constant(TAGS[kind]), matches)
+            skip = frame.emit(OP_IF, matches)
+            article = 'an' if kind == 'entity' else 'a'
+            message = self.program.message(f'{node.location}: expected {article} {kind}\n')
             frame.emit(OP_STORE, message, 4)
             frame.emit(OP_CALL0 + 1, self.program.error_function)
             frame.patch(skip, 2, len(frame.code))
@@ -328,20 +351,101 @@ class Compiler:
         for i, destination in enumerate(self.mailbox):
             frame.emit(OP_STORE_V, args[i].slot if i < len(args) else self.zero, destination)
 
-    def engine_call(self, frame, node, name, args):
-        if len(args) != 1 or not isinstance(args[0].value, StringLiteral):
-            raise CompileError(node.location, f'{name} requires one string literal')
-        literal = args[0]
+    def engine_string(self, name, literal, kind):
+        if not isinstance(literal.value, StringLiteral):
+            raise CompileError(literal.location, f'{name} requires a string literal here')
         text = literal.value.text
         encoded = text.encode('utf-8')
-        if name == 'quake:dprint' and len(encoded) > 255:
+        if name in ('quake:dprint', 'quake:error') and len(encoded) > 255:
             raise CompileError(literal.location, f'{name} text exceeds the stock 255-byte limit')
-        if name == 'quake:precache-model' and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
+        if kind == 'model' and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
             raise CompileError(literal.location, f'{name} requires a stock model path of 1–63 bytes')
-        number = ENGINE_CALLS[name]
-        builtin = self.program.builtin(f'__qslisp_builtin_{number}', number, 1)
-        frame.emit(OP_STORE, self.program.literal_string(text), 4)
-        frame.emit(OP_CALL0 + 1, builtin)
+        return self.program.literal_string(text)
+
+    def engine_field(self, node, kinds):
+        name = symbol(node, 'stock entity field')
+        kind = self.program.field_kinds.get(name)
+        if kind not in kinds:
+            expected = ' or '.join(FIELD_TYPES[k] for k in kinds)
+            raise CompileError(node.location, f'expected a {expected} stock entity field, got {name}')
+        return self.program.names[name], kind
+
+    def entity(self, frame, node, environment):
+        value = self.expression(frame, node, environment)
+        if value.kind not in ('unknown', 'entity'):
+            raise CompileError(node.location, f'expected an entity, got a {value.kind}')
+        self.require_tag(frame, value, node, 'entity')
+        return value.slot
+
+    def vector(self, frame, node, environment):
+        if isinstance(node.value, tuple):
+            name, args = self.application(node, environment)
+            if name == 'quake:field':
+                return self.read_field(frame, node, args, environment, vector=True)
+            if name == 'quake:vector' and len(args) == 3:
+                result = frame.allocate()
+                for i, arg in enumerate(args):
+                    value = self.expression(frame, arg, environment)
+                    self.number(frame, value, arg)
+                    frame.emit(OP_STORE, value.slot, advance(result, i))
+                return result
+        raise CompileError(node.location, 'expected (quake:vector x y z) or a vector field read')
+
+    def read_field(self, frame, node, args, environment, *, vector=False):
+        if len(args) != 2:
+            raise CompileError(node.location, 'quake:field requires an entity and a field name')
+        field, _ = self.engine_field(args[1], (3,) if vector else (2,))
+        entity = self.entity(frame, args[0], environment)
+        if vector:
+            result = frame.allocate()
+            frame.emit(OP_LOAD_V, entity, field, result)
+            return result
+        result = self.tagged(frame, 'number')
+        frame.emit(OP_LOAD_F, entity, field, result.slot)
+        return result
+
+    def write_field(self, frame, node, args, environment):
+        if len(args) != 3:
+            raise CompileError(node.location, 'quake:set-field! requires an entity, a field name, and a value')
+        field, kind = self.engine_field(args[1], (2, 3))
+        entity = self.entity(frame, args[0], environment)
+        if kind == 3:
+            value_slot = self.vector(frame, args[2], environment)
+        else:
+            value = self.expression(frame, args[2], environment)
+            self.number(frame, value, args[2])
+            value_slot = value.slot
+        address = frame.allocate(1)
+        frame.emit(OP_ADDRESS, entity, field, address)
+        frame.emit(OP_STOREP_V if kind == 3 else OP_STOREP_F, value_slot, address)
+        return Value(self.zero, 'number')
+
+    def engine_call(self, frame, node, name, args, environment):
+        number, kinds = ENGINE_CALLS[name]
+        if kinds in (('string',), ('model',)) and (len(args) != 1 or not isinstance(args[0].value, StringLiteral)):
+            raise CompileError(node.location, f'{name} requires one string literal')
+        if len(args) != len(kinds):
+            raise CompileError(node.location, f'{name} requires {len(kinds)} arguments')
+        operands = []
+        for arg, kind in zip(args, kinds):
+            if kind == 'entity':
+                slot = self.entity(frame, arg, environment)
+            elif kind == 'vector':
+                slot = self.vector(frame, arg, environment)
+            elif kind == 'string-field':
+                slot, _ = self.engine_field(arg, (1,))
+            else:
+                slot = self.engine_string(name, arg, kind)
+            operands.append(slot)
+        for i, (slot, kind) in enumerate(zip(operands, kinds)):
+            frame.emit(OP_STORE_V if kind == 'vector' else OP_STORE, slot, 4 + 3 * i)
+        builtin = (self.program.error_function if number == 10 else
+                   self.program.builtin(f'__qslisp_builtin_{number}', number, len(kinds)))
+        frame.emit(OP_CALL0 + len(kinds), builtin)
+        if name == 'quake:find':
+            result = self.tagged(frame, 'entity')
+            frame.emit(OP_STORE, 1, result.slot)
+            return result
         return Value(self.zero, 'number')
 
     def expression(self, frame, node, environment):
@@ -367,7 +471,27 @@ class Compiler:
             return environment[form]
         name, args = self.application(node, environment)
         if name in ENGINE_CALLS:
-            return self.engine_call(frame, node, name, args)
+            return self.engine_call(frame, node, name, args, environment)
+        if name in ENGINE_GLOBALS:
+            if args:
+                raise CompileError(node.location, f'{name} takes no arguments')
+            global_name, kind = ENGINE_GLOBALS[name]
+            result = self.tagged(frame, kind)
+            frame.emit(OP_STORE, self.program.names[global_name], result.slot)
+            return result
+        if name == 'quake:world?':
+            if len(args) != 1:
+                raise CompileError(node.location, 'quake:world? requires one entity')
+            entity = self.entity(frame, args[0], environment)
+            result = self.tagged(frame, 'boolean')
+            frame.emit(OP_NOT_ENT, entity, 0, result.slot)
+            return result
+        if name == 'quake:field':
+            return self.read_field(frame, node, args, environment)
+        if name == 'quake:set-field!':
+            return self.write_field(frame, node, args, environment)
+        if name == 'quake:vector':
+            raise CompileError(node.location, 'quake:vector requires a native vector argument or field assignment')
         if name == 'if':
             if len(args) != 3:
                 raise CompileError(node.location, 'if requires a condition and two branches')
@@ -403,10 +527,10 @@ class Compiler:
             values = self.values(frame, args, environment)
             if name == 'pair?':
                 result = self.tagged(frame, 'boolean')
-                frame.emit(OP_EQ, advance(values[0].slot, 1), self.program.constant(2), result.slot)
+                frame.emit(OP_EQ, advance(values[0].slot, 1), self.program.constant(TAGS['pair']), result.slot)
                 return result
             if name in ('car', 'cdr'):
-                if values[0].kind in ('number', 'boolean'):
+                if values[0].kind not in ('unknown', 'pair'):
                     raise CompileError(node.location, f'{name} requires a pair, got a {values[0].kind}')
                 message = self.program.message(f'{node.location}: {name} requires an allocated pair\n')
                 slot = self.heap.call(frame, name, [values[0].slot, message])

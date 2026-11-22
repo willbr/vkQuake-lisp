@@ -9,7 +9,9 @@ from .reader import CompileError
 ROOT = Path(__file__).resolve().parents[1]
 OP_MUL, OP_DIV, OP_ADD, OP_SUB = 1, 5, 6, 8
 OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT = 10, 20, 21, 22, 23
+OP_LOAD_F, OP_LOAD_V, OP_ADDRESS, OP_STOREP_F, OP_STOREP_V = 24, 25, 30, 37, 38
 OP_STORE, OP_STORE_V, OP_RETURN, OP_NOT = 31, 32, 43, 44
+OP_NOT_ENT = 47
 OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND = 49, 50, 51, 61, 62
 
 
@@ -34,6 +36,7 @@ class Program:
         self.functions = [(0,) * 15]
         self.names = {}
         self.kinds = {}
+        self.field_kinds = {}
         self.constants = {}
         self.entityfields = self.load_abi()
         self.error_function = self.builtin('__qslisp_error', 10, 1)
@@ -94,6 +97,7 @@ class Program:
                             self.kinds[label] = kind
                         else:
                             self.fielddefs.append((kind, field_offset, self.string(label)))
+                            self.field_kinds[label] = kind
                             self.define(label, 5, [field_offset])
                 offset += width
             if layout == 'entvars_t':

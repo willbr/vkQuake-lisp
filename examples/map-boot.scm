@@ -1,7 +1,44 @@
-; Load as a dedicated-server smoke test with the original Quake data.
+; Boot and explore a map using the original engine's walking physics.
 (define (worldspawn)
   (quake:precache-model "progs/player.mdl")
   (quake:dprint "qslisp: worldspawn\n"))
 
 (define (StartFrame)
-  (quake:dprint "qslisp: StartFrame\n"))
+  ; Record the startup frames without flooding the console during play.
+  (if (< (quake:time) 1.4)
+      (quake:dprint "qslisp: StartFrame\n")
+      0))
+
+(define (SetNewParms) 0)
+(define (SetChangeParms) 0)
+(define (ClientDisconnect) 0)
+(define (ClientKill) 0)
+(define (PlayerPreThink) 0)
+(define (PlayerPostThink) 0)
+(define (info_player_start) 0)
+
+(define (ClientConnect)
+  (quake:dprint "qslisp: ClientConnect\n"))
+
+(define (PutClientInServer)
+  (let ((player (quake:self))
+        (spot (quake:find (quake:world) classname "info_player_start"))
+        (walk 3)
+        (slidebox 3)
+        (client 8))
+    (if (quake:world? spot)
+        (quake:error "qslisp: map has no info_player_start\n")
+        (begin
+          (quake:set-field! player health 100)
+          (quake:set-field! player movetype walk)
+          (quake:set-field! player solid slidebox)
+          (quake:set-field! player flags client)
+          (quake:set-field! player fixangle 1)
+          (quake:set-field! player angles (quake:field spot angles))
+          (quake:set-field! player view_ofs (quake:vector 0 0 22))
+          (quake:set-model player "progs/player.mdl")
+          (quake:set-size player (quake:vector -16 -16 -24) (quake:vector 16 16 32))
+          (quake:set-origin player (quake:vector (quake:field spot origin_x)
+                                                (quake:field spot origin_y)
+                                                (+ (quake:field spot origin_z) 1)))
+          (quake:dprint "qslisp: player spawned\n")))))
