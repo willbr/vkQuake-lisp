@@ -12,9 +12,10 @@
   (= (quake:field player weapon) pulse-weapon))
 
 (define (weapon-ammo player)
-  (if (pulse-equipped? player)
-      (quake:field player ammo_nails)
-      (quake:field player ammo_shells)))
+  (cond
+    ((pulse-equipped? player) (quake:field player ammo_nails))
+    ((= (quake:field player weapon) tether-weapon) 0)
+    (else (quake:field player ammo_shells))))
 
 (define (update-ammo player rounds)
   (if (pulse-equipped? player)
@@ -24,21 +25,27 @@
 
 (define (equip player weapon)
   (let* ((items (quake:field player items))
-         (ammo-icon (if (= weapon pulse-weapon) pulse-ammo-icon shell-ammo-icon)))
+         (ammo-icon (cond
+                      ((= weapon pulse-weapon) pulse-ammo-icon)
+                      ((= weapon tether-weapon) 0)
+                      (else shell-ammo-icon))))
     (when (= (quake:bit-and items weapon) weapon)
       (quake:set-field! player items
          (quake:bit-or (- items (quake:bit-and items ammo-icon-mask)) ammo-icon))
       (quake:set-field! player weapon weapon)
       (quake:set-field! player weaponmodel
-         (if (= weapon pulse-weapon) "progs/v_nail.mdl" "progs/v_shot.mdl"))
+         (cond ((= weapon pulse-weapon) "progs/v_nail.mdl")
+               ((= weapon tether-weapon) "progs/tether.mdl")
+               (else "progs/v_shot.mdl")))
       (quake:set-field! player weaponframe 0)
       (quake:set-field! player currentammo (weapon-ammo player)))))
 
 (define (select-weapon player)
   (let ((command (quake:field player impulse)))
     (cond ((= command 1) (equip player shell-weapon))
-          ((= command 2) (equip player pulse-weapon)))
-    (when (or (= command 1) (= command 2))
+          ((= command 2) (equip player pulse-weapon))
+          ((= command 6) (equip player tether-weapon)))
+    (when (or (= command 1) (= command 2) (= command 6))
       (quake:set-field! player impulse 0))))
 
 (define (set-pickup-model item model)
@@ -161,11 +168,15 @@
   (when (= (quake:field player impulse) 3)
     (quake:set-field! player impulse 0)
     (cond
-      ((riding-bike? player) (dismount-bike player))
+      ((riding-bike? player)
+       (when (not (uplink-lift-input player (quake:world))) (dismount-bike player)))
       ((= (quake:field player movetype) move-walk)
        (let* ((hit (aimed-entity player 96)) (class (quake:field hit classname)))
-         (when (or (string=? class "qslisp_switch") (string=? class "qslisp_bike"))
-           (quake:call-callback hit use player))))
+         (if (or (string=? class "qslisp_switch") (string=? class "qslisp_bike")
+                 (string=? class "uplink_station") (string=? class "uplink_buddy")
+                 (string=? class "uplink_recall"))
+             (quake:call-callback hit use player)
+             (uplink-lift-input player (quake:world)))))
       ((string=? (quake:field player next-level) "annex")
        (quake:dprint "qslisp: changing to Relay Annex\n")
        (quake:change-level "annex")))))

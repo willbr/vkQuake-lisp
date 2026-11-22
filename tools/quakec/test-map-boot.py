@@ -12,6 +12,7 @@ import time
 import annex
 import challenge
 import coop
+import uplink
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOT_MESSAGES = ('qslisp: worldspawn', 'qslisp: StartFrame', 'qslisp: StartFrame', 'Server spawned.')
@@ -26,7 +27,12 @@ bind space +jump
 bind mouse1 +attack
 bind 1 "impulse 1"
 bind 2 "impulse 2"
+bind 3 "impulse 6"
 bind e "impulse 3"
+alias buddy_follow "impulse 21"
+alias buddy_wait "impulse 22"
+alias buddy_regroup "impulse 23"
+alias gameplay_trace "impulse 24"
 bind r restart
 +mlook
 '''
@@ -67,10 +73,12 @@ def prepare(output, maps):
                 subprocess.run([sys.executable, 'tools/quakec/build-signal.py', '--map', name,
                                 output / 'maps' / f'{name}.bsp'],
                                cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
-    if 'annex' in maps:
+    if 'annex' in maps or 'uplink' in maps:
         subprocess.run([sys.executable, 'tools/quakec/build-sentry.py', output / 'progs/sentry.mdl'],
                        cwd=ROOT, check=True)
         subprocess.run([sys.executable, 'tools/quakec/build-bike.py', output], cwd=ROOT, check=True)
+    if 'uplink' in maps:
+        subprocess.run([sys.executable, 'tools/quakec/build-uplink-assets.py', output], cwd=ROOT, check=True)
 
 
 def stage(quake_dir, output, base):
@@ -96,13 +104,15 @@ def engine_env(play):
 
 
 def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protected_cycles=None):
-    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',)}[level]
+    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',), 'uplink': ('uplink',)}[level]
     prepare(output, maps)
     env = engine_env(play)
     console = output / 'qconsole.log'
     with tempfile.TemporaryDirectory(dir=output) as staged:
         base = Path(staged)
         mod = stage(quake_dir, output, base)
+        if verify and level == 'uplink':
+            return uplink.verify(dosbox, output, env, base, mod)
 
         engine_flags = '-noudp -noipx -condebug -game lispboot'
         if play:
@@ -157,13 +167,17 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protecte
     return console
 
 
-def boot_coop(dosbox, quake_dir, output):
-    prepare(output, ('signal', 'annex'))
+def boot_coop(dosbox, quake_dir, output, level):
+    new_mission = level == 'uplink'
+    prepare(output, ('uplink',) if new_mission else ('signal', 'annex'))
+    if new_mission:
+        uplink.coop_maps(output)
     with tempfile.TemporaryDirectory(dir=output) as staged:
         base = Path(staged)
         host = stage(quake_dir, output, base / 'host')
         guest = stage(quake_dir, output, base / 'guest')
-        return coop.verify(dosbox, output, engine_env(False), host, guest)
+        scenario = uplink.verify_coop if new_mission else coop.verify
+        return scenario(dosbox, output, engine_env(False), host, guest)
 
 
 def main():
@@ -171,17 +185,18 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--play', action='store_true', help='open the map in a graphical client')
     mode.add_argument('--verify', action='store_true', help='test a Lisp map in a scripted client')
-    mode.add_argument('--verify-coop', action='store_true', help='test Signal Room and Annex with two IPX clients')
+    mode.add_argument('--verify-coop', action='store_true', help='test the campaign or uplink with two IPX clients')
     parser.add_argument('--protected-cycles', type=int, help='set DOSBox Staging protected-mode cycles for --play')
-    parser.add_argument('--map', choices=('start', 'signal', 'annex'), help='map to load (default: start, or signal with --verify)')
+    parser.add_argument('--map', choices=('start', 'signal', 'annex', 'uplink'),
+                        help='map to load (default: start, or signal with --verify)')
     parser.add_argument('dosbox', help='DOSBox Staging executable')
     parser.add_argument('quake_dir', type=Path, help='registered DOS Quake directory containing quake.exe and id1')
     args = parser.parse_args()
     level = args.map or ('signal' if args.verify else 'start')
     if args.verify and level == 'start':
-        parser.error('--verify requires signal or annex')
-    if args.verify_coop and args.map:
-        parser.error('--verify-coop runs Signal Room and Relay Annex')
+        parser.error('--verify requires signal, annex, or uplink')
+    if args.verify_coop and args.map not in (None, 'uplink'):
+        parser.error('--verify-coop runs the campaign by default or the uplink with --map uplink')
     if args.protected_cycles is not None and (not args.play or args.protected_cycles <= 0):
         parser.error('--protected-cycles requires a positive value and --play')
     dosbox = shutil.which(args.dosbox)
@@ -192,15 +207,19 @@ def main():
     output = Path(tempfile.mkdtemp(prefix='run-', dir=runs))
     try:
         if args.verify_coop:
-            console = boot_coop(Path(dosbox).resolve(), args.quake_dir.resolve(), output)
+            console = boot_coop(Path(dosbox).resolve(), args.quake_dir.resolve(), output, level)
         else:
             console = boot(Path(dosbox).resolve(), args.quake_dir.resolve(), output,
                            level=level, play=args.play, verify=args.verify,
                            protected_cycles=args.protected_cycles)
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
         sys.exit(f'Map boot failed: {error}\nArtifacts: {output}')
-    if args.verify_coop:
+    if args.verify_coop and level == 'uplink':
+        print(f'Two stock Quake clients tested the uplink bikes, pump, and tethers. Logs: {console.parent}')
+    elif args.verify_coop:
         print(f'Two stock Quake clients completed Signal Room and reached Relay Annex. Logs: {console.parent}')
+    elif args.verify and level == 'uplink':
+        print(f'Stock Quake reached uplink extraction and verified the save chain. Logs: {console.parent}')
     else:
         print(f'Stock Quake booted {level} and ran Lisp callbacks before and after startup. Log: {console}')
 

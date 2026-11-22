@@ -1,6 +1,7 @@
 ; The stock player hull handles collisions. The bike owns planar momentum.
 (define-field riding entity)
 (define-field bike-rider entity)
+(define-field bike-last-rider entity)
 (define-field bike-heading)
 (define-field bike-vx)
 (define-field bike-vy)
@@ -67,6 +68,7 @@
     (when (and (active-player? player) (not (riding-bike? player))
                (quake:world? (quake:field bike bike-rider)))
       (quake:set-field! bike bike-rider player)
+      (quake:set-field! bike bike-last-rider player)
       (quake:set-field! bike solid 0)
       (quake:set-field! bike modelindex 0)
       (quake:set-origin bike (quake:field bike origin))

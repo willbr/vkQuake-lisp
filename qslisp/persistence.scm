@@ -43,3 +43,25 @@
     ((and (< length limit) (pair? values) (quake:entity? (car values)))
      (saved-entity-list-length (cdr values) limit (+ length 1)))
     (else (quake:error "saved entity list requires a proper list within its slot limit\n"))))
+
+; Project a Lisp record onto typed saveable slots. Supply an accessor for each
+; slot and a constructor that accepts those same values in declaration order.
+(define-syntax define-saved-record
+  (syntax-rules ()
+    ((define-saved-record read write construct (slot type access) ...)
+     (begin
+       (define-field slot type) ...
+       (define (read owner)
+         (construct (quake:field owner slot) ...))
+       (define (write owner value)
+         (let ((snapshot (list (access value) ...)))
+           (write-record-slots owner snapshot slot ...)
+           value))))))
+
+(define-syntax write-record-slots
+  (syntax-rules ()
+    ((write-record-slots owner snapshot) #f)
+    ((write-record-slots owner snapshot first rest ...)
+     (begin
+       (quake:set-field! owner first (car snapshot))
+       (write-record-slots owner (cdr snapshot) rest ...)))))

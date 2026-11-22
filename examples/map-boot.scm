@@ -1,10 +1,13 @@
 ; Explore stock Quake and play the original Signal Room challenge.
-(import "../qslisp/actors.scm" "../qslisp/persistence.scm" "sentry.scm" "progression.scm" "bike.scm")
+(import "../qslisp/actors.scm" "../qslisp/persistence.scm" "sentry.scm" "progression.scm"
+        "bike.scm" "uplink.scm" "uplink-tools.scm" "playtest-trace.scm")
 
 (define-field next-shot)
 (define-field gate-open)
 (define-field linked-gate entity)
 (define-field room-complete)
+; The stock entity parser exposes the authored light key under this name.
+(define-field light_lev)
 (define move-walk 3)
 (define move-push 7)
 (define solid-trigger 1)
@@ -36,6 +39,7 @@
 (define (ClientDisconnect)
   (let ((player (quake:self)))
     (return-bike player)
+    (clear-tether player)
     (quake:set-field! player classname "")
     (quake:set-field! player health 0)
     (quake:set-field! player solid 0)
@@ -157,9 +161,11 @@
   (let ((hit (aimed-entity player 800)))
     (when (not (quake:world? hit))
       (cond ((> (quake:field hit takedamage) 0)
+             (when (pulse-equipped? player) (uplink-pulse-contact player hit))
              (damage hit player (if (pulse-equipped? player) 15 25)))
             ((string=? (quake:field hit classname) "qslisp_target")
-             (quake:call-callback hit use player))))))
+             (quake:call-callback hit use player))
+            ((pulse-equipped? player) (uplink-pulse-contact player hit))))))
 
 (define (update-weapon player)
   (let ((now (quake:time))
@@ -181,13 +187,19 @@
     (if (<= (quake:field player health) 0)
         (update-respawn player)
         (begin
+          (trace-command player)
+          (uplink-buddy-commands player)
           (interact player)
           (cond
-            ((riding-bike? player) (ride-bike player))
+            ((riding-bike? player)
+             (clear-tether player)
+             (ride-bike player))
             ((and (not was-riding) (= (quake:field player movetype) move-walk))
              (select-weapon player)
              (update-jump player)
-             (update-weapon player)))))))
+             (if (= (quake:field player weapon) tether-weapon)
+                 (update-tether player)
+                 (begin (clear-tether player) (update-weapon player)))))))))
 
 (define (PlayerPostThink)
   (let* ((player (quake:self)) (riding (riding-bike? player)))
@@ -202,7 +214,8 @@
       ; Stock clients derive walking bob and view roll from this packet's
       ; horizontal velocity. The next bike tick uses its own momentum fields.
       (quake:set-field! player velocity_x 0)
-      (quake:set-field! player velocity_y 0))))
+      (quake:set-field! player velocity_y 0))
+    (sample-gameplay player riding)))
 
 (define (PutClientInServer)
   (let* ((player (quake:self)) (spot (spawn-point player)))
@@ -232,6 +245,7 @@
           (quake:set-origin player (quake:vector (quake:field spot origin_x)
                                                 (quake:field spot origin_y)
                                                 (+ (quake:field spot origin_z) 1)))
+          (uplink-checkpoint-recovery player)
           (when (string=? (quake:field spot classname) "info_player_coop")
             (quake:dprint "qslisp: player spawned at co-op start\n"))
           (quake:dprint "qslisp: player spawned\n")))))

@@ -185,10 +185,10 @@ are under `build/quakec/map-boot/`.
 The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
-as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 10,752 instructions against the 100,000-instruction watchdog. The
-program uses 14,311 of 32,768 global slots and its largest individual frame uses
-1,151 slots. The engine shares 2,048 saved-local slots across active frames.
+as an upper bound on any VM entry in that frame. It records the generated
+program's global slots and largest local frame. Stock Quake allows up to
+100,000 instructions per entry, 32,768 global slots, and 2,048 saved-local
+slots shared across active frames.
 
 ### Relay Annex sentry
 
@@ -280,6 +280,46 @@ waypoints. When the sentry reaches a waypoint it uses `append` and a
 quasiquoted list to move that waypoint to the end. The stock-engine test
 saves the route, lets the sentry rotate to the next waypoint, then reloads
 the old order and checks that patrol continues.
+
+### Relay Annex uplink mission
+
+```sh
+python3 tools/quakec/test-map-boot.py --play --map uplink /path/to/dosbox /path/to/quake
+python3 tools/quakec/test-map-boot.py --verify --map uplink /path/to/dosbox /path/to/quake
+python3 tools/quakec/test-map-boot.py --verify-coop --map uplink /path/to/dosbox /path/to/quake
+```
+
+Recruit the buddy with **E** and take a bike through the south dock. Use
+**Up** to pedal, **Down** to brake or reverse, and **Left** and **Right** to
+steer. Press **E** to call lifts, travel while aboard, use stations, or
+dismount when stopped. The console aliases `buddy_follow`, `buddy_wait`, and
+`buddy_regroup` are available in the launcher. They send impulses 21–23.
+
+The pump can use the buddy or a second player at the valve. At switchgear,
+press **2** to equip the pulse carbine, which sends a delayed follow-up to the
+sentry or the linked switch. On the upper gantries, press **3** after picking
+up the launcher. Aim at a marked anchor and hold fire. Release fire to keep
+your momentum off the swing.
+
+Use `developer 1` and `gameplay_trace` (impulse 24) for up to 12 seconds of
+console samples. The trace records bike steering, ground contact, speed,
+grip, and camera position, plus the buddy's goal and reason code. Buddy
+reason codes 0–5 represent waiting, stepping, blocked, awaiting a service
+route, in range, and arriving by the service route. Tether events include
+the player's slot and attachment state. The trace starts disabled.
+
+The mission journal uses `define-saved-record` from
+[persistence.scm](persistence.scm). It takes a reader name, writer name, a
+reconstruction procedure, and one `(slot type accessor)` declaration per
+stored field. The writer extracts those values before updating the owner
+edict. The reader reconstructs the record from Quake's restored fields.
+Slots support stock number, entity, and string types.
+
+The [map generator](../tools/quakec/build-uplink.py) writes the editable
+[uplink map](../examples/uplink.map). The stock tests place the client at
+authored waypoints between sections and drive each objective with real
+inputs. The two-player test uses the same geometry with starts at the
+bike dock, pump, and swing gallery.
 
 ### Two-player co-op
 

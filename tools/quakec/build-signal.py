@@ -108,7 +108,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path, help='output BSP file')
     source = parser.add_mutually_exclusive_group()
-    source.add_argument('--map', choices=('signal', 'annex'))
+    source.add_argument('--map', choices=('signal', 'annex', 'uplink'))
     source.add_argument('--source', type=Path, help='stock .map file to compile')
     args = parser.parse_args()
     build(args.output, args.source.stem if args.source else args.map or 'signal', args.source)

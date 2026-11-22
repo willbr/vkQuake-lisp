@@ -56,6 +56,7 @@
         (if (player-entity? target)
             (begin
               (return-bike target)
+              (clear-tether target)
               (quake:set-field! target deadflag 2)
               (quake:set-field! target takedamage 0)
               (quake:set-field! target movetype 0)
@@ -66,7 +67,8 @@
               (quake:dprint "qslisp: player defeated\n"))
             (begin
               (quake:remove target)
-              (quake:centerprint inflictor "Sentry disabled.")
+              (when (player-entity? inflictor)
+                (quake:centerprint inflictor "Sentry disabled."))
               (quake:dprint "qslisp: sentry defeated\n")))))))
 
 (define (update-respawn player)
