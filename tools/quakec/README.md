@@ -118,6 +118,25 @@ vkQuake check alone does not establish stock-engine compatibility. The
 [Lisp map boot smoke test](../../qslisp/README.md#boot-a-map-in-stock-quake)
 runs the generated `progs.dat` in the original DOS Quake executable.
 
+## Headless map editing
+
+```sh
+python3 tools/quakec/map_editor.py examples/annex.map inspect
+python3 tools/quakec/map_editor.py examples/annex.map preview build/annex-side.svg --view side
+python3 tools/quakec/map_editor.py examples/annex.map build build/annex.bsp
+```
+
+The editor preserves untouched map source. Use `apply edits.json` to preview an
+edit as a diff, and add `--write` to save it. The file is a JSON array of
+operations. Operation names include `box`, `ramp`, `bank`, `switchback`,
+`place`, `set`, `link`, and `translate-brush`. Entity and brush indices
+come from the map order, starting at zero.
+
+For a persistent session, run `serve --port 8765` on a map. Read `GET /` for
+the current revision and entity indices. Send `POST /edit` with that
+`revision`, an `operations` array, and optional `write: true`. An intervening
+edit invalidates the old revision. `GET /preview?view=side` returns an SVG.
+
 ## VM target
 
 The pinned original engine is authoritative for the compiler target:

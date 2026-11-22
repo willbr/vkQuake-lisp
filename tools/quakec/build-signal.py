@@ -66,7 +66,7 @@ def write_wad(path):
     path.write_bytes(struct.pack('<4sii', b'WAD2', len(textures), 12 + len(lumps)) + lumps + directory)
 
 
-def build(output, level):
+def build(output, level, source=None):
     if not QUTILS.is_dir():
         raise SystemExit('Missing map tools. Run ./tools/quakec/setup.sh first.')
     output = output.resolve()
@@ -78,9 +78,9 @@ def build(output, level):
         for group in ('COMMON', 'QBSP', 'LIGHT', 'VIS'):
             dest = work / group.lower()
             dest.mkdir()
-            for source in (QUTILS / group).iterdir():
-                if source.suffix in ('.C', '.H'):
-                    shutil.copyfile(source, dest / source.name.lower())
+            for tool_source in (QUTILS / group).iterdir():
+                if tool_source.suffix in ('.C', '.H'):
+                    shutil.copyfile(tool_source, dest / tool_source.name.lower())
 
         binaries = work / 'bin'
         binaries.mkdir()
@@ -94,7 +94,7 @@ def build(output, level):
         # qbsp locates the mod directory from the absolute .../quake/<mod>/ path.
         map_path = work / 'quake/id1/maps' / f'{level}.map'
         map_path.parent.mkdir(parents=True)
-        shutil.copyfile(ROOT / 'examples' / map_path.name, map_path)
+        shutil.copyfile(source or ROOT / 'examples' / map_path.name, map_path)
         write_wad(work / 'quake/id1/signal.wad')
         subprocess.run([binaries / 'qbsp', map_path], cwd=work, check=True)
         bsp = map_path.with_suffix('.bsp')
@@ -107,6 +107,8 @@ def build(output, level):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path, help='output BSP file')
-    parser.add_argument('--map', choices=('signal', 'annex'), default='signal')
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument('--map', choices=('signal', 'annex'))
+    source.add_argument('--source', type=Path, help='stock .map file to compile')
     args = parser.parse_args()
-    build(args.output, args.map)
+    build(args.output, args.source.stem if args.source else args.map or 'signal', args.source)
