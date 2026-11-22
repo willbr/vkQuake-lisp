@@ -3,7 +3,9 @@
 Keep stock NetQuake compatibility and use the scripted stock-engine tests to
 verify new work. [Stock Quake tests](qslisp/README.md#tests)
 
-## Relay Annex: Restore the Uplink
+## Gameplay
+
+### Relay Annex: Restore the Uplink
 
 Build one continuous mission with a bike and an AI buddy. Use a blockout
 envelope from −4032 to +4032 on X, Y, and Z, for 8,064 units per axis. Stock
@@ -42,7 +44,7 @@ with one and two players.
 [Stock engine budgets](third_party/quake/WinQuake/quakedef.h#L101)
 · [BSP limits](third_party/quake/WinQuake/bspfile.h#L24)
 
-## Lisp-driven weapons and tether traversal
+### Lisp-driven weapons and tether traversal
 
 - **Relay pulse.** Let an impact start a short authored Lisp sequence. A pulse
   could chain once to a linked relay or sentry, or schedule a delayed second
@@ -60,7 +62,25 @@ with one and two players.
   Test blocked pulls, missed releases, and two clients swinging independently.
   [Stock beam handling](third_party/quake/WinQuake/cl_tent.c#L62)
 
-## Opt-in gameplay tracing
+## Authoring and playtest tools
+
+### Headless Python editor for maps and models
+
+Start with a CLI that inspects and patches stock Quake `.map` files. Generate
+convex brushes, switchback ramps, and full-width banks. Place entities and link
+their targets and waypoints. Preview changes as a diff, render top and side
+views on demand, and run the existing `qbsp`, `vis`, and `light` pipeline.
+Use the Annex descent as the first test. Generate the 1,280-unit descent, move
+its landing and waypoints, and ride the result in stock DOS Quake.
+[Map build pipeline](tools/quakec/build-signal.py)
+
+Expose the same commands through a local JSON API over TCP if a persistent
+editing session becomes useful. For model authoring, start with simple
+meshes, palette skins, and named animation frames. Reuse the existing stock
+`.mdl` exporters and check the exported models in the game.
+[Bike exporter](tools/quakec/build-bike.py) · [Sentry exporter](tools/quakec/build-sentry.py)
+
+### Opt-in gameplay tracing
 
 Add a short diagnostic trace that can be enabled in stock Quake. Capture
 steering input, ground contact, speed, and camera position around a bank stall
@@ -68,7 +88,9 @@ or landing. Use the same trace to capture the buddy's state, current waypoint,
 and reason for stopping or changing behavior. Keep tracing off during normal
 play.
 
-## VM disassembly and source symbols
+## Lisp compiler and VM
+
+### VM disassembly and source symbols
 
 Build a read-only disassembler for stock `progs.dat`. Show function names,
 symbolic branch targets, builtin calls, and local frame sizes. Use it to
@@ -86,7 +108,7 @@ Add a small text assembler when a VM test needs a hand-written opcode fixture.
 Reuse the existing bytecode writer, validator, and stock VM runner.
 [Bytecode writer](qslisp/bytecode.py) · [Stock validator](tools/quakec/check-stock.py)
 
-## Broader Lisp persistence
+### Broader Lisp persistence
 
 Extend heap-backed save and reload when a gameplay feature needs Lisp-owned
 state beyond what ordinary Quake entity fields can represent.
