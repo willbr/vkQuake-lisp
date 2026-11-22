@@ -25,8 +25,29 @@ class Node:
     location: Location
 
 
+@dataclass(frozen=True)
+class StringLiteral:
+    text: str
+
+
 NUMBER = re.compile(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\Z')
 IDENTIFIER = re.compile(r'[a-zA-Z_!$%&*/:<=>?^~+\-][a-zA-Z0-9_!$%&*/:<=>?^~+.\-]*\Z')
+STRING_TOKEN = re.compile(r'"(?:[^"\\\r\n]|\\[^\r\n])*"')
+STRING_ESCAPE = re.compile(r'\\(.)')
+STRING_ESCAPES = {'"': '"', '\\': '\\', 'n': '\n', 'r': '\r', 't': '\t'}
+
+
+def decode_string(token, location):
+    def unescape(match):
+        code = match[1]
+        if code not in STRING_ESCAPES:
+            raise CompileError(location, f'unsupported string escape {match[0]!r}')
+        return STRING_ESCAPES[code]
+
+    text = STRING_ESCAPE.sub(unescape, token[1:-1])
+    if '\0' in text:
+        raise CompileError(location, 'string literals cannot contain a NUL byte')
+    return StringLiteral(text)
 
 
 def read(source, filename='<input>'):
@@ -48,7 +69,13 @@ def read(source, filename='<input>'):
             continue
         location = Location(filename, line, column)
         if char == '"':
-            raise CompileError(location, 'string literals are not supported yet')
+            match = STRING_TOKEN.match(source, offset)
+            if match is None:
+                raise CompileError(location, 'unterminated string literal')
+            tokens.append((decode_string(match[0], location), location))
+            column += match.end() - offset
+            offset = match.end()
+            continue
         if char in "()'":
             tokens.append((char, location))
             offset += 1
@@ -68,6 +95,8 @@ def read(source, filename='<input>'):
         cursor += 1
         if depth > 150:
             raise CompileError(location, 'source nesting limit exceeded')
+        if isinstance(token, StringLiteral):
+            return Node(token, location)
         if token == '(':
             items = []
             while cursor < len(tokens) and tokens[cursor][0] != ')':

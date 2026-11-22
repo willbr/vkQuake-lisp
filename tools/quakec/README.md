@@ -114,7 +114,9 @@ For an additional headless integration check after building vkQuake:
 
 Successful output includes `Server spawned.`. This checks that the engine can
 load the reference bytecode and execute the map's spawn functions. Passing this
-vkQuake check alone does not establish stock-engine compatibility.
+vkQuake check alone does not establish stock-engine compatibility. The
+[Lisp map boot smoke test](../../qslisp/README.md#boot-a-map-in-stock-quake)
+runs the generated `progs.dat` in the original DOS Quake executable.
 
 ## VM target
 
@@ -176,8 +178,8 @@ functions such as `worldspawn`, `StartFrame`, and `ClientConnect`.
 
 The first [compiler milestone](../../qslisp/README.md) implements CLI execution
 of arithmetic, conditionals, lexically scoped variables, and named functions.
-It emits bytecode directly; FTEQCC provides reference output. A stock-compatible
-game entry that prints from `worldspawn` is a later integration step.
+It emits bytecode directly; FTEQCC provides reference output. The map boot
+example exercises `worldspawn`, model precaching, and `StartFrame` in stock Quake.
 
 The [pair heap prototype](../../qslisp/README.md#pair-heap-and-collection) uses
 fixed global storage, checked accessor trees, compiler-managed shadow roots,

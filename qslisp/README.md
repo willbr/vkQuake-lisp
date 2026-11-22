@@ -56,6 +56,12 @@ header; executing the result also needs the built interpreter CLI.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
   numbers, booleans, or other pairs; a pair is always true, including handle zero.
+- `(quake:dprint "text\n")` calls stock builtin #25. It prints when `developer`
+  is enabled in the game engine and accepts up to 255 UTF-8 bytes.
+- `(quake:precache-model "progs/player.mdl")` calls stock builtin #20 during
+  map loading. It takes a model path of up to 63 bytes and requires the game
+  engine. Both Quake forms take one direct string literal and return Scheme `0`.
+  Literals support `\"`, `\\`, `\n`, `\r`, and `\t` escapes.
 
 Arithmetic on a known boolean is a compile error. When a parameter or function
 result has an unknown type, generated checks call stock builtin #10 (`error`) on
@@ -64,7 +70,7 @@ fit the original engine's 256-byte error-message buffer.
 
 This is a scoped Scheme-style language, not a conforming Scheme implementation.
 First-class procedures, `lambda`, closures, empty-list/list literal syntax,
-quotation, strings, mutation,
+quotation, first-class strings, mutation,
 macros, and global value definitions are not implemented. Non-tail recursion
 uses the stock call/local stacks; all execution remains subject to the original
 instruction watchdog. Syntax keywords,
@@ -72,11 +78,23 @@ primitive function names, `__qslisp*` global names, and stock ABI global/field n
 are reserved for function definitions. Stock function hooks such as `StartFrame`
 can be defined with zero arguments and are wired to their ABI slots.
 
-The generated modules are currently intended for CLI tests. They include the
-stock ABI but do not provide the complete callbacks, entity spawn functions,
-asset precaching, or gameplay needed to run an existing Quake map. They do not
-merge with the original gameplay source. A complete playable mod is a later
-integration milestone.
+## Boot a map in stock Quake
+
+[`examples/map-boot.scm`](../examples/map-boot.scm) precaches the required player
+model from `worldspawn` and logs `worldspawn` and `StartFrame` calls. To compile
+it and boot the `start` map in the original DOS Quake executable, pass a
+DOSBox Staging executable and the directory of a registered DOS Quake install
+containing `quake.exe`, `cwsdpmi.exe`, and `id1/pak0.pak` and `id1/pak1.pak`.
+
+```sh
+python3 tools/quakec/test-map-boot.py /path/to/dosbox /path/to/quake
+```
+
+The smoke test uses an isolated data directory and checks the Quake console log
+for `worldspawn`, two startup frames, `Server spawned.`, and a subsequent
+frame. It saves `progs.dat` and the logs under `build/quakec/map-boot/`.
+This dedicated-server example covers map startup. The `start` map's gameplay
+entities have no Lisp spawn functions and stock Quake skips them.
 
 ## Pair heap and collection
 

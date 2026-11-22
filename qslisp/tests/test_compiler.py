@@ -183,6 +183,9 @@ class CompilerTests(CompilerCase):
             ('(define (test) 1', 'unclosed parenthesis'),
             (')', 'unexpected closing parenthesis'),
             ('(define (test) "hello")', 'string literals'),
+            ('(define (test) "hello)', 'unterminated string literal'),
+            ('(define (test) "bad\\q")', 'unsupported string escape'),
+            ('(define (test) "bad\0")', 'string literals cannot contain a NUL byte'),
             ('(define (test) #unknown)', 'unsupported token'),
             ("'", 'expected a datum'),
             ('', 'at least one function'),
@@ -191,6 +194,31 @@ class CompilerTests(CompilerCase):
             with self.subTest(source=source):
                 with self.assertRaisesRegex(CompileError, message):
                     compile_source(source, 'reader.scm')
+
+    def test_quake_dprint_passes_a_native_string_and_returns_zero(self):
+        source = r'''(define (test) (quake:dprint "say \"hello\"; one\\two\n"))'''
+        result = self.value(source, 0)
+        self.assertIn('say "hello"; one\\two\n', result.stdout)
+
+    def test_quake_precache_model_calls_stock_builtin(self):
+        result = self.execute('(define (test) (quake:precache-model "progs/player.mdl"))')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('builtin #20', result.stderr)
+        self.assertIn('requires the game engine', result.stderr)
+
+    def test_quake_builtin_literal_diagnostics(self):
+        cases = [
+            ('(quake:dprint)', 'requires one string literal'),
+            ('(quake:dprint 42)', 'requires one string literal'),
+            ('(quake:dprint "one" "two")', 'requires one string literal'),
+            ('(quake:dprint "' + 'é' * 128 + '")', 'stock 255-byte limit'),
+            ('(quake:precache-model "")', 'requires a stock model path'),
+            ('(quake:precache-model "' + 'a' * 64 + '")', 'requires a stock model path'),
+        ]
+        for call, message in cases:
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(CompileError, message):
+                    compile_source(f'(define (test) {call})', 'builtin.scm')
 
     def test_stock_frame_and_reader_depth_limits_are_diagnostics(self):
         with self.assertRaisesRegex(CompileError, 'saved-locals limit'):

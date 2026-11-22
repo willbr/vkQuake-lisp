@@ -5,14 +5,15 @@ from contextlib import contextmanager
 from .bytecode import (Program, Frame, Local, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
                        OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
                        OP_RETURN, OP_NOT, OP_IF, OP_CALL0, OP_GOTO, OP_AND)
-from .reader import CompileError, Location, read
+from .reader import CompileError, Location, StringLiteral, read
 from .heap import PairHeap
 
 SYNTAX = {'define', 'if', 'let', 'begin', 'lambda', 'quote', 'set!', 'letrec',
           'define-syntax', 'syntax-rules', 'quasiquote'}
 ARITHMETIC = {'+': OP_ADD, '-': OP_SUB, '*': OP_MUL, '/': OP_DIV}
 COMPARISONS = {'=': OP_EQ, '<': OP_LT, '<=': OP_LE, '>': OP_GT, '>=': OP_GE}
-PRIMITIVES = set(ARITHMETIC) | set(COMPARISONS) | {'not', 'cons', 'car', 'cdr', 'pair?'}
+ENGINE_CALLS = {'quake:dprint': 25, 'quake:precache-model': 20}
+PRIMITIVES = ARITHMETIC.keys() | COMPARISONS.keys() | ENGINE_CALLS.keys() | {'not', 'cons', 'car', 'cdr', 'pair?'}
 
 
 @dataclass(frozen=True)
@@ -327,6 +328,22 @@ class Compiler:
         for i, destination in enumerate(self.mailbox):
             frame.emit(OP_STORE_V, args[i].slot if i < len(args) else self.zero, destination)
 
+    def engine_call(self, frame, node, name, args):
+        if len(args) != 1 or not isinstance(args[0].value, StringLiteral):
+            raise CompileError(node.location, f'{name} requires one string literal')
+        literal = args[0]
+        text = literal.value.text
+        encoded = text.encode('utf-8')
+        if name == 'quake:dprint' and len(encoded) > 255:
+            raise CompileError(literal.location, f'{name} text exceeds the stock 255-byte limit')
+        if name == 'quake:precache-model' and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
+            raise CompileError(literal.location, f'{name} requires a stock model path of 1–63 bytes')
+        number = ENGINE_CALLS[name]
+        builtin = self.program.builtin(f'__qslisp_builtin_{number}', number, 1)
+        frame.emit(OP_STORE, self.program.literal_string(text), 4)
+        frame.emit(OP_CALL0 + 1, builtin)
+        return Value(self.zero, 'number')
+
     def expression(self, frame, node, environment):
         # An inner let may shadow a binding still needed by the enclosing
         # expression's continuation. Keep those outer environments as well as
@@ -341,12 +358,16 @@ class Compiler:
             return Value(self.program.constant(float(form), True), 'boolean')
         if isinstance(form, float):
             return Value(self.program.constant(form, location=node.location), 'number')
+        if isinstance(form, StringLiteral):
+            raise CompileError(node.location, 'string literals are only supported as direct Quake builtin arguments')
         if isinstance(form, str):
             if form not in environment:
                 message = 'function values are not supported yet' if form in self.functions else f'unbound variable {form}'
                 raise CompileError(node.location, message)
             return environment[form]
         name, args = self.application(node, environment)
+        if name in ENGINE_CALLS:
+            return self.engine_call(frame, node, name, args)
         if name == 'if':
             if len(args) != 3:
                 raise CompileError(node.location, 'if requires a condition and two branches')

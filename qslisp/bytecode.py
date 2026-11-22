@@ -36,9 +36,14 @@ class Program:
         self.kinds = {}
         self.constants = {}
         self.entityfields = self.load_abi()
-        error_index = self.function('__qslisp_error', '', 1)
-        self.functions[error_index] = (-10, 0, 0, 0, self.string('__qslisp_error'), 0, 1, *([0] * 8))
-        self.error_function = self.define('__qslisp_error', 6, [error_index])
+        self.error_function = self.builtin('__qslisp_error', 10, 1)
+
+    def builtin(self, name, number, arity):
+        if name not in self.names:
+            index = self.function(name, '', arity)
+            self.functions[index] = (-number, 0, 0, 0, self.string(name), 0, arity, *([0] * 8))
+            self.define(name, 6, [index])
+        return self.names[name]
 
     def string(self, text):
         if '\0' in text:
@@ -114,6 +119,9 @@ class Program:
         if len(encoded) > 240:
             text = '...' + encoded[-240:].decode('utf-8', errors='ignore')
         return self.define(f'__qslisp_message_{len(self.globaldefs)}', 1, [self.string(text)])
+
+    def literal_string(self, text):
+        return self.define(f'__qslisp_string_{len(self.globaldefs)}', 1, [self.string(text)])
 
     def function(self, name, filename, arity):
         index = len(self.functions)
