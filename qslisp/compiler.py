@@ -32,6 +32,7 @@ ENGINE_CALLS = {
     'quake:sound': (8, ('entity', 'number', 'sample', 'number', 'number')),
     'quake:error': (10, ('string',)),
     'quake:vector-yaw': (13, ('vector',)),
+    'quake:spawn': (14, ()),
     'quake:remove': (15, ('entity',)),
     'quake:traceline': (16, ('vector', 'vector', 'number', 'entity')),
     'quake:find': (18, ('entity', 'string-field', 'string-value')),
@@ -49,7 +50,7 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:coop': ('coop', 'number'), 'quake:trace-fraction': ('trace_fraction', 'number'),
                   'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
-ENTITY_RESULTS = {'quake:find': 1, 'quake:traceline': 'trace_ent'}
+ENTITY_RESULTS = {'quake:spawn': 1, 'quake:find': 1, 'quake:traceline': 'trace_ent'}
 NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
@@ -58,7 +59,7 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
     'quake:world?', 'quake:entity?', 'quake:entity=?',
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
-    'quake:set-callback!', 'quake:call-callback',
+    'quake:set-callback!', 'quake:call-callback', 'quake:set-view',
 }
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
                     'quake:vector?': 'vector', 'quake:entity?': 'entity', 'procedure?': 'procedure'}
@@ -1058,6 +1059,24 @@ class Compiler:
             return result
         return Value(self.zero, 'number')
 
+    def set_view(self, frame, node, args, environment):
+        if len(args) != 2:
+            raise CompileError(node.location, 'quake:set-view requires a client and viewpoint')
+        client, viewpoint = (self.entity(frame, arg, environment) for arg in args)
+        recipient = self.program.names['msg_entity']
+        previous = frame.allocate(1)
+        frame.emit(OP_STORE, recipient, previous)
+        frame.emit(OP_STORE, client, recipient)
+        # NetQuake svc_setview is a byte followed by the viewpoint's edict number.
+        frame.emit(OP_STORE, self.one, 4)  # MSG_ONE
+        frame.emit(OP_STORE, self.program.constant(5), 7)
+        frame.emit(OP_CALL0 + 2, self.program.builtin('__qslisp_builtin_52', 52, 2))
+        frame.emit(OP_STORE, self.one, 4)
+        frame.emit(OP_STORE, viewpoint, 7)
+        frame.emit(OP_CALL0 + 2, self.program.builtin('__qslisp_builtin_59', 59, 2))
+        frame.emit(OP_STORE, previous, recipient)
+        return Value(self.zero, 'number')
+
     def expression(self, frame, node, environment):
         # An inner let may shadow a binding still needed by the enclosing
         # expression's continuation. Keep those outer environments as well as
@@ -1147,6 +1166,8 @@ class Compiler:
             return result
         if name in ENGINE_CALLS:
             return self.engine_call(frame, node, name, args, environment)
+        if name == 'quake:set-view':
+            return self.set_view(frame, node, args, environment)
         if name in ENGINE_GLOBALS:
             if args:
                 raise CompileError(node.location, f'{name} takes no arguments')

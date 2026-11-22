@@ -121,7 +121,7 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
                   flush=True)
         artifacts = {'qconsole.log'}
         if verify:
-            artifacts.update({f'{name}.sav' for name in scenario.SAVES} | {'quake00.pcx', 'quake01.pcx'})
+            artifacts.update({f'{name}.sav' for name in scenario.SAVES} | {'quake00.pcx', 'quake01.pcx', 'quake02.pcx'})
         with (output / 'dosbox.log').open('w') as log:
             try:
                 if verify and level == 'signal':

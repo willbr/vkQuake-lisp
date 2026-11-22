@@ -186,9 +186,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 9,330 instructions against the 100,000-instruction watchdog. The
-program uses 10,433 of 32,768 global slots and its largest individual frame uses
-315 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 9,564 instructions against the 100,000-instruction watchdog. The
+program uses 11,088 of 32,768 global slots and its largest individual frame uses
+557 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -229,12 +229,13 @@ Approach the marked bend at speed, then brake while steering left. Release
 the brake to regain grip and pedal through the relay arch to bring it online.
 Slow down and press **E** to park and step off.
 
-The Lisp bicycle model tracks the frame heading and travel velocity separately.
-Hard braking reduces rear-wheel grip at speed, so the bike keeps sliding
-sideways as it turns. Quake's player hull still handles walls and the floor.
-The launcher builds the parked bike, rider, cockpit models, and skid sound.
-The Annex verification checks acceleration, sideways momentum under braking,
-the relay, parking, save and reload while mounted, and respawn after defeat.
+The chase camera shows the bike and rider in the world. The handlebars,
+fork, and front wheel steer together on the mounted model. Normal pedaling
+follows the aim direction. Hard braking reduces rear-wheel grip at speed,
+so the bike keeps sliding sideways as it turns. Quake's player hull still
+handles walls and the floor. The camera moves closer when walls get in its way.
+The Annex verification checks steering from a stop, ordinary turns, sideways
+momentum under braking, the relay, parking, save and reload, and respawn.
 
 ### Saved Lisp lists
 
@@ -276,6 +277,8 @@ The example also shows how to use the stock entity ABI. `(quake:self)`,
 a string field and returns the world entity when there is no match. Test this
 with `(quake:world? entity)`. `(quake:time)`, `(quake:frametime)`, and
 `(quake:coop)` read the stock time, frame duration, and co-op globals.
+`(quake:spawn)` allocates an entity. `(quake:set-view client viewpoint)`
+assigns a networked view entity to a client through the stock protocol.
 `(quake:field entity field)` reads numeric, string, and entity fields, including
 vector components such as `origin_z`. `(quake:set-field! entity field value)`
 also supports vector fields. Strings can be bound, passed through functions,

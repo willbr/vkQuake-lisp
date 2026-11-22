@@ -10,7 +10,10 @@ import wave
 
 
 NORMALS = Path(__file__).resolve().parents[2] / 'third_party/quake/WinQuake/anorms.h'
-PALETTE = (18, 38, 181, 233, 207, 110, 249, 15)
+PALETTE = (5, 38, 181, 240, 207, 216, 249, 10)
+# Indices match bike-steering-pose in examples/bike.scm.
+STEERING_YAWS = (0, -12, -22, -32, 12, 22, 32)
+STEERING_AXIS_X = 11
 BOX_FACES = ((0, 3, 2, 1), (4, 5, 6, 7), (0, 4, 7, 3),
              (1, 2, 6, 5), (0, 1, 5, 4), (3, 7, 6, 2))
 
@@ -25,10 +28,13 @@ class Model:
         start, second, third = points[:3]
         a, b = [tuple(later[i] - start[i] for i in range(3)) for later in (second, third)]
         cross = (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
-        normal = max(range(len(self.normals)), key=lambda i: sum(x * y for x, y in zip(cross, self.normals[i])))
+        normal = self.nearest_normal(cross)
         first = len(self.vertices)
         self.vertices.extend((point, normal, material) for point in points)
         self.triangles.extend((1, first, first + i, first + i + 1) for i in range(1, len(points) - 1))
+
+    def nearest_normal(self, direction):
+        return max(range(len(self.normals)), key=lambda i: sum(x * y for x, y in zip(direction, self.normals[i])))
 
     def box(self, low, high, material):
         x, y, z = low
@@ -70,54 +76,68 @@ class Model:
             self.strut((x, z), point, 0.48, 2)
         self.box((x-1.7, -2.5, z-1.7), (x+1.7, 2.5, z+1.7), 3)
 
-    def write(self, output):
-        origin = tuple(math.floor(min(point[i] for point, _, _ in self.vertices)) for i in range(3))
-        points = [tuple(round((point[i] - origin[i]) * 4) for i in range(3)) + (normal,)
-                  for point, normal, _ in self.vertices]
-        low = tuple(min(point[i] for point in points) for i in range(3))
-        high = tuple(max(point[i] for point in points) for i in range(3))
-        radius = max(math.sqrt(sum(coord * coord for coord in point)) for point, _, _ in self.vertices)
+    def steering_pose(self, yaw, steering):
+        if yaw == 0:
+            return self.vertices
+        cosine, sine = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+
+        def rotate(point):
+            x, y, z = point
+            return x * cosine - y * sine, x * sine + y * cosine, z
+
+        first, last = steering
+        front = self.vertices[first:last]
+        normals = {index: self.nearest_normal(rotate(self.normals[index]))
+                   for index in {normal for _, normal, _ in front}}
+        turned = []
+        for (x, y, z), normal, material in front:
+            rx, ry, rz = rotate((x - STEERING_AXIS_X, y, z))
+            turned.append(((rx + STEERING_AXIS_X, ry, rz), normals[normal], material))
+        return self.vertices[:first] + turned + self.vertices[last:]
+
+    def write(self, output, *, steering=None):
+        poses = [self.steering_pose(yaw, steering) for yaw in STEERING_YAWS] if steering else [self.vertices]
+        origin = tuple(math.floor(min(point[i] for pose in poses for point, _, _ in pose)) for i in range(3))
+        radius = max(math.sqrt(sum(coord * coord for coord in point)) for pose in poses for point, _, _ in pose)
         data = bytearray(struct.pack('<4si3f3ff3f8if', b'IDPO', 6, .25, .25, .25, *origin,
-                                     radius, 0., 0., 22., 1, 32, 32, len(points),
-                                     len(self.triangles), 1, 0, 0, 1.))
+                                     radius, 0., 0., 22., 1, 32, 32, len(self.vertices),
+                                     len(self.triangles), len(poses), 0, 0, 1.))
         data += struct.pack('<i', 0)
         data += bytes(PALETTE[x // 4] for _ in range(32) for x in range(32))
         for _, _, material in self.vertices:
             data += struct.pack('<3i', 0, 2 + 4 * material, 4)
         for triangle in self.triangles:
             data += struct.pack('<4i', *triangle)
-        data += struct.pack('<i8B16s', 0, *low, 0, *high, 0, b'bike')
-        for point in points:
-            data += struct.pack('<4B', *point)
+        for index, pose in enumerate(poses):
+            points = [tuple(round((point[i] - origin[i]) * 4) for i in range(3)) + (normal,)
+                      for point, normal, _ in pose]
+            low = tuple(min(point[i] for point in points) for i in range(3))
+            high = tuple(max(point[i] for point in points) for i in range(3))
+            name = b'bike' if index == 0 else f'bike{index}'.encode('ascii')
+            data += struct.pack('<i8B16s', 0, *low, 0, *high, 0, name)
+            for point in points:
+                data += struct.pack('<4B', *point)
         output.write_bytes(data)
 
 
 def bike(normals):
     model = Model(normals)
     model.wheel(-17)
-    model.wheel(17)
     for start, end in (((-17, -15), (-8, 0)), ((-17, -15), (0, -11)),
                        ((0, -11), (-8, 0)), ((0, -11), (12, 1)),
-                       ((-8, 0), (12, 1)), ((17, -15), (11, 6))):
+                       ((-8, 0), (12, 1))):
         model.strut(start, end, 1.25, 4)
     model.box((-13, -3.2, 0), (-4, 3.2, 2), 0)
-    model.box((9, -8, 5), (12, 8, 7), 2)
-    model.box((8, -9, 4), (13, -5, 8), 0)
-    model.box((8, 5, 4), (13, 9, 8), 0)
-    model.box((13, -2, 2), (15, 2, 5), 6)
     model.box((-15, -2, -.5), (-13, 2, 1.5), 3)
-    return model
 
-
-def handlebars(normals):
-    model = Model(normals)
-    model.box((18, -11, -10), (21, 11, -8), 2)
-    model.box((17, -12, -11), (22, -7, -7), 0)
-    model.box((17, 7, -11), (22, 12, -7), 0)
-    model.box((18, -2.5, -20), (21, 2.5, -9), 4)
-    model.box((20, -3.4, -10), (24, 3.4, -7.5), 5)
-    model.box((21, -1.2, -7.5), (23, 1.2, -7), 6)
-    return model
+    first = len(model.vertices)
+    model.wheel(17)
+    model.strut((17, -15), (11, 6), 1.25, 4)
+    model.box((9, -11, 5), (12, 11, 7), 2)
+    model.box((8, -13, 4), (13, -8, 8), 3)
+    model.box((8, 8, 4), (13, 13, 8), 3)
+    model.box((13, -2, 2), (15, 2, 5), 6)
+    return model, (first, len(model.vertices))
 
 
 def write_skid(output):
@@ -143,7 +163,7 @@ def build(directory):
     normals = [tuple(map(float, point.split(','))) for point in re.findall(r'\{([\d., -]+)\}', NORMALS.read_text())]
     models = directory / 'progs'
     models.mkdir(parents=True, exist_ok=True)
-    model = bike(normals)
+    model, steering = bike(normals)
     model.write(models / 'bike.mdl')
     model.box((-11, -4.5, 1), (-4, 4.5, 11), 5)
     model.box((-9, -5, 10), (1, 5, 21), 5)
@@ -153,8 +173,11 @@ def build(directory):
     model.box((0, 4, 12), (11, 7, 16), 5)
     model.box((-9, -7, -8), (-3, -4, 5), 5)
     model.box((-9, 4, -8), (-3, 7, 5), 5)
-    model.write(models / 'r_bike.mdl')
-    handlebars(normals).write(models / 'v_bike.mdl')
+    model.write(models / 'r_bike.mdl', steering=steering)
+    # A networked view entity needs a model index. A zero-area triangle stays invisible.
+    camera = Model(normals)
+    camera.face(((0, 0, 0), (0, 0, 0), (0, 0, 0)), 0)
+    camera.write(models / 'bikecam.mdl')
     write_skid(directory / 'sound' / 'misc' / 'bikeskid.wav')
 
 

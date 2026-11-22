@@ -7,11 +7,11 @@ from challenge import read_edicts, require
 SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplies',
          'pulse', 'switched', 'checked', 'dooropen', 'guarded', 'reset',
          'rtmoved', 'rtload', 'rtresume',
-         'bkdock', 'bkstart', 'bkfast', 'bkslide', 'bkrelay', 'bkpark', 'bkreload', 'bkresp')
+         'bkdock', 'bkstart', 'bksteer', 'bkgrip', 'bkfast', 'bkslide', 'bkrelay', 'bkpark', 'bkreload', 'bkresp')
 
 
 def verification_commands():
-    commands = ['host_framerate 0.05', 'con_notifytime 0'] + ['wait'] * 82
+    commands = ['host_framerate 0.05', 'con_notifytime 0', 'scr_centertime 0'] + ['wait'] * 82
     commands += ['save patrol', 'echo annex-first-exposure', '+moveleft'] + ['wait'] * 24
     commands += ['-moveleft', 'wait', 'save exposed', 'screenshot', '+moveright'] + ['wait'] * 24
     commands += ['-moveright'] + ['wait'] * 8 + ['save covered']
@@ -32,9 +32,12 @@ def verification_commands():
     commands += ['+moveleft'] + ['wait'] * 5 + ['-moveleft'] + ['wait'] * 10
     commands += ['+attack'] + ['wait'] * 16 + ['-attack', '+forward'] + ['wait'] * 15
     commands += ['-forward'] + ['wait'] * 12 + ['save bkdock', 'impulse 3'] + ['wait'] * 2
-    commands += ['save bkstart', 'screenshot', '+attack'] + ['wait'] * 17
+    commands += ['save bkstart', 'screenshot', '+left'] + ['wait'] * 9
+    commands += ['-left', '+attack'] + ['wait'] * 5 + ['save bksteer', '+right'] + ['wait'] * 5
+    commands += ['save bkgrip', '-right', '-attack', 'load bkstart'] + ['wait'] * 16
+    commands += ['+attack'] + ['wait'] * 17
     commands += ['-attack', 'save bkfast', 'impulse 3', '+jump', '+left'] + ['wait'] * 7
-    commands += ['save bkslide', '-jump', '+attack'] + ['wait'] * 6 + ['-left'] + ['wait'] * 14
+    commands += ['save bkslide', 'screenshot', '-jump', '+attack'] + ['wait'] * 6 + ['-left'] + ['wait'] * 14
     commands += ['-attack', 'save bkrelay', '+jump'] + ['wait'] * 24
     commands += ['-jump', 'impulse 3'] + ['wait'] * 2 + ['save bkpark', 'load bkslide']
     commands += ['wait'] * 16 + ['save bkreload', 'kill'] + ['wait'] * 12
@@ -50,6 +53,7 @@ def state(path):
     gate = next(entry for entry in entities if entry.get('classname') == 'qslisp_gate')
     bike = next(entry for entry in entities if entry.get('classname') == 'qslisp_bike')
     relay = next(entry for entry in entities if entry.get('classname') == 'qslisp_bike_relay')
+    camera = int(player.get('bike-camera', '0'))
     return {
         'player_origin': tuple(float(x) for x in player['origin'].split()),
         'player_health': int(float(player.get('health', '0'))),
@@ -58,6 +62,7 @@ def state(path):
         'display_ammo': int(float(player.get('currentammo', '0'))),
         'weapon': player.get('weaponmodel'),
         'player_model': player.get('model'),
+        'player_frame': int(float(player.get('frame', '0'))),
         'checkpoint': int(player.get('checkpoint', '0')),
         'gate_open': int(float(gate.get('gate-open', '0'))),
         'guard_origin': tuple(float(x) for x in guard['origin'].split()) if guard else None,
@@ -74,6 +79,10 @@ def state(path):
         'bike_solid': int(float(bike.get('solid', '0'))),
         'bike_velocity': tuple(float(player.get(f'bike-v{axis}', '0')) for axis in 'xy'),
         'bike_heading': float(player.get('bike-heading', '0')),
+        'view_yaw': float(player.get('v_angle', '0 0 0').split()[1]),
+        'bike_camera': camera,
+        'bike_view': int(player.get('bike-view', '0')),
+        'camera_origin': tuple(float(x) for x in entities[camera]['origin'].split()) if camera else None,
         'bike_skidding': int(float(player.get('bike-skidding', '0'))),
         'bike_origin': tuple(float(x) for x in bike['origin'].split()),
         'bike_relay': int(float(relay.get('bike-relay-active', '0'))),
@@ -138,31 +147,50 @@ def verify_bike(states, lines, output):
         states[name] for name in ('bkdock', 'bkstart', 'bkfast', 'bkslide', 'bkrelay', 'bkpark', 'bkreload', 'bkresp'))
     require(dock['bike_solid'] == 2 and dock['bike_model'] == 'progs/bike.mdl' and
             start['riding'] and start['bike_rider'] == 1 and start['bike_solid'] == 0 and
-            start['player_model'] == 'progs/r_bike.mdl' and start['weapon'] == 'progs/v_bike.mdl' and
+            start['player_model'] == 'progs/r_bike.mdl' and not start['weapon'] and
             start['bike_relay'] == 0,
             'the player did not mount the service bike at the dock')
+    require(start['bike_camera'] > 1 and start['bike_view'] == start['bike_camera'] and
+            start['camera_origin'][0] < start['player_origin'][0] - 65,
+            'the mounted client did not get a separate world-space view behind the bike')
+    steered, gripped = states['bksteer'], states['bkgrip']
+    require(steered['view_yaw'] > 45 and steered['player_origin'][1] > start['player_origin'][1] + 10 and
+            gripped['view_yaw'] < steered['view_yaw'] - 20,
+            'the keyboard did not steer the stopped and rolling bike')
+    for sample in (steered, gripped):
+        vx, vy = sample['bike_velocity']
+        bearing = math.degrees(math.atan2(vy, vx))
+        require(sample['riding'] and not sample['bike_skidding'] and
+                abs(sample['view_yaw'] - bearing) < 8 and abs(sample['view_yaw'] - sample['bike_heading']) < 6,
+                'normal pedaling did not travel in the aim direction')
+    require(steered['player_frame'] == 0 and 1 <= gripped['player_frame'] <= 3,
+            'the world model did not show the handlebars turn right')
     vx, vy = slide['bike_velocity']
     motion_bearing = math.degrees(math.atan2(vy, vx))
     require(math.hypot(*fast['bike_velocity']) > 300 and fast['player_origin'][0] > start['player_origin'][0] + 140,
             'pedaling did not accelerate the bike down the approach')
-    require(slide['bike_skidding'] == 1 and slide['bike_heading'] > 25 and
+    require(slide['bike_skidding'] == 1 and slide['bike_heading'] > 25 and 4 <= slide['player_frame'] <= 6 and
+            slide['bike_view'] == slide['bike_camera'] and
             abs(motion_bearing - slide['bike_heading']) > 22 and
             100 < math.hypot(vx, vy) < math.hypot(*fast['bike_velocity']),
             'braking into the corner did not produce controlled sideways momentum')
     require(relay['bike_relay'] == 1 and relay['player_origin'][1] >= 332,
             'the rider did not reach and activate the relay around the corner')
-    require(not park['riding'] and not park['bike_rider'] and park['bike_solid'] == 2 and
+    require(not park['riding'] and not park['bike_rider'] and not park['bike_camera'] and park['bike_solid'] == 2 and
             park['player_model'] == 'progs/player.mdl' and park['weapon'] == 'progs/v_shot.mdl' and
             math.dist(park['player_origin'], park['bike_origin']) >= 48,
             'dismount did not restore a parked bike and the player weapon')
-    require(loaded['riding'] == slide['riding'] and loaded['bike_rider'] == 1 and
+    require(loaded['riding'] == slide['riding'] and loaded['bike_rider'] == 1 and loaded['bike_camera'] > 1 and
+            loaded['bike_view'] == loaded['bike_camera'] and
             loaded['bike_solid'] == 0 and loaded['weapon'] == start['weapon'] and loaded['bike_relay'] == 0,
             'reloading a ride did not restore the mounted bike and previous relay state')
     require(respawn['player_health'] == 100 and not respawn['riding'] and not respawn['bike_rider'] and
+            not respawn['bike_camera'] and
             respawn['bike_solid'] == 2 and respawn['bike_origin'] == dock['bike_origin'],
             'defeat and respawn did not release the bike at its parking spot')
     event = 0
     for message in ('qslisp: bike mounted', 'qslisp: bike rear-wheel slide',
                     'qslisp: bike relay online', 'qslisp: bike dismounted'):
         event = lines.index(message, event) + 1
-    require((output / 'quake01.pcx').is_file(), 'missing bike cockpit screenshot')
+    require((output / 'quake01.pcx').is_file(), 'missing mounted chase view screenshot')
+    require((output / 'quake02.pcx').is_file(), 'missing brake slide chase view screenshot')

@@ -193,7 +193,8 @@
   (let ((player (quake:self)))
     (when (riding-bike? player)
       (quake:set-field! player bike-vx (quake:field player velocity_x))
-      (quake:set-field! player bike-vy (quake:field player velocity_y)))))
+      (quake:set-field! player bike-vy (quake:field player velocity_y))
+      (bike-chase-view player))))
 
 (define (PutClientInServer)
   (let* ((player (quake:self)) (spot (spawn-point player)))
