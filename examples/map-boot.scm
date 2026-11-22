@@ -196,7 +196,12 @@
       (quake:set-field! player bike-vx (quake:field player velocity_x))
       (quake:set-field! player bike-vy (quake:field player velocity_y))
       (bike-surface-pose player)
-      (bike-chase-view player))))
+      (bike-brake-dust player)
+      (bike-chase-view player)
+      ; Stock clients derive walking bob and view roll from this packet's
+      ; horizontal velocity. The next bike tick uses its own momentum fields.
+      (quake:set-field! player velocity_x 0)
+      (quake:set-field! player velocity_y 0))))
 
 (define (PutClientInServer)
   (let* ((player (quake:self)) (spot (spawn-point player)))

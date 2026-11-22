@@ -42,6 +42,7 @@ ENGINE_CALLS = {
     'quake:dprint': (25, ('string',)),
     'quake:walkmove': (32, ('number', 'number')),
     'quake:drop-to-floor': (34, ()),
+    'quake:particle': (48, ('vector', 'vector', 'number', 'number')),
     'quake:change-level': (70, ('level',)),
     'quake:centerprint': (73, ('entity', 'string')),
 }
@@ -52,6 +53,7 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:trace-normal-x': ('trace_plane_normal_x', 'number'),
                   'quake:trace-normal-y': ('trace_plane_normal_y', 'number'),
                   'quake:trace-normal-z': ('trace_plane_normal_z', 'number'),
+                  'quake:trace-end-z': ('trace_endpos_z', 'number'),
                   'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
 ENTITY_RESULTS = {'quake:spawn': 1, 'quake:find': 1, 'quake:traceline': 'trace_ent'}
