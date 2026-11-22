@@ -42,6 +42,8 @@ ENGINE_CALLS = {
     'quake:dprint': (25, ('string',)),
     'quake:walkmove': (32, ('number', 'number')),
     'quake:drop-to-floor': (34, ()),
+    'quake:floor': (37, ('number',)),
+    'quake:cvar': (45, ('string',)),
     'quake:particle': (48, ('vector', 'vector', 'number', 'number')),
     'quake:change-level': (70, ('level',)),
     'quake:centerprint': (73, ('entity', 'string')),
@@ -57,7 +59,7 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
 ENTITY_RESULTS = {'quake:spawn': 1, 'quake:find': 1, 'quake:traceline': 'trace_ent'}
-NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor'}
+NUMERIC_RESULTS = {'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor', 'quake:floor', 'quake:cvar'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
     'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'append', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?',
@@ -65,7 +67,7 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
     'quake:world?', 'quake:entity?', 'quake:entity=?',
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
-    'quake:set-callback!', 'quake:call-callback', 'quake:set-view',
+    'quake:set-callback!', 'quake:call-callback', 'quake:set-view', 'quake:set-view-angles!',
 }
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
                     'quake:vector?': 'vector', 'quake:entity?': 'entity', 'procedure?': 'procedure'}
@@ -1065,21 +1067,34 @@ class Compiler:
             return result
         return Value(self.zero, 'number')
 
-    def set_view(self, frame, node, args, environment):
-        if len(args) != 2:
-            raise CompileError(node.location, 'quake:set-view requires a client and viewpoint')
-        client, viewpoint = (self.entity(frame, arg, environment) for arg in args)
+    def view_message(self, frame, node, name, args, environment):
+        angles = name == 'quake:set-view-angles!'
+        if len(args) != (4 if angles else 2):
+            raise CompileError(node.location, f'{name} requires a client and ' +
+                               ('pitch, yaw, and roll' if angles else 'viewpoint'))
+        client = self.entity(frame, args[0], environment)
+        if angles:
+            payload = []
+            for arg in args[1:]:
+                value = self.expression(frame, arg, environment)
+                self.number(frame, value, arg)
+                payload.append(value.slot)
+        else:
+            payload = [self.entity(frame, args[1], environment)]
         recipient = self.program.names['msg_entity']
         previous = frame.allocate(1)
         frame.emit(OP_STORE, recipient, previous)
         frame.emit(OP_STORE, client, recipient)
-        # NetQuake svc_setview is a byte followed by the viewpoint's edict number.
+        # NetQuake view messages start with a service byte, then three
+        # WriteAngles for svc_setangle or a WriteEntity for svc_setview.
         frame.emit(OP_STORE, self.one, 4)  # MSG_ONE
-        frame.emit(OP_STORE, self.program.constant(5), 7)
+        frame.emit(OP_STORE, self.program.constant(10 if angles else 5), 7)
         frame.emit(OP_CALL0 + 2, self.program.builtin('__qslisp_builtin_52', 52, 2))
-        frame.emit(OP_STORE, self.one, 4)
-        frame.emit(OP_STORE, viewpoint, 7)
-        frame.emit(OP_CALL0 + 2, self.program.builtin('__qslisp_builtin_59', 59, 2))
+        writer = 57 if angles else 59
+        for value in payload:
+            frame.emit(OP_STORE, self.one, 4)
+            frame.emit(OP_STORE, value, 7)
+            frame.emit(OP_CALL0 + 2, self.program.builtin(f'__qslisp_builtin_{writer}', writer, 2))
         frame.emit(OP_STORE, previous, recipient)
         return Value(self.zero, 'number')
 
@@ -1172,8 +1187,8 @@ class Compiler:
             return result
         if name in ENGINE_CALLS:
             return self.engine_call(frame, node, name, args, environment)
-        if name == 'quake:set-view':
-            return self.set_view(frame, node, args, environment)
+        if name in ('quake:set-view', 'quake:set-view-angles!'):
+            return self.view_message(frame, node, name, args, environment)
         if name in ENGINE_GLOBALS:
             if args:
                 raise CompileError(node.location, f'{name} takes no arguments')

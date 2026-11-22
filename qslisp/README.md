@@ -186,9 +186,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 10,284 instructions against the 100,000-instruction watchdog. The
-program uses 12,472 of 32,768 global slots and its largest individual frame uses
-623 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 10,518 instructions against the 100,000-instruction watchdog. The
+program uses 13,179 of 32,768 global slots and its largest individual frame uses
+832 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -237,15 +237,17 @@ down and press **E** to park and step off.
 The chase camera shows the bike and rider in the world. The handlebars,
 fork, and front wheel can turn while the frame stays still. Once the bike
 rolls, its speed and front-wheel angle determine how fast the frame changes
-heading. Hard braking builds rear-wheel slip and throws dust and smoke from
-the rear tire. Releasing the brake restores grip gradually, so the bike keeps
-drifting as you steer out of the turn. The rider leans with the bank and
-follows the jump's pitch.
+heading. Brake while turning to build rear-wheel slip, carry speed through
+the slide, and throw dust and smoke from the rear tire. Brake in a straight
+line to stop quickly. Releasing the brake restores grip gradually. Pedaling
+follows the slope of the bank, and the rider leans with the bank and follows
+the jump's pitch.
 
-The raised chase camera eases into turns and follows changes in elevation
-without the walking bob. It moves in near walls and eases back out as the
-track opens up. The stock-engine test checks the brake particles, slide
-recovery, both takeoffs and landings, and camera movement on the northeast bank.
+The raised chase camera stays centered behind the bike and eases toward its
+heading with a steady downward view. Steering turns the front wheel while the
+camera follows the frame. The camera moves in near walls and eases back out as
+the track opens up. The stock-engine test checks momentum through a slide, both
+jumps, and pedaling uphill from a stop on the northeast bank.
 
 ### Saved Lisp lists
 
@@ -289,6 +291,9 @@ with `(quake:world? entity)`. `(quake:time)`, `(quake:frametime)`, and
 `(quake:coop)` read the stock time, frame duration, and co-op globals.
 `(quake:spawn)` allocates an entity. `(quake:set-view client viewpoint)`
 assigns a networked view entity to a client through the stock protocol.
+`(quake:set-view-angles! client pitch yaw roll)` sets the client's view
+orientation in degrees. `(quake:cvar "name")` reads an engine variable as a
+number, and `(quake:floor number)` rounds down using the stock VM builtin.
 `(quake:client-command client "text")` sends a literal console command to a
 client. End each command with a newline.
 `(quake:field entity field)` reads numeric, string, and entity fields, including
