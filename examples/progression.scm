@@ -109,10 +109,31 @@
       (quake:dprint "qslisp: checkpoint reached\n"))))
 
 (define (spawn-point player)
-  (let ((spot (quake:field player checkpoint)))
-    (if (quake:world? spot)
-        (quake:find (quake:world) classname "info_player_start")
-        spot)))
+  (let* ((checkpoint (quake:field player checkpoint))
+         (primary (quake:find (quake:world) classname "info_player_start")))
+    (cond
+      ((= (quake:coop) 0) (if (quake:world? checkpoint) primary checkpoint))
+      ((and (not (quake:world? checkpoint)) (not (occupied-start? checkpoint player (quake:world))))
+       checkpoint)
+      ((and (= (quake:field player colormap) 1) (not (occupied-start? primary player (quake:world))))
+       primary)
+      (else (coop-start player (quake:world) primary)))))
+
+(define (occupied-start? spot player cursor)
+  (let ((other (quake:find cursor classname "qslisp_player")))
+    (and (not (quake:world? other))
+         (or (and (not (quake:entity=? player other)) (active-player? other)
+                  (< (sentry-distance-squared spot other) 2304)
+                  (< (- (quake:field spot origin_z) (quake:field other origin_z)) 56)
+                  (< (- (quake:field other origin_z) (quake:field spot origin_z)) 56))
+             (occupied-start? spot player other)))))
+
+(define (coop-start player cursor primary)
+  (let ((spot (quake:find cursor classname "info_player_coop")))
+    (cond
+      ((quake:world? spot) primary)
+      ((occupied-start? spot player (quake:world)) (coop-start player spot primary))
+      (else spot))))
 
 (define (qslisp_switch)
   (let ((control (quake:self)))

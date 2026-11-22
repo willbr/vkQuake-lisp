@@ -99,6 +99,16 @@
 "angle" "0"
 }
 {
+"classname" "info_player_coop"
+"origin" "-216 -55 24"
+"angle" "0"
+}
+{
+"classname" "info_player_coop"
+"origin" "-264 -146 24"
+"angle" "0"
+}
+{
 "classname" "light"
 "origin" "-202 -100 92"
 "light" "270"

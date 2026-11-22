@@ -33,7 +33,10 @@
   (= (quake:bit-and (quake:field actor flags) flag-client) flag-client))
 
 (define (damage target inflictor amount)
-  (apply-damage (make-damage-event target inflictor amount)))
+  (if (and (> (quake:coop) 0) (player-entity? target) (player-entity? inflictor)
+           (not (quake:entity=? target inflictor)))
+      (quake:dprint "qslisp: co-op friendly fire blocked\n")
+      (apply-damage (make-damage-event target inflictor amount))))
 
 (define (apply-damage event)
   (match event
@@ -100,21 +103,19 @@
                                        (+ (quake:field player origin_z) (quake:field player view_ofs_z)))
                           0 actor))))
 
+(define (visible-player actor cursor)
+  (let ((player (quake:find cursor classname "qslisp_player")))
+    (cond
+      ((quake:world? player) player)
+      ((sentry-visible? actor player) player)
+      (else (visible-player actor player)))))
+
 (define (finish-patrol-leg actor leg)
   (match leg
     ((patrol-leg waypoint remaining)
      (remember-sentry-route! actor (append-waypoint remaining waypoint))
      (quake:set-field! actor patrol-count (+ (quake:field actor patrol-count) 1)))))
 
-(define (patrol actor)
-  (when (= (quake:field actor patrol-route-length) 0) (start-patrol-route actor))
-  (let ((point (quake:field actor patrol-route-0)))
-    (when (not (quake:world? point))
-      (if (< (sentry-distance-squared actor point) 64)
-          (finish-patrol-leg actor (make-patrol-leg point (cdr (sentry-route actor))))
-          (sentry-step actor point 7)))))
-
-(define (enter-attack-state actor state)
 (define (append-waypoint route point)
   (match route
     (() (list point))
@@ -131,6 +132,15 @@
     (when (not (quake:world? first))
       (remember-sentry-route! actor (cons first (collect-patrol-route first (find-linked first) 3))))))
 
+(define (patrol actor)
+  (when (= (quake:field actor patrol-route-length) 0) (start-patrol-route actor))
+  (let ((point (quake:field actor patrol-route-0)))
+    (when (not (quake:world? point))
+      (if (< (sentry-distance-squared actor point) 64)
+          (finish-patrol-leg actor (make-patrol-leg point (cdr (sentry-route actor))))
+          (sentry-step actor point 7)))))
+
+(define (enter-attack-state actor state)
   (match state
     ((attack-state phase deadline)
      (quake:set-field! actor sentry-state phase)
@@ -141,6 +151,8 @@
 (define (spot-player actor player)
   (enter-attack-state actor (make-attack-state sentry-alert (+ (quake:time) 0.65)))
   (quake:centerprint player "Sentry alert. Take cover!")
+  (when (> (quake:field player colormap) 1)
+    (quake:dprint "qslisp: sentry spotted co-op guest\n"))
   (quake:dprint "qslisp: sentry spotted player\n"))
 
 (define (resume-patrol actor)
@@ -167,8 +179,8 @@
 
 (define-actor qslisp_sentry sentry-think actor sentry-state 0.1
   (spawn (configure-actor actor 45))
-  (context (player (quake:find (quake:world) classname "qslisp_player"))
-           (visible (sentry-visible? actor player)))
+  (context (player (visible-player actor (quake:world)))
+           (visible (not (quake:world? player))))
   (states
     (sentry-patrol (if visible (spot-player actor player) (patrol actor)))
     (sentry-alert
@@ -191,8 +203,8 @@
 
 (define-actor qslisp_guard guard-think actor sentry-state 0.15
   (spawn (configure-actor actor 30))
-  (context (player (quake:find (quake:world) classname "qslisp_player"))
-           (visible (sentry-visible? actor player)))
+  (context (player (visible-player actor (quake:world)))
+           (visible (not (quake:world? player))))
   (states
     (sentry-patrol
       (when visible

@@ -176,9 +176,9 @@ The report samples stock `profile` counters during a jump, a hit, and both
 actions in the same frame. Stock Quake displays the ten highest function
 counts. The report bounds the omitted counts and uses the total for the frame
 as an upper bound on any VM entry in that frame. The current combined sample
-is bounded by 4,121 instructions against the 100,000-instruction watchdog. The
-program uses 3,083 of 32,768 global slots and its largest individual frame uses
-98 slots. The engine shares 2,048 saved-local slots across active frames.
+is bounded by 7,678 instructions against the 100,000-instruction watchdog. The
+program uses 9,148 of 32,768 global slots and its largest individual frame uses
+135 slots. The engine shares 2,048 saved-local slots across active frames.
 
 ### Relay Annex sentry
 
@@ -225,12 +225,29 @@ The Annex sentry uses a saved Lisp list to keep the order of its authored
 waypoints. The stock-engine test saves the route, lets the sentry rotate to
 the next waypoint, then reloads the old order and checks that patrol continues.
 
+### Two-player co-op
+
+Signal Room and Relay Annex support a stock Quake listen server with two
+players. The game chooses separate starts, blocks friendly fire, and lets
+either player unlock or use the exit. Both players follow the level change.
+Annex actors can target either player, and checkpoints track each player.
+
+```sh
+python3 tools/quakec/test-map-boot.py --verify-coop /path/to/dosbox /path/to/quake
+```
+
+The verifier runs two original DOS Quake clients in separate DOSBox Staging
+instances over local IPX. It checks both sign-ons, the guest's alternate start,
+a blocked shot at the host, the guest opening and using the exit, both clients
+reaching Annex, sentry detection of the guest, and guest respawn.
+
 ### Entity and gameplay forms
 
 The example also shows how to use the stock entity ABI. `(quake:self)`,
 `(quake:other)`, and `(quake:world)` return entity values. `(quake:find start field value)` searches
 a string field and returns the world entity when there is no match. Test this
-with `(quake:world? entity)`. `(quake:time)` returns the engine's time global.
+with `(quake:world? entity)`. `(quake:time)` and `(quake:coop)` read the stock
+time and co-op globals.
 `(quake:field entity field)` reads numeric, string, and entity fields, including
 vector components such as `origin_z`. `(quake:set-field! entity field value)`
 also supports vector fields. Strings can be bound, passed through functions,

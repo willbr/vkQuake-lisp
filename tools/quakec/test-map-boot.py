@@ -11,6 +11,7 @@ import time
 
 import annex
 import challenge
+import coop
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOT_MESSAGES = ('qslisp: worldspawn', 'qslisp: StartFrame', 'qslisp: StartFrame', 'Server spawned.')
@@ -51,12 +52,11 @@ def wait_for_annex(command, base, mod, env, log):
                     engine.kill()
 
 
-def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
+def prepare(output, maps):
     program = output / 'progs.dat'
     subprocess.run([sys.executable, '-m', 'qslisp', 'examples/map-boot.scm', '-o', program],
                    cwd=ROOT, check=True)
     subprocess.run([sys.executable, 'tools/quakec/check-stock.py', program], cwd=ROOT, check=True)
-    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',)}[level]
     if maps:
         (output / 'maps').mkdir()
         with (output / 'map-build.log').open('w') as log:
@@ -68,24 +68,37 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
         subprocess.run([sys.executable, 'tools/quakec/build-sentry.py', output / 'progs/sentry.mdl'],
                        cwd=ROOT, check=True)
 
+
+def stage(quake_dir, output, base):
+    (base / 'id1').mkdir(parents=True)
+    mod = base / 'lispboot'
+    mod.mkdir()
+    for name in ('quake.exe', 'cwsdpmi.exe', 'id1/pak0.pak', 'id1/pak1.pak'):
+        shutil.copyfile(quake_dir / name, base / name)
+    shutil.copyfile(output / 'progs.dat', mod / 'progs.dat')
+    for name in ('maps', 'progs'):
+        if (output / name).is_dir():
+            shutil.copytree(output / name, mod / name)
+    return mod
+
+
+def engine_env(play):
     env = os.environ.copy()
     if not play:
         env.setdefault('SDL_VIDEODRIVER', 'dummy')
         env.setdefault('SDL_AUDIODRIVER', 'dummy')
         env.setdefault('SDL_RENDER_DRIVER', 'software')
+    return env
+
+
+def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
+    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',)}[level]
+    prepare(output, maps)
+    env = engine_env(play)
     console = output / 'qconsole.log'
     with tempfile.TemporaryDirectory(dir=output) as staged:
         base = Path(staged)
-        (base / 'id1').mkdir()
-        mod = base / 'lispboot'
-        mod.mkdir()
-        for name in ('quake.exe', 'cwsdpmi.exe', 'id1/pak0.pak', 'id1/pak1.pak'):
-            shutil.copyfile(quake_dir / name, base / name)
-        shutil.copyfile(program, mod / 'progs.dat')
-        if maps:
-            shutil.copytree(output / 'maps', mod / 'maps')
-        if 'annex' in maps:
-            shutil.copytree(output / 'progs', mod / 'progs')
+        mod = stage(quake_dir, output, base)
 
         engine_flags = '-noudp -noipx -condebug -game lispboot'
         if play:
@@ -138,11 +151,21 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False):
     return console
 
 
+def boot_coop(dosbox, quake_dir, output):
+    prepare(output, ('signal', 'annex'))
+    with tempfile.TemporaryDirectory(dir=output) as staged:
+        base = Path(staged)
+        host = stage(quake_dir, output, base / 'host')
+        guest = stage(quake_dir, output, base / 'guest')
+        return coop.verify(dosbox, output, engine_env(False), host, guest)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--play', action='store_true', help='open the map in a graphical client')
     mode.add_argument('--verify', action='store_true', help='test a Lisp map in a scripted client')
+    mode.add_argument('--verify-coop', action='store_true', help='test Signal Room and Annex with two IPX clients')
     parser.add_argument('--map', choices=('start', 'signal', 'annex'), help='map to load (default: start, or signal with --verify)')
     parser.add_argument('dosbox', help='DOSBox Staging executable')
     parser.add_argument('quake_dir', type=Path, help='registered DOS Quake directory containing quake.exe and id1')
@@ -150,6 +173,8 @@ def main():
     level = args.map or ('signal' if args.verify else 'start')
     if args.verify and level == 'start':
         parser.error('--verify requires signal or annex')
+    if args.verify_coop and args.map:
+        parser.error('--verify-coop runs Signal Room and Relay Annex')
     dosbox = shutil.which(args.dosbox)
     if dosbox is None:
         parser.error(f'DOSBox Staging executable not found: {args.dosbox}')
@@ -157,11 +182,17 @@ def main():
     runs.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix='run-', dir=runs))
     try:
-        console = boot(Path(dosbox).resolve(), args.quake_dir.resolve(), output,
-                       level=level, play=args.play, verify=args.verify)
+        if args.verify_coop:
+            console = boot_coop(Path(dosbox).resolve(), args.quake_dir.resolve(), output)
+        else:
+            console = boot(Path(dosbox).resolve(), args.quake_dir.resolve(), output,
+                           level=level, play=args.play, verify=args.verify)
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
         sys.exit(f'Map boot failed: {error}\nArtifacts: {output}')
-    print(f'Stock Quake booted {level} and ran Lisp callbacks before and after startup. Log: {console}')
+    if args.verify_coop:
+        print(f'Two stock Quake clients completed Signal Room and reached Relay Annex. Logs: {console.parent}')
+    else:
+        print(f'Stock Quake booted {level} and ran Lisp callbacks before and after startup. Log: {console}')
 
 
 if __name__ == '__main__':
