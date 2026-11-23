@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the original Lisp maps and their indexed textures for stock Quake."""
 import argparse
+from collections import Counter
 import os
 from pathlib import Path
 import shutil
@@ -8,20 +9,29 @@ import struct
 import subprocess
 import tempfile
 
-from uplink_art import materials
+from uplink_art import DECKS, materials
 
 ROOT = Path(__file__).resolve().parents[2]
 QUTILS = ROOT / 'third_party/quake-tools/qutils'
 
 
-def texture(name, pixel):
+def texture(name, pixel, filter_mips=False):
     size = 64
+    base = bytes(pixel(x, y) for y in range(size) for x in range(size))
     data = bytearray()
     offsets = []
     for stride in (1, 2, 4, 8):
         offsets.append(40 + len(data))
-        data.extend(pixel(x, y) for y in range(stride // 2, size, stride)
-                    for x in range(stride // 2, size, stride))
+        for y in range(0, size, stride):
+            for x in range(0, size, stride):
+                center = base[(y + stride // 2) * size + x + stride // 2]
+                if filter_mips and stride > 1:
+                    # Indices are categorical. Preserve the dominant shade
+                    # in each block without averaging unrelated palette ramps.
+                    block = Counter(base[row * size + col]
+                                    for row in range(y, y + stride) for col in range(x, x + stride))
+                    center = max(block, key=lambda shade: (block[shade], shade == center))
+                data.append(center)
     return struct.pack('<16s6I', name, size, size, *offsets) + data
 
 
@@ -60,10 +70,12 @@ def write_wad(path):
     textures = {b'relay_floor': floor_pixel, b'relay_wall': wall_pixel,
                 b'relay_trim': trim_pixel, b'relay_goal': goal_pixel}
     textures.update((name.encode('ascii'), pixel) for name, pixel in materials())
+    filtered = {f'{deck}_{surface}'.encode('ascii') for deck in DECKS for surface in ('deck', 'wall')}
+    filtered.add(b'lift_deck')
     lumps = bytearray()
     directory = bytearray()
     for name, pixel in textures.items():
-        miptex = texture(name, pixel)
+        miptex = texture(name, pixel, filter_mips=name in filtered)
         directory += struct.pack('<iiiBB2x16s', 12 + len(lumps), len(miptex), len(miptex), 68, 0, name)
         lumps += miptex
     path.write_bytes(struct.pack('<4sii', b'WAD2', len(textures), 12 + len(lumps)) + lumps + directory)

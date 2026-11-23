@@ -3,13 +3,13 @@ from functools import partial
 
 # Each metal ramp runs from recess to highlight in the stock Quake palette.
 DECKS = {
-    'yard': ((4, 7, 8, 10), (188, 185, 181, 178), 237, (.47, .55, .48)),
-    'freight': ((38, 40, 42, 46), (41, 43, 45, 46), 235, (.40, .47, .67)),
-    'flood': ((190, 187, 184, 181), (188, 185, 181, 177), 246, (.35, .58, .51)),
-    'sump': ((115, 117, 119, 122), (118, 121, 123, 126), 237, (.65, .44, .29)),
-    'switch': ((5, 7, 8, 10), (217, 216, 214, 212), 241, (.40, .53, .70)),
-    'gantry': ((163, 162, 161, 160), (186, 184, 180, 177), 244, (.60, .56, .42)),
-    'roof': ((6, 8, 10, 12), (39, 42, 44, 46), 254, (.56, .65, .77)),
+    'yard': ((4, 7, 8, 10), (188, 185, 181, 178), (.47, .55, .48)),
+    'freight': ((38, 40, 42, 46), (41, 43, 45, 46), (.40, .47, .67)),
+    'flood': ((190, 187, 184, 181), (188, 185, 181, 177), (.35, .58, .51)),
+    'sump': ((115, 117, 119, 122), (118, 121, 123, 126), (.65, .44, .29)),
+    'switch': ((5, 7, 8, 10), (217, 216, 214, 212), (.40, .53, .70)),
+    'gantry': ((163, 162, 161, 160), (186, 184, 180, 177), (.60, .56, .42)),
+    'roof': ((6, 8, 10, 12), (39, 42, 44, 46), (.56, .65, .77)),
 }
 
 SIGNS = {
@@ -20,12 +20,16 @@ SIGNS = {
     'switch_relay': ('RELAY', 241),
     'gantry_array': ('ARRAY', 244),
     'roof_exit': ('EXIT', 254),
+    'lift_call': ('CALL', 244),
+    'east_relay': ('EAST', 244),
+    'west_relay': ('WEST', 244),
 }
 
 # Five columns, seven rows, with the low bit at the right side of each row.
 LETTERS = {
     'A': (14, 17, 17, 31, 17, 17, 17),
     'B': (30, 17, 17, 30, 17, 17, 30),
+    'C': (15, 16, 16, 16, 16, 16, 15),
     'E': (31, 16, 16, 30, 16, 16, 31),
     'I': (14, 4, 4, 4, 4, 4, 14),
     'J': (7, 2, 2, 2, 18, 18, 12),
@@ -38,6 +42,7 @@ LETTERS = {
     'T': (31, 4, 4, 4, 4, 4, 4),
     'U': (17, 17, 17, 17, 17, 17, 14),
     'V': (17, 17, 17, 17, 17, 10, 4),
+    'W': (17, 17, 17, 21, 21, 27, 17),
     'X': (17, 17, 10, 4, 10, 17, 17),
     'Y': (17, 17, 10, 4, 4, 4, 4),
 }
@@ -54,7 +59,7 @@ def deck_plate(metal, x, y):
     return metal[1 + ((x * 13 + y * 17) % 37 == 0)]
 
 
-def bulkhead(metal, accent, x, y):
+def bulkhead(metal, x, y):
     edge = min(x, 63 - x)
     if edge < 2 or y in (0, 63):
         return metal[0]
@@ -64,7 +69,7 @@ def bulkhead(metal, accent, x, y):
         return metal[3]
     if 9 <= y <= 15:
         if 22 <= x <= 41 and y in (11, 12) and x % 6 < 4:
-            return accent
+            return metal[3]
         return metal[0]
     if 22 <= y <= 51 and 10 <= x <= 53:
         bevel = min(x - 10, 53 - x, y - 22, 51 - y)
@@ -111,12 +116,19 @@ def dock_gate(x, y):
     return 7 + ((x * 13 + y * 17) % 37 == 0)
 
 
+def lift_tread(x, y):
+    if y < 7 or y >= 57:
+        return 109 if (x + y) % 16 < 8 else 5
+    return deck_plate((4, 8, 10, 13), x, y)
+
+
 def materials():
-    for name, (floor, wall, accent, _) in DECKS.items():
+    for name, (floor, wall, _) in DECKS.items():
         yield f'{name}_deck', partial(deck_plate, floor)
-        yield f'{name}_wall', partial(bulkhead, wall, accent)
+        yield f'{name}_wall', partial(bulkhead, wall)
     for name, (word, ink) in SIGNS.items():
         yield name, partial(sign, word, ink)
     yield 'annex_rib', rib
     yield 'annex_lamp', lambda x, y: 246 if 7 <= y <= 55 and x % 16 < 13 else 7
     yield 'annex_gate', dock_gate
+    yield 'lift_deck', lift_tread

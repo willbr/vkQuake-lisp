@@ -63,9 +63,10 @@ SURFACE_COLORS = {
     'annex_rib': (.47, .50, .53),
     'annex_lamp': (.66, .92, .90),
     'annex_gate': (.63, .48, .29),
+    'lift_deck': (.64, .54, .30),
     **{sign: (.95, .69, .32) for sign in SIGNS},
 }
-for deck, (_, _, _, color) in DECKS.items():
+for deck, (_, _, color) in DECKS.items():
     SURFACE_COLORS[f'{deck}_deck'] = color
     SURFACE_COLORS[f'{deck}_wall'] = tuple(channel * .75 for channel in color)
 

@@ -52,23 +52,27 @@ def check_lift(server_log):
     failure = next((line for line in server_log.splitlines() if line.startswith('lift-test failure')), None)
     require(failure is None, failure)
     order = ('qslisp: ClientConnect', 'lift-test: mounting', 'qslisp: bike mounted',
-             'lift-test called', 'uplink: lift departing', 'uplink: lift arrived',
-             'lift-test: platform at freight landing', 'lift-test: rider standing on platform',
+             'lift-test parked', 'qslisp: bike dismounted', 'uplink: lift call button pressed',
+             'uplink: lift departing', 'uplink: lift arrived', 'lift-test: platform at freight landing',
+             'qslisp: bike mounted', 'lift-test: rider standing on platform',
              'uplink: lift departing', 'uplink: lift arrived', 'lift-test: passed')
     offset = 0
     for marker in order:
         index = server_log.find(marker, offset)
         require(index >= 0, f'expected server event {marker!r} after offset {offset}')
         offset = index + len(marker)
-    called = re.search(r'^lift-test called x/y/heading +([^\r\n]+)', server_log, re.M)
+    parked = re.search(r'^lift-test parked x/y/heading +([^\r\n]+)', server_log, re.M)
     arrived = re.search(r'^lift-test arrived rider-z/platform-z/samples +([^\r\n]+)', server_log, re.M)
-    require(called is not None and arrived is not None, 'server omitted measured positions')
-    x, y, heading = map(float, called[1].split())
+    buddy = re.search(r'^lift-test buddy-z +([-\d.]+)', server_log, re.M)
+    require(parked is not None and arrived is not None and buddy is not None,
+            'server omitted measured positions')
+    x, y, heading = map(float, parked[1].split())
     require(abs(x - 3344) < 24 and abs(y + 1245) < 24 and abs(heading - 75) > 5,
             'rider did not steer from the angled start to the lift landing')
     rider_z, platform_z, samples = map(float, arrived[1].split())
     require(abs(rider_z + 2536) < 2 and abs(platform_z + 2560) < 1 and samples > 20,
             'rider did not travel from freight to the flood deck on the platform')
+    require(abs(float(buddy[1]) - platform_z) < 2, 'buddy did not stay aboard the lift')
     moving = re.findall(r'^lift-test moving platform-z/camera-z +([-\d.]+) +([-\d.]+)', server_log, re.M)
     require(len(moving) >= 20, 'server omitted moving camera samples')
     offsets = [float(camera) - float(platform) for platform, camera in moving]

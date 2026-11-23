@@ -9,6 +9,7 @@ from map_editor import Brush, Face, bank, box, coordinates, quoted, ramp, switch
 TRIM, MARKER = 'relay_trim', 'relay_goal'
 SERVICE, FREIGHT, FLOOD, SUMP, SWITCHGEAR, GANTRIES, ROOF = 0, -1280, -2560, -3840, 1280, 2560, 3840
 THICKNESS = 16
+LIFT_RECESS = 8
 DECK_AT_FLOOR = {
     -656: 'yard', -640: 'yard', -1296: 'yard', SERVICE: 'yard',
     FREIGHT: 'freight', FREIGHT-64: 'freight', FLOOD: 'flood',
@@ -16,6 +17,20 @@ DECK_AT_FLOOR = {
     GANTRIES: 'gantry', GANTRIES-192: 'gantry', GANTRIES-384: 'gantry',
     ROOF: 'roof',
 }
+# Each panel pair gives the wall position, wall axis, and facing at the lower and upper landing.
+LIFT_SPECS = (
+    ('freight-lift', 3104, -1120, FLOOD, FREIGHT, False,
+     ((3608, -1200, 0, -1), (3608, -1200, 0, -1))),
+    ('sump-lift', -3880, -3488, SUMP, FLOOD, True,
+     ((-3368, -3490, 1, -1), (-3878, -2940, 0, 1))),
+    ('cargo-lift', -4000, -4016, SUMP, SWITCHGEAR, True,
+     ((-3456, -3998, 1, 1), (-3452, -4014, 1, 1))),
+    ('gantry-lift', 3440, -2800, SWITCHGEAR, GANTRIES, True,
+     ((3944, -2802, 1, -1), (4014, -2260, 0, -1))),
+    ('roof-lift', -4000, 3520, GANTRIES, ROOF, True,
+     ((-3460, 3426, 1, 1), (-3450, 3426, 1, 1))),
+)
+GANTRY_RELAYS = (('east-relay', 3072), ('west-relay', -2320))
 
 
 def room(x, xx, y, yy, z, ceiling=None):
@@ -36,7 +51,9 @@ def cut(rect, opening):
 def seal(regions):
     """Build the boundary of joined rectilinear volumes as world brushes."""
     for current, (low, high) in enumerate(regions):
-        deck = DECK_AT_FLOOR[low[2]]
+        deck = DECK_AT_FLOOR.get(low[2])
+        if deck is None:
+            deck = DECK_AT_FLOOR[low[2] + LIFT_RECESS]
         for axis, positive in product(range(3), (False, True)):
             a, b = (i for i in range(3) if i != axis)
             boundary = high[axis] if positive else low[axis]
@@ -55,17 +72,17 @@ def seal(regions):
                 yield box(start, end, texture)
 
 
-def placard(texture, x, y, z, axis, facing):
+def placard(texture, x, y, z, axis, facing, *, width=180, height=42):
     """Mount one face of a shallow sign, aligned to a full texture tile."""
-    low, high = [x, y, z], [x, y, z + 42]
+    low, high = [x, y, z], [x, y, z + height]
     across = 1 - axis
     low[axis] -= 2
     high[axis] += 2
-    low[across] -= 90
-    high[across] += 90
+    low[across] -= width // 2
+    high[across] += width // 2
     brush = box(low, high, 'annex_rib')
-    scale_x = 180 / 64 * facing * (1 if axis == 0 else -1)
-    scale_y = 42 / 64
+    scale_x = width / 64 * facing * (1 if axis == 0 else -1)
+    scale_y = height / 64
     start = low[across] if scale_x > 0 else high[across]
     axes = (str(round(-start / scale_x)), str(round(high[2] / scale_y)),
             '0', str(scale_x), str(scale_y))
@@ -119,6 +136,18 @@ def fixtures():
     for y in (3552, 3848):
         yield box((3960, y-18, ROOF), (4016, y+18, 4016), 'annex_rib')
     yield from overhead_rib(3986, 3700, 4016, 1, 326)
+    for name, x in GANTRY_RELAYS:
+        # Build a lit portal around the sensor, leaving the riding lane open.
+        for lo, hi in ((3424, 3472), (3968, 4016)):
+            yield box((x-26, lo, GANTRIES), (x+26, hi, GANTRIES+224), 'annex_rib')
+            y = (lo + hi) // 2
+            for face in (-1, 1):
+                lamp = x + face * 27
+                yield box((lamp-1, y-11, GANTRIES+60), (lamp+1, y+11, GANTRIES+144), 'annex_lamp')
+        yield box((x-22, 3472, GANTRIES+188), (x+22, 3968, GANTRIES+224), 'annex_rib')
+        label = name.replace('-', '_')
+        yield placard(label, x+25, 3720, GANTRIES+151, 0, 1)
+        yield placard(label, x-25, 3720, GANTRIES+151, 0, -1)
 
 
 def entity(classname, origin=None, brushes=(), **keys):
@@ -148,7 +177,7 @@ def hint(x, y, floor, code, *, width=112, length=112):
 
 
 def lift(name, x, y, floor, upper, *, locked=False):
-    platform = box((x+2, y+2, floor-16), (x+478, y+478, floor), TRIM)
+    platform = box((x+2, y+2, floor-16), (x+478, y+478, floor), 'lift_deck')
     return entity('uplink_lift', brushes=[platform], targetname=name,
                   **{'lift-travel': upper - floor, 'lift-locked': int(locked),
                      'lift-floor': floor, 'lift-x': x+240, 'lift-y': y+240})
@@ -203,6 +232,9 @@ def course():
         room(-2912, -2560, -3968, -3616, -4016, SUMP),
     ]
 
+    # Recess the world floor below the moving brush so their top faces never overlap.
+    for _, x, y, low, *_ in LIFT_SPECS:
+        regions.append(room(x+2, x+478, y+2, y+478, low-LIFT_RECESS, low))
     world = list(seal(regions))
     descent = switchback((-3504, -3760, 0), 4576, 512, 928, 1280, 2, 'yard_deck')
     # The switchback pad is built into its room floor. Keep the two sloped runs.
@@ -249,15 +281,12 @@ def course():
     yield hint(-3650, -3580, SUMP, 8, width=200)
     yield hint(-3232, -3760, SWITCHGEAR, 16, length=224)
     yield hint(3680, -2144, GANTRIES, 32, width=215)
-    lift_specs = (
-        ('freight-lift', 3104, -1120, FLOOD, FREIGHT, False),
-        ('sump-lift', -3880, -3488, SUMP, FLOOD, True),
-        ('cargo-lift', -4000, -4016, SUMP, SWITCHGEAR, True),
-        ('gantry-lift', 3440, -2800, SWITCHGEAR, GANTRIES, True),
-        ('roof-lift', -4000, 3520, GANTRIES, ROOF, True),
-    )
-    for name, x, y, low, high, locked in lift_specs:
+    for name, x, y, low, high, locked, panels in LIFT_SPECS:
         yield lift(name, x, y, low, high, locked=locked)
+        for stop, (floor, (px, py, axis, facing)) in enumerate(zip((low, high), panels), start=1):
+            panel = placard('lift_call', px, py, floor+30, axis, facing, width=48, height=36)
+            yield entity('uplink_station', brushes=[panel], targetname=f'{name}-call-{stop}',
+                         target=name, **{'lift-call-stop': stop})
         yield floor_light(x+240, y+240, low)
         yield floor_light(x+240, y+240, high)
         for height in range(low+440, high-120, 400):
@@ -271,7 +300,7 @@ def course():
                  **{'sentry-range': 640})
     yield entity('qslisp_bike_bank', brushes=bank((-3504, -2144, FREIGHT), (80, 470), (90, 180), 60, 6, TRIM))
     yield entity('qslisp_bike_bank', brushes=bank((3424, 3424, GANTRIES), (92, 576), (0, 90), 66, 6, TRIM))
-    for name, x in (('east-relay', 3072), ('west-relay', -2320)):
+    for name, x in GANTRY_RELAYS:
         brush = box((x-20, 3432, GANTRIES), (x+20, 4008, GANTRIES+100), MARKER)
         yield entity('uplink_relay', brushes=[brush], targetname=name)
     yield entity('uplink_anchor', (-192, 3000, GANTRIES+172), targetname='gantry-pull')

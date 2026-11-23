@@ -345,17 +345,22 @@
          (command (+ wire (if (< wire 0) -0.99 0.99))))
     (quake:vector command (* direction punch) 0)))
 
+(define (bike-lift-clearance offset delta)
+  (cond
+    ((> delta 0.01) (bike-clamp (/ (- 228 offset) delta) 0 1))
+    ((< delta -0.01) (bike-clamp (/ (- -228 offset) delta) 0 1))
+    (else 1)))
+
 (define (bike-chase-view player)
   (let* ((camera (bike-camera-for player))
          (dt (quake:frametime))
          (yaw (bike-camera-heading player dt))
-         (ground (quake:field player groundentity))
-         (on-lift (and (> (quake:bit-and (quake:field player flags) flag-ground) 0)
-                       (string=? (quake:field ground classname) "uplink_lift"))))
+         (lift (uplink-standing-lift player))
+         (on-lift (not (quake:world? lift))))
     ; Stock pushers move after PlayerPostThink. Carry the camera in the same
     ; physics step as the rider so the view stays attached to the platform.
     (quake:set-field! camera movetype (if on-lift move-fly 0))
-    (quake:set-field! camera groundentity (if on-lift ground (quake:world)))
+    (quake:set-field! camera groundentity lift)
     (quake:set-field! camera flags (if on-lift flag-ground 0))
     (quake:make-vectors (quake:vector 0 yaw 0))
     (let* ((x (quake:field player origin_x))
@@ -364,8 +369,15 @@
            (previous (quake:field player bike-camera-floor))
            (floor (if on-lift z
                       (bike-clamp (+ previous (* (- z previous) (/ dt (+ 0.12 dt)))) (- z 24) (+ z 24))))
-           (dx (* -156 (quake:forward-x)))
-           (dy (* -156 (quake:forward-y)))
+           (rear-x (* -156 (quake:forward-x)))
+           (rear-y (* -156 (quake:forward-y)))
+           ; Keep the camera in the shaft even near open landing doors.
+           (shaft-reach (if on-lift
+                            (uplink-min (bike-lift-clearance (- x (quake:field lift lift-x)) rear-x)
+                                        (bike-lift-clearance (- y (quake:field lift lift-y)) rear-y))
+                            1))
+           (dx (* rear-x shaft-reach))
+           (dy (* rear-y shaft-reach))
            (eye (+ z (quake:field player view_ofs_z)))
            (raise (+ 52 (- floor z))))
       (quake:set-field! player bike-camera-floor floor)

@@ -139,15 +139,17 @@
     (quake:centerprint player "Signal restored!\n\nProceed through the gate.")
     (quake:dprint "qslisp: target hit\n")))
 
+(define (player-eye player)
+  (quake:vector (quake:field player origin_x) (quake:field player origin_y)
+                (+ (quake:field player origin_z) (quake:field player view_ofs_z))))
+
 (define (aimed-entity player range)
   (quake:make-vectors (quake:field player v_angle))
-  (let ((x (quake:field player origin_x))
-        (y (quake:field player origin_y))
-        (z (+ (quake:field player origin_z) (quake:field player view_ofs_z))))
-    (quake:traceline (quake:vector x y z)
-                     (quake:vector (+ x (* range (quake:forward-x)))
-                                   (+ y (* range (quake:forward-y)))
-                                   (+ z (* range (quake:forward-z))))
+  (let ((eye (player-eye player)))
+    (quake:traceline eye
+                     (quake:vector (+ (quake:vector-x eye) (* range (quake:forward-x)))
+                                   (+ (quake:vector-y eye) (* range (quake:forward-y)))
+                                   (+ (quake:vector-z eye) (* range (quake:forward-z))))
                      0 player)))
 
 (define (fire player rounds)

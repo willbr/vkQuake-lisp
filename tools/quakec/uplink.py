@@ -135,6 +135,18 @@ def verify(dosbox, output, env, base, mod):
     require(re.search(r'^buddy( +[-\d.]+){6}$', dock, re.M), 'invalid buddy trace')
     require(origin(client.save('entered'))[1] < -3250, 'the bike missed the south perimeter entrance')
 
+    client.place('mounted', 'yieldrun', -3800, -2020, 25, 0)
+    edit(client.save('yieldrun'), client.save('buddyway'), [
+        ('classname', 'uplink_buddy', {'origin': '-3550 -2020 0', 'oldorigin': '-3550 -2020 0',
+                                       'buddy-state': '1'}),
+    ])
+    client.run('buddy-yields', 'buddyway', ['+attack', *wait(38), '-attack', 'save passbud'])
+    yielded = named(client.save('passbud'), 'uplink_buddy', 'classname')
+    buddy_y = float(yielded['origin'].split()[1])
+    require(origin(client.save('passbud'))[0] > -3490 and abs(buddy_y + 2020) >= 48
+            and number(yielded, 'buddy-state') == 1,
+            'the buddy did not clear the bike path while retaining its wait order')
+
     client.place('mounted', 'atdes1', -3410, -3504, 20, 0)
     client.run('descent', 'atdes1', ['+attack', *wait(221), 'save desc1',
                'cl_yawspeed 52.5', '+left', *wait(40), 'save turnmid',
@@ -153,15 +165,49 @@ def verify(dosbox, output, env, base, mod):
     require(672 < gap_x < 912 and gap_z > -1215 and end_x > 960 and end_z >= -1257,
             f'freight jump stalled or went into the catch lane: {(gap_x, gap_z, end_x, end_z)}')
 
-    # Exercise travel from the freight platform while mounted, then pick up
-    # the remaining interlocks at authored waypoints on the same save chain.
+    # Calling the lift requires stepping off the bike and using its panel.
     client.place('desc2', 'atfreigh', 3344, -1180, -1255, 90)
-    freight = client.run('freight-lift', 'atfreigh',
-                         ['impulse 3', *wait(95), '+attack', *wait(17), '-attack',
+    dismount = client.run('lift-dismount', 'atfreigh', ['impulse 3', *wait(4), 'save parked'])
+    parked = client.save('parked')
+    require('qslisp: bike dismounted' in dismount and 'uplink: lift departing' not in dismount
+            and number(named(parked, 'freight-lift'), 'lift-up') == 0,
+            'E at the landing called the lift while still mounted')
+    client.place('parked', 'atpanel', 3550, -1200, -1255, 0)
+    upper_call = client.run('lift-call-panel-up', 'atpanel',
+                            ['impulse 3', *wait(4), 'impulse 3', *wait(90),
+                             'impulse 3', *wait(4), 'save panelup'])
+    up = named(client.save('panelup'), 'freight-lift')
+    require(upper_call.count('uplink: lift call button pressed') == 3
+            and upper_call.count('uplink: lift departing') == 1
+            and number(up, 'lift-up') == 1 and number(up, 'lift-moving') == 0,
+            'upper call panel did not summon and hold the freight lift')
+    client.place('panelup', 'lowpanel', 3550, -1200, -2535, 0)
+    lower_call = client.run('lift-call-panel-down', 'lowpanel',
+                            ['impulse 3', *wait(95), 'save paneldn'])
+    down = named(client.save('paneldn'), 'freight-lift')
+    require('uplink: lift call button pressed' in lower_call and 'uplink: lift arrived' in lower_call
+            and number(down, 'lift-up') == 0, 'lower call panel did not summon the freight lift')
+    client.place('start', 'lockpan', -3818, -2940, -2535, 180)
+    locked_call = client.run('locked-lift-call-panel', 'lockpan', ['impulse 3', *wait(4), 'save calllock'])
+    require('uplink: lift call button pressed' in locked_call and 'uplink: lift departing' not in locked_call
+            and number(named(client.save('calllock'), 'sump-lift'), 'lift-locked') == 1,
+            'calling an unpowered lift bypassed its interlock')
+
+    parked_bike = next(entity for entity in read_edicts(client.save('panelup'))
+                       if entity.get('classname') == 'qslisp_bike' and entity.get('bike-last-rider') == '1')
+    bx, by, bz = map(float, parked_bike['origin'].split())
+    client.place('panelup', 'atpark', bx, by - 72, bz, 90)
+    freight = client.run('freight-lift', 'atpark',
+                         ['impulse 3', *wait(4), '+attack', *wait(17), '-attack',
                           '+jump', *wait(20), '-jump', 'save aboard',
                           'impulse 3', *wait(95), 'save flooded'])
-    require(freight.count('uplink: lift arrived') == 2 and origin(client.save('flooded'))[2] < -2500,
-            'freight lift did not carry the rider down')
+    require('qslisp: bike mounted' in freight and 'uplink: lift arrived' in freight
+            and origin(client.save('flooded'))[2] < -2500,
+            'freight lift did not carry the remounted rider down')
+
+    client.place('mounted', 'atvalbk', -3650, -2550, -2535, 270)
+    client.run('ride-past-valve', 'atvalbk', ['+attack', *wait(24), '-attack', 'save passval'])
+    require(origin(client.save('passval'))[1] < -2735, 'the solid valve caught the bike')
 
     client.place('start', 'atvalve', -3650, -2780, -2535, 90)
     client.run('flood-valve', 'atvalve', ['impulse 21', 'wait', 'impulse 3', *wait(5), 'save drained'])
@@ -358,7 +404,7 @@ def verify_coop(dosbox, output, env, host, guest):
     ride = ['impulse 3', *wait(8), 'impulse 24', '+attack', *wait(20), '-attack']
     dock, _ = run_coop(dosbox, output, env, host, guest, 'updock',
                        (['impulse 21', *wait(12), *ride], [*wait(10), *ride]))
-    bike_samples = [line.split() for line in dock.splitlines() if line.startswith('bike ')]
+    bike_samples = [line.split() for line in re.findall(r'^bike(?!\S)(?: +[-\d.]+){13}$', dock, re.M)]
     require(dock.count('qslisp: bike mounted') == 2 and
             {sample[2] for sample in bike_samples if float(sample[6]) > 60} == {'1', '2'},
             'both co-op riders did not mount and ride separate bikes')
