@@ -1,60 +1,19 @@
 """Native Pyglet preview of the editor's stock Quake brush geometry."""
-from concurrent.futures import Future
-from dataclasses import asdict, dataclass, replace
-from io import BytesIO
+from dataclasses import dataclass
 import math
-from queue import Empty, SimpleQueue
-from threading import Thread
 
+from asset_viewer import (
+    ACCENT, EDGE, INK, MUTED, PANEL, Camera, OrbitWindow,
+    bounds, clamp, midpoint, number, run_preview, update_camera,
+)
 import pyglet
-# Use logical window and pointer coordinates with a pixel-scaled GL viewport.
-pyglet.options.dpi_scaling = 'stretch'
 from pyglet import gl, shapes
-from pyglet.graphics.shader import Shader, ShaderProgram
-from pyglet.math import Mat4, Vec3, Vec4
+from pyglet.math import Vec4
 from pyglet.window import key, mouse
 
 from map_editor import MapDocument, dot, point
 from uplink_art import DECKS, SIGNS
 
-VERTEX_SHADER = """#version 150 core
-in vec3 position;
-in vec3 color;
-out vec3 surface_color;
-out float height;
-
-uniform WindowBlock {
-    mat4 projection;
-    mat4 view;
-} window;
-
-void main() {
-    gl_Position = window.projection * window.view * vec4(position, 1.0);
-    gl_PointSize = 9.0;
-    surface_color = color;
-    height = position.z;
-}
-"""
-
-FRAGMENT_SHADER = """#version 150 core
-in vec3 surface_color;
-in float height;
-out vec4 pixel;
-uniform vec2 slab;
-
-void main() {
-    if (height < slab.x || height > slab.y) {
-        discard;
-    }
-    pixel = vec4(surface_color, 1.0);
-}
-"""
-
-INK = (226, 236, 242, 255)
-MUTED = (156, 177, 194, 255)
-ACCENT = (87, 208, 187, 255)
-PANEL = (25, 38, 49)
-EDGE = (52, 73, 89)
 SURFACE_COLORS = {
     'relay_floor': (.29, .48, .53),
     'relay_wall': (.31, .40, .50),
@@ -69,19 +28,6 @@ SURFACE_COLORS = {
 for deck, (_, _, color) in DECKS.items():
     SURFACE_COLORS[f'{deck}_deck'] = color
     SURFACE_COLORS[f'{deck}_wall'] = tuple(channel * .75 for channel in color)
-
-
-def clamp(value, low, high):
-    return min(high, max(low, value))
-
-
-def bounds(points):
-    axes = list(zip(*points))
-    return tuple(map(min, axes)), tuple(map(max, axes))
-
-
-def midpoint(low, high):
-    return tuple((a + b) / 2 for a, b in zip(low, high))
 
 
 def surface_color(texture, normal, classname):
@@ -150,33 +96,15 @@ class Scene:
 
 
 @dataclass
-class View:
-    target: tuple
-    yaw: float
-    pitch: float
-    span: float
+class View(Camera):
     slice: tuple | None = None
     entities: bool = True
 
 
-def number(value):
-    if type(value) not in (int, float) or not -1e8 <= value <= 1e8:
-        raise ValueError('expected a finite number in the viewer coordinate range')
-    return value
-
-
 def update_view(view, patch):
-    if not isinstance(patch, dict) or patch.keys() - asdict(view).keys():
-        raise ValueError('expected view fields: target, yaw, pitch, span, slice, entities')
-    next_view = replace(view, **patch)
-    if not isinstance(next_view.target, (list, tuple)) or len(next_view.target) != 3:
-        raise ValueError('target must be [x, y, z]')
-    next_view.target = tuple(map(number, next_view.target))
-    next_view.yaw = number(next_view.yaw) % 360
-    if not -85 <= number(next_view.pitch) <= 85:
-        raise ValueError('pitch must be between -85 and 85 degrees')
-    if not 8 <= number(next_view.span) <= 1e7:
-        raise ValueError('span must be between 8 and 10000000 units')
+    next_view = update_camera(view, patch)
+    if next_view.span < 8:
+        raise ValueError('span must be at least 8 units')
     if next_view.slice is not None:
         if not isinstance(next_view.slice, (list, tuple)) or len(next_view.slice) != 2:
             raise ValueError('slice must be [lower, upper] or null')
@@ -189,49 +117,30 @@ def update_view(view, patch):
     return next_view
 
 
-class MapWindow(pyglet.window.Window):
-    sidebar = 240
-    header = 62
-    footer = 35
-
+class MapWindow(OrbitWindow):
     def __init__(self, path, scene):
-        super().__init__(width=1200, height=780, caption=f'{path.name} · Quake map viewer',
-                         resizable=True, config=gl.Config(double_buffer=True, depth_size=24))
-        self.set_minimum_size(760, 490)
+        super().__init__(f'{path.name} · Quake map viewer')
         self.path = path
         self.scene = scene
         self.timestamp = path.stat().st_mtime_ns
-        self.requests = SimpleQueue()
-        self.program = ShaderProgram(Shader(VERTEX_SHADER, 'vertex'), Shader(FRAGMENT_SHADER, 'fragment'))
         self.meshes = ()
         self.upload_scene(scene)
         self.state = View((0, 0, 0), -50, 36, 128)
         self.fit()
-        self.drag = None
         self.selected = None
         self.marker_hits = []
         self.load_error = ''
-        self.layout_size = None
-        pyglet.clock.schedule(self.handle_requests)
         pyglet.clock.schedule_interval(self.reload_map, .5)
 
-    @property
-    def view_size(self):
-        return self.width - self.sidebar, self.height - self.header - self.footer
+    def close(self):
+        pyglet.clock.unschedule(self.reload_map)
+        super().close()
 
     def fit(self):
         low, high = self.scene.visible_bounds(self.state.slice)
         self.state.target = midpoint(low, high)
         width, height = self.view_size
         self.state.span = max(32, math.dist(low, high) * 1.08 / min(1, width / height))
-
-    def mesh(self, vertices, mode):
-        if not vertices:
-            return None
-        positions, colors = zip(*vertices)
-        return self.program.vertex_list(len(vertices), mode,
-                                        position=('f', [v for p in positions for v in p]),
-                                        color=('f', [v for rgb in colors for v in rgb]))
 
     def upload_scene(self, scene):
         meshes = (self.mesh(scene.solids, gl.GL_TRIANGLES),
@@ -258,58 +167,18 @@ class MapWindow(pyglet.window.Window):
         self.load_error = ''
         self.layout_size = None
 
-    def request(self, action, data=None):
-        future = Future()
-        self.requests.put((action, data, future))
-        try:
-            return future.result(timeout=3)
-        except TimeoutError as error:
-            future.cancel()
-            raise TimeoutError('viewer is busy') from error
-
-    def handle_requests(self, _):
-        try:
-            action, data, future = self.requests.get_nowait()
-        except Empty:
-            return
-        if not future.set_running_or_notify_cancel():
-            return
-        try:
-            if action == 'update':
-                self.state = update_view(self.state, data)
-                if self.selected and not self.visible(self.selected):
-                    self.selected = None
-            if action == 'snapshot':
-                self.switch_to()
-                self.on_draw()
-                stream = BytesIO()
-                pyglet.image.get_buffer_manager().get_color_buffer().save('map.png', stream)
-                future.set_result(stream.getvalue())
-            else:
-                future.set_result(asdict(self.state))
-        except Exception as error:
-            future.set_exception(error)
-
-    def camera_direction(self):
-        yaw, pitch = map(math.radians, (self.state.yaw, self.state.pitch))
-        return Vec3(math.cos(yaw) * math.cos(pitch), math.sin(yaw) * math.cos(pitch), math.sin(pitch))
+    def update_remote(self, patch):
+        self.state = update_view(self.state, patch)
+        if self.selected and not self.visible(self.selected):
+            self.selected = None
 
     def visible(self, marker):
         slab = self.state.slice or self.scene.z_range
         return self.state.entities and slab[0] <= marker.position[2] <= slab[1]
 
     def on_draw(self):
-        gl.glClearColor(.055, .085, .115, 1)
-        self.clear()
+        camera = self.begin_view(self.scene.low, self.scene.high, self.scene.size)
         width, height = self.view_size
-        self.viewport = (0, self.footer, width, height)
-        half = self.state.span / 2
-        distance = max(self.scene.size, self.state.span) * 5 + math.dist(self.state.target, midpoint(self.scene.low, self.scene.high))
-        center = Vec3(*self.state.target)
-        self.projection = Mat4.orthogonal_projection(-half*width/height, half*width/height,
-                                                      -half, half, 1, 2*distance)
-        self.view = Mat4.look_at(center + self.camera_direction() * distance, center, Vec3(0, 0, 1))
-        camera = self.projection @ self.view
         triangles, edges, markers = self.meshes
         gl.glEnable(gl.GL_DEPTH_TEST)
         with self.program:
@@ -333,9 +202,7 @@ class MapWindow(pyglet.window.Window):
                 if 0 <= x < width and self.footer <= y < self.height - self.header:
                     self.marker_hits.append((x, y, marker))
 
-        self.viewport = (0, 0, self.width, self.height)
-        self.projection = Mat4.orthogonal_projection(0, self.width, 0, self.height, -1, 1)
-        self.view = Mat4()
+        self.begin_hud()
         if self.layout_size != self.get_size():
             self.layout()
         self.refresh_labels()
@@ -439,16 +306,8 @@ class MapWindow(pyglet.window.Window):
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if isinstance(self.drag, int):
             self.set_slider(self.drag, x)
-        elif self.drag is not None:
-            if buttons & (mouse.RIGHT | mouse.MIDDLE) or modifiers & key.MOD_SHIFT:
-                direction = self.camera_direction()
-                right = Vec3(0, 0, 1).cross(direction).normalize()
-                up = direction.cross(right)
-                scale = self.state.span / self.view_size[1]
-                self.state.target = tuple(Vec3(*self.state.target) - (right * dx + up * dy) * scale)
-            else:
-                self.state.yaw = (self.state.yaw - dx * .45) % 360
-                self.state.pitch = clamp(self.state.pitch - dy * .45, -85, 85)
+        else:
+            super().on_mouse_drag(x, y, dx, dy, buttons, modifiers)
 
     def on_mouse_release(self, x, y, button, modifiers):
         if button == mouse.LEFT and isinstance(self.drag, tuple) and math.dist(self.drag, (x, y)) < 3:
@@ -456,10 +315,6 @@ class MapWindow(pyglet.window.Window):
             distance, marker = min(near, key=lambda item: item[0], default=(math.inf, None))
             self.selected = marker if distance < 11 else None
         self.drag = None
-
-    def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
-        if x < self.view_size[0]:
-            self.state.span = clamp(self.state.span * .88 ** clamp(scroll_y, -10, 10), 8, self.scene.size * 8)
 
     def on_key_press(self, symbol, modifiers):
         if symbol == key.F:
@@ -474,15 +329,4 @@ class MapWindow(pyglet.window.Window):
 
 def run_viewer(path, port, map_server):
     window = MapWindow(path, Scene(MapDocument(path.read_text(encoding='utf-8'))))
-    if port is None:
-        pyglet.app.run()
-        return
-    with map_server(path, port, window) as server:
-        worker = Thread(target=server.serve_forever)
-        worker.start()
-        try:
-            print(f'Viewing {path} at http://127.0.0.1:{server.server_address[1]}', flush=True)
-            pyglet.app.run()
-        finally:
-            server.shutdown()
-            worker.join()
+    run_preview(window, port, lambda number, viewer: map_server(path, number, viewer))

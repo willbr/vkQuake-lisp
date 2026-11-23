@@ -102,6 +102,9 @@ class Model:
         self.write_poses(output, list(zip(names, poses)), PALETTE)
 
     def write_poses(self, output, named_poses, palette):
+        output.write_bytes(self.encode_poses(named_poses, palette))
+
+    def encode_poses(self, named_poses, palette):
         if not named_poses or not self.vertices or not 1 <= len(palette) <= 8:
             raise ValueError('stock alias model requires geometry, poses, and up to eight palette colors')
         if len(self.vertices) > 2000 or len(self.triangles) > 2048:
@@ -137,7 +140,7 @@ class Model:
             data += struct.pack('<i8B16s', 0, *low, 0, *high, 0, name)
             for point in points:
                 data += struct.pack('<4B', *point)
-        output.write_bytes(data)
+        return data
 
 
 def bike(normals):

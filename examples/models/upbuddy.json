@@ -1,0 +1,15 @@
+{
+  "name": "Uplink buddy",
+  "palette": [18, 112, 215, 224],
+  "parts": {
+    "legs": {"low": [-10, -11, 0], "high": [10, 11, 15], "material": 0},
+    "torso": {"low": [-11, -13, 14], "high": [11, 13, 35], "material": 1},
+    "head": {"low": [-9, -10, 35], "high": [9, 10, 47], "material": 2},
+    "visor": {"low": [8, -10, 37], "high": [11, 10, 42], "material": 3},
+    "arm": {"low": [7, -17, 22], "high": [19, -12, 27], "material": 0}
+  },
+  "frames": {
+    "follow": {},
+    "assist": {"arm": [1, 0, 4], "visor": [1, 0, 0]}
+  }
+}

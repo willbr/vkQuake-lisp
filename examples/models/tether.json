@@ -1,0 +1,13 @@
+{
+  "name": "Tether launcher",
+  "palette": [175, 181, 238],
+  "parts": {
+    "grip": {"low": [2, -8, -12], "high": [12, 1, 0], "material": 0},
+    "receiver": {"low": [4, -8, -1], "high": [20, 1, 6], "material": 1},
+    "hook": {"low": [19, -7, 0], "high": [27, 0, 5], "material": 2}
+  },
+  "frames": {
+    "ready": {},
+    "fire": {"hook": [6, 0, 0]}
+  }
+}

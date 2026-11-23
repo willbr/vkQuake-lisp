@@ -4,19 +4,19 @@ import argparse
 from dataclasses import dataclass
 import difflib
 import hashlib
-from http.server import BaseHTTPRequestHandler
 from itertools import combinations
 import json
 import math
 import os
 from pathlib import Path
 import re
-from socketserver import TCPServer
 import subprocess
 import sys
 import tempfile
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs
 from xml.etree import ElementTree as ET
+
+from preview_server import LocalServer, PreviewHandler
 
 TOKEN = re.compile(r'//[^\n]*|"[^"\n]*"|[{}()]|[^\s{}()"]+')
 EPSILON = 0.0001
@@ -448,72 +448,27 @@ def edit_map(path, operations, *, expected=None, write=False):
 
 
 def map_server(path, port, viewer=None):
-    class MapServer(TCPServer):
-        allow_reuse_address = True
-
-    class Handler(BaseHTTPRequestHandler):
-        def respond(self, value, status=200):
-            if isinstance(value, str):
-                body, media = value.encode(), 'image/svg+xml'
-            elif isinstance(value, bytes):
-                body, media = value, 'image/png'
+    class Handler(PreviewHandler):
+        def get_resource(self, url):
+            document = MapDocument(path.read_text(encoding='utf-8'))
+            if url.path == '/':
+                self.respond(document.inspect())
+            elif url.path == '/preview':
+                self.respond(document.preview(parse_qs(url.query).get('view', ['top'])[0]))
             else:
-                body, media = json.dumps(value).encode(), 'application/json'
-            self.send_response(status)
-            self.send_header('Content-Type', media)
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+                super().get_resource(url)
 
-        def read_json(self):
-            length = int(self.headers.get('Content-Length', '0'))
-            if not 0 < length <= 1024 * 1024:
-                raise ValueError('invalid request size')
-            return json.loads(self.rfile.read(length))
-
-        def do_GET(self):
-            try:
-                url = urlsplit(self.path)
-                if viewer is not None and url.path in ('/view', '/view.png'):
-                    self.respond(viewer.request('snapshot' if url.path.endswith('.png') else 'state'))
-                    return
-                document = MapDocument(path.read_text(encoding='utf-8'))
-                if url.path == '/':
-                    self.respond(document.inspect())
-                elif url.path == '/preview':
-                    self.respond(document.preview(parse_qs(url.query).get('view', ['top'])[0]))
-                else:
-                    self.respond({'error': 'unknown endpoint'}, 404)
-            except TimeoutError as error:
-                self.respond({'error': str(error)}, 503)
-            except (ValueError, KeyError, OSError) as error:
-                self.respond({'error': str(error)}, 400)
-
-        def do_POST(self):
-            if self.path == '/view' and viewer is not None:
-                try:
-                    if self.headers.get_content_type() != 'application/json':
-                        raise ValueError('view updates require application/json')
-                    self.respond(viewer.request('update', self.read_json()))
-                except TimeoutError as error:
-                    self.respond({'error': str(error)}, 503)
-                except (ValueError, TypeError) as error:
-                    self.respond({'error': str(error)}, 400)
-                return
+        def post_resource(self):
             if self.path != '/edit':
-                self.respond({'error': 'unknown endpoint'}, 404)
-                return
-            try:
-                body = self.read_json()
-                if not isinstance(body.get('revision'), str) or not isinstance(body.get('operations'), list):
-                    raise ValueError('edit requires the inspected revision and an operation list')
-                result = edit_map(path, body['operations'], expected=body['revision'], write=body.get('write') is True)
-                self.respond(result)
-            except (AttributeError, ValueError, KeyError, TypeError, IndexError, OSError) as error:
-                status = 409 if str(error).startswith('map revision changed') else 400
-                self.respond({'error': str(error)}, status)
+                return super().post_resource()
+            body = self.read_json()
+            if not isinstance(body.get('revision'), str) or not isinstance(body.get('operations'), list):
+                raise ValueError('edit requires the inspected revision and an operation list')
+            result = edit_map(path, body['operations'], expected=body['revision'], write=body.get('write') is True)
+            self.respond(result)
 
-    return MapServer(('127.0.0.1', port), Handler)
+    Handler.viewer = viewer
+    return LocalServer(('127.0.0.1', port), Handler)
 
 
 def serve(path, port):

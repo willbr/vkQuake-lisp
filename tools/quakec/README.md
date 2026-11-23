@@ -159,7 +159,28 @@ the current revision and entity indices. Send `POST /edit` with that
 `revision`, an `operations` array, and optional `write: true`. An intervening
 edit invalidates the old revision. `GET /preview?view=side` returns an SVG.
 
-## Headless model editing
+## Model editing
+
+Open a recipe in the native Pyglet editor with the same orbit, pan, and zoom
+controls as the map viewer. Supply a local Quake PAK or `palette.lmp` to preview
+the actual palette colors.
+
+```sh
+python3 tools/quakec/model_editor.py examples/models/upbuddy.json build/upbuddy.mdl \
+  --view --palette "$HOME/Games/Quake-gog/app/id1/pak0.pak" --port 8766
+```
+
+Click a part in the model or parts list. In **Base mesh**, move a part, resize a
+box, or add another box. Select a named pose to edit that pose's part offset,
+or duplicate it with **+ Pose**. Click a coordinate to type an exact value.
+Click a palette swatch to assign it. **Save recipe** updates the JSON source,
+and **Export MDL** writes the current draft to the output path. The four Uplink
+models use the recipes in [examples/models](../../examples/models).
+
+With `--port`, `GET /view` reports the camera, part, and pose, and `GET /view.png`
+captures the window. `POST /view` accepts `target`, `yaw`, `pitch`, `span`,
+`part`, `pose` (`null` for the base mesh), and `position` (the part position or
+pose offset). Position changes edit the current draft.
 
 `python3 tools/quakec/model_editor.py recipe.json build/model.mdl` writes a
 stock version 6 alias model. A recipe has a `palette` of up to eight Quake
@@ -168,7 +189,7 @@ box corners or a list of convex `faces` with `points`. A part or face's
 `material` selects a palette entry, starting at zero. Optional named `frames`
 map part names to position offsets. An empty mapping leaves the geometry at
 its base position. The uplink assets are working recipes.
-[Examples](build-uplink-assets.py)
+[Uplink asset build](build-uplink-assets.py)
 
 ## VM listings and fixtures
 

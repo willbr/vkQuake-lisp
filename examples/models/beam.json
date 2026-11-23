@@ -1,0 +1,7 @@
+{
+  "name": "Tether beam",
+  "palette": [43, 62],
+  "parts": {
+    "strand": {"low": [0, -0.55, -0.55], "high": [30, 0.55, 0.55], "material": 1}
+  }
+}

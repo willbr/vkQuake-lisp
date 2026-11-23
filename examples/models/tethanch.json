@@ -1,0 +1,8 @@
+{
+  "name": "Tether anchor",
+  "palette": [11, 224, 233],
+  "parts": {
+    "base": {"low": [-9, -9, -7], "high": [9, 9, 7], "material": 0},
+    "socket": {"low": [-5, -5, -12], "high": [5, 5, 12], "material": 2}
+  }
+}
