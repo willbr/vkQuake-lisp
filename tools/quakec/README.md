@@ -126,6 +126,28 @@ python3 tools/quakec/map_editor.py examples/annex.map preview build/annex-side.s
 python3 tools/quakec/map_editor.py examples/annex.map build build/annex.bsp
 ```
 
+Install `pyglet>=2.1,<2.2` in your Python environment to open the native 3D viewer.
+
+```sh
+python3 tools/quakec/map_editor.py examples/uplink.map view3d --port 8765
+```
+
+Drag to orbit, right-drag or Shift-drag to pan, and scroll to zoom. Use the two
+height sliders to cut through stacked decks. Click an entity marker for its map
+index and coordinates. The viewer reloads the map after it is saved.
+
+`--port` is optional and starts the existing editor API on localhost. Use
+`GET /view` to read the shared camera, `POST /view` to update it, and
+`GET /view.png` to capture the window. The JSON fields are `target` in map units,
+`yaw` and `pitch` in degrees, `span` for the vertical view size in map units,
+`slice` as two Z coordinates or `null` for the full height, and `entities`
+as a boolean. Send the fields you want to change.
+
+```sh
+curl -H 'Content-Type: application/json' -d '{"target":[-3480,-2110,54],"span":1150,"slice":[-35,175]}' \
+  http://127.0.0.1:8765/view
+```
+
 The editor preserves untouched map source. Use `apply edits.json` to preview an
 edit as a diff, and add `--write` to save it. The file is a JSON array of
 operations. Operation names include `box`, `ramp`, `bank`, `switchback`,

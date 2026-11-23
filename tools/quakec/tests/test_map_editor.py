@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/quakec'))
-from map_editor import MapDocument, bank, edit_map, revision, switchback
+from map_editor import MapDocument, bank, cross, dot, edit_map, ramp, revision, subtract, switchback
 
 WORLD = '{\n"classname" "worldspawn"\n"wad" "signal.wad"\n}\n'
 
@@ -52,6 +52,14 @@ class MapEditorTests(unittest.TestCase):
             edit_map(path, operations, expected=revision(WORLD), write=True)
             with self.assertRaisesRegex(ValueError, 'revision changed'):
                 edit_map(path, operations, expected=revision(WORLD), write=True)
+
+    def test_ramp_polygons_follow_outward_winding(self):
+        brush = ramp((0, 0, 128, 64), (12, 36), 'x', -16, 'relay_trim')
+        polygons = list(brush.polygons())
+        self.assertEqual([len(vertices) for _, _, vertices in polygons], [4] * 6)
+        self.assertTrue(any(0 < normal[2] < 1 for normal, _, _ in polygons))
+        for normal, _, (a, b, c, _) in polygons:
+            self.assertGreater(dot(normal, cross(subtract(b, a), subtract(c, a))), 0)
 
     def test_local_tcp_session_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:

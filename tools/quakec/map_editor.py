@@ -98,6 +98,22 @@ class Brush:
             raise ValueError('brush planes do not enclose a volume')
         return tuple(unique.values())
 
+    def polygons(self):
+        """Yield each face as an outward normal, texture and ordered vertices."""
+        vertices = self.vertices()
+        for face in self.faces:
+            inward, distance = face.plane()
+            points = [p for p in vertices if abs(dot(inward, p) - distance) <= EPSILON]
+            if len(points) < 3:
+                continue
+            normal = tuple(-axis for axis in inward)
+            center = tuple(sum(axis) / len(points) for axis in zip(*points))
+            u = subtract(points[0], center)
+            v = cross(normal, u)
+            points.sort(key=lambda p: math.atan2(dot(subtract(p, center), v),
+                                                 dot(subtract(p, center), u)))
+            yield normal, face.texture, points
+
     def text(self):
         return '{\n' + '\n'.join(face.text() for face in self.faces) + '\n}\n'
 
@@ -431,11 +447,13 @@ def edit_map(path, operations, *, expected=None, write=False):
     return {'diff': diff, 'revision': revision(document.text if write else original), **summary}
 
 
-def serve(path, port):
+def map_server(path, port, viewer=None):
     class Handler(BaseHTTPRequestHandler):
         def respond(self, value, status=200):
             if isinstance(value, str):
                 body, media = value.encode(), 'image/svg+xml'
+            elif isinstance(value, bytes):
+                body, media = value, 'image/png'
             else:
                 body, media = json.dumps(value).encode(), 'application/json'
             self.send_response(status)
@@ -444,9 +462,18 @@ def serve(path, port):
             self.end_headers()
             self.wfile.write(body)
 
+        def read_json(self):
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= 1024 * 1024:
+                raise ValueError('invalid request size')
+            return json.loads(self.rfile.read(length))
+
         def do_GET(self):
             try:
                 url = urlsplit(self.path)
+                if viewer is not None and url.path in ('/view', '/view.png'):
+                    self.respond(viewer.request('snapshot' if url.path.endswith('.png') else 'state'))
+                    return
                 document = MapDocument(path.read_text(encoding='utf-8'))
                 if url.path == '/':
                     self.respond(document.inspect())
@@ -454,18 +481,27 @@ def serve(path, port):
                     self.respond(document.preview(parse_qs(url.query).get('view', ['top'])[0]))
                 else:
                     self.respond({'error': 'unknown endpoint'}, 404)
+            except TimeoutError as error:
+                self.respond({'error': str(error)}, 503)
             except (ValueError, KeyError, OSError) as error:
                 self.respond({'error': str(error)}, 400)
 
         def do_POST(self):
+            if self.path == '/view' and viewer is not None:
+                try:
+                    if self.headers.get_content_type() != 'application/json':
+                        raise ValueError('view updates require application/json')
+                    self.respond(viewer.request('update', self.read_json()))
+                except TimeoutError as error:
+                    self.respond({'error': str(error)}, 503)
+                except (ValueError, TypeError) as error:
+                    self.respond({'error': str(error)}, 400)
+                return
             if self.path != '/edit':
                 self.respond({'error': 'unknown endpoint'}, 404)
                 return
             try:
-                length = int(self.headers.get('Content-Length', '0'))
-                if not 0 < length <= 1024 * 1024:
-                    raise ValueError('invalid edit request size')
-                body = json.loads(self.rfile.read(length))
+                body = self.read_json()
                 if not isinstance(body.get('revision'), str) or not isinstance(body.get('operations'), list):
                     raise ValueError('edit requires the inspected revision and an operation list')
                 result = edit_map(path, body['operations'], expected=body['revision'], write=body.get('write') is True)
@@ -474,7 +510,11 @@ def serve(path, port):
                 status = 409 if str(error).startswith('map revision changed') else 400
                 self.respond({'error': str(error)}, status)
 
-    with TCPServer(('127.0.0.1', port), Handler) as server:
+    return TCPServer(('127.0.0.1', port), Handler)
+
+
+def serve(path, port):
+    with map_server(path, port) as server:
         print(f'Editing {path} at http://127.0.0.1:{server.server_address[1]}', flush=True)
         server.serve_forever()
 
@@ -493,12 +533,22 @@ def main():
     preview.add_argument('--view', choices=('top', 'side', 'end'), default='top')
     session = sub.add_parser('serve')
     session.add_argument('--port', type=int, default=8765)
+    view3d = sub.add_parser('view3d', help='open the native 3D brush viewer')
+    view3d.add_argument('--port', type=int, help='also start the localhost editor API')
     build = sub.add_parser('build')
     build.add_argument('output', type=Path)
     args = parser.parse_args()
     try:
         if args.command == 'serve':
             serve(args.map.resolve(), args.port)
+        elif args.command == 'view3d':
+            try:
+                from map_viewer import run_viewer
+            except ModuleNotFoundError as error:
+                if error.name != 'pyglet':
+                    raise
+                raise ValueError("view3d requires Pyglet. Install 'pyglet>=2.1,<2.2'.") from error
+            run_viewer(args.map.resolve(), args.port, map_server)
         elif args.command == 'apply':
             result = edit_map(args.map, json.loads(args.operations.read_text()), write=args.write)
             sys.stdout.write(result['diff'])
