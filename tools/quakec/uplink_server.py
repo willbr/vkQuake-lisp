@@ -69,3 +69,9 @@ def check_lift(server_log):
     rider_z, platform_z, samples = map(float, arrived[1].split())
     require(abs(rider_z + 2536) < 2 and abs(platform_z + 2560) < 1 and samples > 20,
             'rider did not travel from freight to the flood deck on the platform')
+    parked = re.findall(r'^lift-test parked camera-z/client-pitch +([^\r\n]+)', server_log, re.M)
+    require(len(parked) >= 15, 'server omitted parked camera samples')
+    heights, pitches = zip(*(map(float, sample.split()) for sample in parked))
+    require(max(heights) - min(heights) < 0.3, f'parked camera height moved: {min(heights)} to {max(heights)}')
+    require(min(pitches) >= 16.8 and max(pitches) - min(pitches) < 0.2,
+            f'parked client pitch drifted: {min(pitches)} to {max(pitches)} degrees')

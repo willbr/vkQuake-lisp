@@ -222,9 +222,11 @@
             (quake:client-command player "-forward\n-back\n")
             (quake:client-command player "-attack 128\n-jump 129\n")))
       ; Keep the same physical key identifier in both halves of the Down alias.
+      ; A synthetic mouse-look key holds off stock pitch centering on the bike.
+      ; The player's own mouse-look key keeps its state.
       (if riding
-          (quake:client-command player "alias +bikeback \"+jump 129; impulse 4\"\nalias -bikeback \"-jump 129; impulse 5\"\nbind UPARROW +attack\nbind DOWNARROW +bikeback\n")
-          (quake:client-command player "bind UPARROW +forward\nbind DOWNARROW +back\n"))
+          (quake:client-command player "+mlook 256\nalias +bikeback \"+jump 129; impulse 4\"\nalias -bikeback \"-jump 129; impulse 5\"\nbind UPARROW +attack\nbind DOWNARROW +bikeback\n")
+          (quake:client-command player "-mlook 256\nbind UPARROW +forward\nbind DOWNARROW +back\n"))
       (quake:set-field! player bike-key-mode mode)
       ; A load or reconnect can restore the server state in a fresh client.
       (quake:set-field! player bike-next-keys (+ (quake:time) 1)))))

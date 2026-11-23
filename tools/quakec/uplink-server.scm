@@ -94,9 +94,20 @@
                  (quake:entity=? (quake:field player groundentity) lift))
             (trace-numbers "lift-test arrived rider-z/platform-z/samples" actual
               (+ (quake:field lift lift-floor) height) samples)
-            (quake:dprint "lift-test: passed\n")
-            (driver-enter player 5 0)))
+            (driver-enter player 5 1.7)))
          heading)))))
+
+(define (driver-camera-sample player)
+  (let ((remaining (- (quake:field player driver-deadline) (quake:time)))
+        (camera (quake:field player bike-camera)))
+    (cond
+      ((<= remaining 0)
+       (quake:dprint "lift-test: passed\n")
+       (driver-enter player 6 0))
+      ((< remaining 1)
+       (trace-numbers "lift-test parked camera-z/client-pitch"
+         (quake:field camera origin_z) (quake:field player v_angle_x))))
+    (quake:field player bike-heading)))
 
 (define (PlayerPreThink)
   (let* ((player (quake:self)) (phase (quake:field player driver-phase)))
@@ -107,7 +118,8 @@
       (driver-enter player 0 5))
     (let ((steering
             (cond
-              ((or (< phase 0) (= phase 5)) (quake:field player bike-heading))
+              ((or (< phase 0) (= phase 6)) (quake:field player bike-heading))
+              ((= phase 5) (driver-camera-sample player))
               ((> (quake:time) (quake:field player driver-deadline))
                (driver-fail player "lift-test: timed out waiting for progress\n") #f)
               (else (driver-control player (uplink-named "freight-lift") phase)))))
