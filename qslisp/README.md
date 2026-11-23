@@ -287,6 +287,7 @@ the old order and checks that patrol continues.
 python3 tools/quakec/test-map-boot.py --play --map uplink /path/to/dosbox /path/to/quake
 python3 tools/quakec/test-map-boot.py --verify --map uplink /path/to/dosbox /path/to/quake
 python3 tools/quakec/test-map-boot.py --verify-coop --map uplink /path/to/dosbox /path/to/quake
+python3 tools/quakec/test-map-boot.py --verify-server /path/to/dosbox /path/to/quake
 ```
 
 Recruit the buddy with **E** and take a bike through the south dock. Use
@@ -322,6 +323,13 @@ inputs. The two-player test uses the same geometry for paired bikes, a
 two-person valve interlock, and simultaneous tethers. A test-only waypoint
 driver also lets both clients advance the shared mission through extraction
 in one session.
+
+The dedicated server test connects a real DOS Quake client over local IPX
+and starts the rider near the freight lift. A test-only Lisp driver mounts
+the bike, steers to the landing, calls the lift, and boards it using the
+shared bike and interaction code. It checks the rider's height against the
+moving platform on each tick of the descent to the flood deck. The server
+console records each stage and the rider's position and heading on failure.
 
 ### Two-player co-op
 

@@ -13,6 +13,7 @@ import annex
 import challenge
 import coop
 import uplink
+import uplink_server
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOT_MESSAGES = ('qslisp: worldspawn', 'qslisp: StartFrame', 'qslisp: StartFrame', 'Server spawned.')
@@ -61,16 +62,18 @@ def wait_for_annex(command, base, mod, env, log):
                     engine.kill()
 
 
-def prepare(output, maps):
+def prepare(output, maps, *, program_source='examples/map-boot.scm', map_sources=None):
     program = output / 'progs.dat'
-    subprocess.run([sys.executable, '-m', 'qslisp', 'examples/map-boot.scm', '-o', program],
+    subprocess.run([sys.executable, '-m', 'qslisp', program_source, '-o', program],
                    cwd=ROOT, check=True)
     subprocess.run([sys.executable, 'tools/quakec/check-stock.py', program], cwd=ROOT, check=True)
     if maps:
         (output / 'maps').mkdir()
         with (output / 'map-build.log').open('w') as log:
             for name in maps:
-                subprocess.run([sys.executable, 'tools/quakec/build-signal.py', '--map', name,
+                source = (map_sources or {}).get(name)
+                map_args = ['--source', source] if source else ['--map', name]
+                subprocess.run([sys.executable, 'tools/quakec/build-signal.py', *map_args,
                                 output / 'maps' / f'{name}.bsp'],
                                cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
     if 'annex' in maps or 'uplink' in maps:
@@ -180,23 +183,38 @@ def boot_coop(dosbox, quake_dir, output, level):
         return scenario(dosbox, output, engine_env(False), host, guest)
 
 
+def boot_server_driver(dosbox, quake_dir, output):
+    fixture = output / 'uplink.map'
+    uplink_server.write_fixture(fixture)
+    prepare(output, ('uplink',), program_source='tools/quakec/uplink-server.scm',
+            map_sources={'uplink': fixture})
+    with tempfile.TemporaryDirectory(dir=output) as staged:
+        base = Path(staged)
+        host = stage(quake_dir, output, base / 'host')
+        guest = stage(quake_dir, output, base / 'guest')
+        return uplink_server.verify(dosbox, output, engine_env(False), host, guest)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--play', action='store_true', help='open the map in a graphical client')
     mode.add_argument('--verify', action='store_true', help='test a Lisp map in a scripted client')
     mode.add_argument('--verify-coop', action='store_true', help='test the campaign or uplink with two IPX clients')
+    mode.add_argument('--verify-server', action='store_true', help='run the uplink freight lift driver on a dedicated server')
     parser.add_argument('--protected-cycles', type=int, help='set DOSBox Staging protected-mode cycles for --play')
     parser.add_argument('--map', choices=('start', 'signal', 'annex', 'uplink'),
                         help='map to load (default: start, or signal with --verify)')
     parser.add_argument('dosbox', help='DOSBox Staging executable')
     parser.add_argument('quake_dir', type=Path, help='registered DOS Quake directory containing quake.exe and id1')
     args = parser.parse_args()
-    level = args.map or ('signal' if args.verify else 'start')
+    level = args.map or ('uplink' if args.verify_server else 'signal' if args.verify else 'start')
     if args.verify and level == 'start':
         parser.error('--verify requires signal, annex, or uplink')
     if args.verify_coop and args.map not in (None, 'uplink'):
         parser.error('--verify-coop runs the campaign by default or the uplink with --map uplink')
+    if args.verify_server and level != 'uplink':
+        parser.error('--verify-server requires uplink')
     if args.protected_cycles is not None and (not args.play or args.protected_cycles <= 0):
         parser.error('--protected-cycles requires a positive value and --play')
     dosbox = shutil.which(args.dosbox)
@@ -206,7 +224,9 @@ def main():
     runs.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix='run-', dir=runs))
     try:
-        if args.verify_coop:
+        if args.verify_server:
+            console = boot_server_driver(Path(dosbox).resolve(), args.quake_dir.resolve(), output)
+        elif args.verify_coop:
             console = boot_coop(Path(dosbox).resolve(), args.quake_dir.resolve(), output, level)
         else:
             console = boot(Path(dosbox).resolve(), args.quake_dir.resolve(), output,
@@ -214,7 +234,10 @@ def main():
                            protected_cycles=args.protected_cycles)
     except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
         sys.exit(f'Map boot failed: {error}\nArtifacts: {output}')
-    if args.verify_coop and level == 'uplink':
+    if args.verify_server:
+        print('Dedicated stock Quake drove a connected rider onto the freight lift and reached the flood deck.')
+        print(f'Server log {console}')
+    elif args.verify_coop and level == 'uplink':
         print(f'Two stock Quake clients reached extraction and tested independent tethers. Logs: {console.parent}')
     elif args.verify_coop:
         print(f'Two stock Quake clients completed Signal Room and reached Relay Annex. Logs: {console.parent}')
