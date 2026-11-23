@@ -448,6 +448,9 @@ def edit_map(path, operations, *, expected=None, write=False):
 
 
 def map_server(path, port, viewer=None):
+    class MapServer(TCPServer):
+        allow_reuse_address = True
+
     class Handler(BaseHTTPRequestHandler):
         def respond(self, value, status=200):
             if isinstance(value, str):
@@ -510,7 +513,7 @@ def map_server(path, port, viewer=None):
                 status = 409 if str(error).startswith('map revision changed') else 400
                 self.respond({'error': str(error)}, status)
 
-    return TCPServer(('127.0.0.1', port), Handler)
+    return MapServer(('127.0.0.1', port), Handler)
 
 
 def serve(path, port):
