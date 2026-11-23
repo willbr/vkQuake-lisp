@@ -34,6 +34,11 @@
 (define buddy-regroup 2)
 (define buddy-assist 3)
 
+; These are the IDPO frame groups in the buddy recipe's animation order.
+(define buddy-frame-idle 0)
+(define buddy-frame-walk 1)
+(define buddy-frame-assist 2)
+
 (define (uplink-named name)
   (quake:find (quake:world) targetname name))
 
@@ -63,7 +68,7 @@
 (define (uplink-buddy-order buddy player mode)
   (quake:set-field! buddy buddy-leader player)
   (quake:set-field! buddy buddy-state mode)
-  (quake:set-field! buddy frame (if (= mode buddy-assist) 1 0))
+  (quake:set-field! buddy frame (if (= mode buddy-assist) buddy-frame-assist buddy-frame-idle))
   (quake:set-field! buddy buddy-goal (quake:world))
   (quake:set-field! buddy buddy-regroup-time (+ (quake:time) 1))
   (when (= mode buddy-follow)
@@ -183,11 +188,23 @@
                              #t)))))
              (uplink-buddy-yield actor rider)))))
 
+(define (uplink-buddy-animation actor x y)
+  (let* ((dx (- (quake:field actor origin_x) x))
+         (dy (- (quake:field actor origin_y) y))
+         (distance (+ (* dx dx) (* dy dy))))
+    ; Repositioning through a service route should start in a stationary pose.
+    (quake:set-field! actor frame
+      (cond ((and (> distance 1) (< distance 900)) buddy-frame-walk)
+            ((= (quake:field actor buddy-state) buddy-assist) buddy-frame-assist)
+            (else buddy-frame-idle)))))
+
 (define (uplink-buddy-think)
   (let* ((actor (quake:self))
          (player (quake:field actor buddy-leader))
          (state (quake:field actor buddy-state))
-         (lift (uplink-standing-lift actor)))
+         (lift (uplink-standing-lift actor))
+         (x (quake:field actor origin_x))
+         (y (quake:field actor origin_y)))
     (quake:set-field! actor nextthink (+ (quake:time) 0.12))
     (when (= state buddy-wait)
       (quake:set-field! actor buddy-trace-reason 0)
@@ -219,8 +236,8 @@
                  (when (not (uplink-close? actor player 950 90))
                    (uplink-buddy-arrive actor player (uplink-near-waypoint player (quake:world) (quake:world))))
                  (uplink-buddy-step actor goal 38)
-                 (quake:set-field! actor frame 1)
-                 (uplink-buddy-shoot actor)))))))))
+                 (uplink-buddy-shoot actor)))))))
+    (uplink-buddy-animation actor x y)))
 
 (define (uplink-buddy-commands player)
   (let ((command (quake:field player impulse)))

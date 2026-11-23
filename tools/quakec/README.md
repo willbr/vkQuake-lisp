@@ -172,23 +172,27 @@ python3 tools/quakec/model_editor.py examples/models/upbuddy.json build/upbuddy.
 
 Click a part in the model or parts list. In **Base mesh**, move a part, resize a
 box, or add another box. Select a named pose to edit that pose's part offset,
-or duplicate it with **+ Pose**. Click a coordinate to type an exact value.
+use **Rotate** to edit joint angles, or duplicate it with **+ Pose**. Choose a
+clip and press **Play** or Space to preview it. Click a coordinate to type an exact value.
 Click a palette swatch to assign it. **Save recipe** updates the JSON source,
 and **Export MDL** writes the current draft to the output path. The four Uplink
 models use the recipes in [examples/models](../../examples/models).
 
 With `--port`, `GET /view` reports the camera, part, and pose, and `GET /view.png`
 captures the window. `POST /view` accepts `target`, `yaw`, `pitch`, `span`,
-`part`, `pose` (`null` for the base mesh), and `position` (the part position or
-pose offset). Position changes edit the current draft.
+`part`, `pose` (`null` for the base mesh), `position` (the part position or
+pose offset), `clip`, and `playing`. Position changes edit the current draft.
 
 `python3 tools/quakec/model_editor.py recipe.json build/model.mdl` writes a
 stock version 6 alias model. A recipe has a `palette` of up to eight Quake
-palette indices and named `parts`. Each part supplies either `low` and `high`
-box corners or a list of convex `faces` with `points`. A part or face's
-`material` selects a palette entry, starting at zero. Optional named `frames`
-map part names to position offsets. An empty mapping leaves the geometry at
-its base position. The uplink assets are working recipes.
+palette indices and named `parts`. A part can have `low` and `high` box corners,
+convex `faces` with `points`, or tapered `rings` with `[height, radius_x, radius_y]`
+sections, `origin`, and `sides`. A part or face's `material` selects a palette
+entry, starting at zero. Named `frames` map parts to an offset or an object
+with `offset` and `rotate`. Rotations are XYZ Euler angles in degrees around
+the part's `pivot`, with its center or ring origin as the default.
+`animations` lists ordered `frames` and `fps` for each stock MDL frame group.
+The buddy's groups are idle, walk, and assist in that order.
 [Uplink asset build](build-uplink-assets.py)
 
 ## VM listings and fixtures

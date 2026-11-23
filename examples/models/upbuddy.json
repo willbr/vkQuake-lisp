@@ -1,15 +1,333 @@
 {
   "name": "Uplink buddy",
-  "palette": [18, 112, 215, 224],
+  "palette": [6, 181, 10, 246, 97, 240],
   "parts": {
-    "legs": {"low": [-10, -11, 0], "high": [10, 11, 15], "material": 0},
-    "torso": {"low": [-11, -13, 14], "high": [11, 13, 35], "material": 1},
-    "head": {"low": [-9, -10, 35], "high": [9, 10, 47], "material": 2},
-    "visor": {"low": [8, -10, 37], "high": [11, 10, 42], "material": 3},
-    "arm": {"low": [7, -17, 22], "high": [19, -12, 27], "material": 0}
+    "hip": {
+      "origin": [0, 0, 0],
+      "rings": [[15, 5.5, 7], [18, 7.2, 8.3], [22, 7.5, 8.8]],
+      "sides": 8,
+      "material": 0
+    },
+    "chest": {
+      "origin": [-0.6, 0, 0],
+      "rings": [[19, 6.6, 8.2], [24, 8.4, 9.8], [30, 9.6, 11.1], [34, 7.2, 8.8]],
+      "sides": 8,
+      "material": 1
+    },
+    "chest plate": {
+      "origin": [8.55, 0, 0],
+      "rings": [[24, 1.4, 5.8], [26, 2, 7], [31, 1.6, 6.8], [32, 1, 4.7]],
+      "sides": 8,
+      "material": 2
+    },
+    "backpack": {
+      "origin": [-8.2, 0, 0],
+      "rings": [[21, 2.3, 4.8], [23, 3.8, 6.1], [32, 3.8, 6.1], [34, 2.2, 4.6]],
+      "sides": 8,
+      "material": 0
+    },
+    "power cell": {
+      "origin": [-10.6, 0, 0],
+      "rings": [[24, 1.2, 2.5], [25, 1.8, 3], [29, 1.8, 3], [30, 1.2, 2.5]],
+      "sides": 6,
+      "material": 5
+    },
+    "neck": {
+      "origin": [0, 0, 0],
+      "rings": [[32, 4.9, 5.4], [35.2, 4.4, 5]],
+      "sides": 8,
+      "material": 0
+    },
+    "helmet": {
+      "origin": [0.5, 0, 0],
+      "rings": [[34.7, 5.8, 6.6], [37, 8.1, 8.1], [41.8, 9.1, 8.9], [45.1, 7.8, 7.9], [47, 4.5, 5.5]],
+      "sides": 10,
+      "material": 2,
+      "pivot": [0, 0, 35]
+    },
+    "visor": {
+      "pivot": [0, 0, 35],
+      "material": 3,
+      "faces": [{"points": [[9.57, -5.2, 38.1], [9.57, 5.2, 38.1], [10.05, 5.2, 42.1], [10.05, -5.2, 42.1]]}, {"points": [[9.57, 5.2, 38.1], [6.85, 8.3, 38.7], [7.4, 8.65, 41.7], [10.05, 5.2, 42.1]]}, {"points": [[6.85, -8.3, 38.7], [9.57, -5.2, 38.1], [10.05, -5.2, 42.1], [7.4, -8.65, 41.7]]}]
+    },
+    "left arm": {
+      "origin": [0.15, 12.1, 0],
+      "rings": [[18, 2.1, 2.4], [23, 2.9, 3], [29, 4.2, 4.2], [33, 2.7, 3.1]],
+      "sides": 8,
+      "material": 1,
+      "pivot": [0, 11, 30]
+    },
+    "left glove": {
+      "origin": [0.1, 12.3, 0],
+      "rings": [[16.8, 1.7, 1.9], [18, 2.5, 2.7], [20, 2.3, 2.4]],
+      "sides": 6,
+      "material": 0,
+      "pivot": [0, 11, 30]
+    },
+    "right arm": {
+      "origin": [0.15, -12.1, 0],
+      "rings": [[18, 2.1, 2.4], [23, 2.9, 3], [29, 4.2, 4.2], [33, 2.7, 3.1]],
+      "sides": 8,
+      "material": 1,
+      "pivot": [0, -11, 30]
+    },
+    "right glove": {
+      "origin": [0.1, -12.3, 0],
+      "rings": [[16.8, 1.7, 1.9], [18, 2.5, 2.7], [20, 2.3, 2.4]],
+      "sides": 6,
+      "material": 0,
+      "pivot": [0, -11, 30]
+    },
+    "hand tool": {
+      "origin": [3, -12.6, 0],
+      "rings": [[16, 1.8, 1.6], [17.2, 2.7, 2], [22, 2.4, 1.9], [23, 1.6, 1.3]],
+      "sides": 6,
+      "material": 4,
+      "pivot": [0, -11, 30]
+    },
+    "left leg": {
+      "origin": [0, 5.5, 0],
+      "rings": [[4.2, 2.8, 2.8], [8.5, 3.5, 3.2], [13, 4.2, 3.8], [18.4, 3.5, 3.5]],
+      "sides": 8,
+      "material": 1,
+      "pivot": [0, 5.5, 18]
+    },
+    "left boot": {
+      "origin": [1.6, 5.5, 0],
+      "rings": [[0.05, 4.7, 3.4], [1.6, 5.8, 4], [4.5, 5.2, 3.7], [6.1, 3.3, 3]],
+      "sides": 8,
+      "material": 0,
+      "pivot": [0, 5.5, 18]
+    },
+    "right leg": {
+      "origin": [0, -5.5, 0],
+      "rings": [[4.2, 2.8, 2.8], [8.5, 3.5, 3.2], [13, 4.2, 3.8], [18.4, 3.5, 3.5]],
+      "sides": 8,
+      "material": 1,
+      "pivot": [0, -5.5, 18]
+    },
+    "right boot": {
+      "origin": [1.6, -5.5, 0],
+      "rings": [[0.05, 4.7, 3.4], [1.6, 5.8, 4], [4.5, 5.2, 3.7], [6.1, 3.3, 3]],
+      "sides": 8,
+      "material": 0,
+      "pivot": [0, -5.5, 18]
+    }
   },
   "frames": {
-    "follow": {},
-    "assist": {"arm": [1, 0, 4], "visor": [1, 0, 0]}
+    "idle0": {},
+    "idle1": {
+      "chest": {"offset": [0, 0, 0.5]},
+      "chest plate": {"offset": [0, 0, 0.5]},
+      "backpack": {"offset": [0, 0, 0.5]},
+      "power cell": {"offset": [0, 0, 0.5]},
+      "neck": {"offset": [0, 0, 0.5]},
+      "helmet": {"offset": [0, 0, 0.5], "rotate": [0, -2, 3]},
+      "visor": {"offset": [0, 0, 0.5], "rotate": [0, -2, 3]},
+      "left arm": {"offset": [0, 0, 0.5]},
+      "left glove": {"offset": [0, 0, 0.5]},
+      "right arm": {"offset": [0, 0, 0.5]},
+      "right glove": {"offset": [0, 0, 0.5]},
+      "hand tool": {"offset": [0, 0, 0.5]}
+    },
+    "idle2": {
+      "chest": {"offset": [0, 0, 0.9]},
+      "chest plate": {"offset": [0, 0, 0.9]},
+      "backpack": {"offset": [0, 0, 0.9]},
+      "power cell": {"offset": [0, 0, 0.9]},
+      "neck": {"offset": [0, 0, 0.9]},
+      "helmet": {"offset": [0, 0, 0.9], "rotate": [0, -3, 0]},
+      "visor": {"offset": [0, 0, 0.9], "rotate": [0, -3, 0]},
+      "left arm": {"offset": [0, 0, 0.9]},
+      "left glove": {"offset": [0, 0, 0.9]},
+      "right arm": {"offset": [0, 0, 0.9]},
+      "right glove": {"offset": [0, 0, 0.9]},
+      "hand tool": {"offset": [0, 0, 0.9]}
+    },
+    "idle3": {
+      "chest": {"offset": [0, 0, 0.45]},
+      "chest plate": {"offset": [0, 0, 0.45]},
+      "backpack": {"offset": [0, 0, 0.45]},
+      "power cell": {"offset": [0, 0, 0.45]},
+      "neck": {"offset": [0, 0, 0.45]},
+      "helmet": {"offset": [0, 0, 0.45], "rotate": [0, -1, -3]},
+      "visor": {"offset": [0, 0, 0.45], "rotate": [0, -1, -3]},
+      "left arm": {"offset": [0, 0, 0.45]},
+      "left glove": {"offset": [0, 0, 0.45]},
+      "right arm": {"offset": [0, 0, 0.45]},
+      "right glove": {"offset": [0, 0, 0.45]},
+      "hand tool": {"offset": [0, 0, 0.45]}
+    },
+    "walk0": {
+      "left leg": {"rotate": [0, 39.0, 0]},
+      "left boot": {"rotate": [0, 39.0, 0]},
+      "right leg": {"rotate": [0, -39.0, 0]},
+      "right boot": {"rotate": [0, -39.0, 0]},
+      "left arm": {"rotate": [0, -21.45, 0]},
+      "left glove": {"rotate": [0, -21.45, 0]},
+      "right arm": {"rotate": [0, 17.16, 0]},
+      "right glove": {"rotate": [0, 17.16, 0]},
+      "hand tool": {"rotate": [0, 17.16, 0]},
+      "helmet": {"rotate": [0, 0, 2.8]},
+      "visor": {"rotate": [0, 0, 2.8]}
+    },
+    "walk1": {
+      "chest": {"offset": [0, 0, 0.64]},
+      "chest plate": {"offset": [0, 0, 0.64]},
+      "backpack": {"offset": [0, 0, 0.64]},
+      "power cell": {"offset": [0, 0, 0.64]},
+      "neck": {"offset": [0, 0, 0.64]},
+      "helmet": {"offset": [0, 0, 0.64], "rotate": [0, 0, 1.98]},
+      "visor": {"offset": [0, 0, 0.64], "rotate": [0, 0, 1.98]},
+      "left arm": {"offset": [0, 0, 0.64], "rotate": [0, -15.17, 0]},
+      "left glove": {"offset": [0, 0, 0.64], "rotate": [0, -15.17, 0]},
+      "right arm": {"offset": [0, 0, 0.64], "rotate": [0, 12.14, 0]},
+      "right glove": {"offset": [0, 0, 0.64], "rotate": [0, 12.14, 0]},
+      "hand tool": {"offset": [0, 0, 0.64], "rotate": [0, 12.14, 0]},
+      "left leg": {"rotate": [0, 27.58, 0], "offset": [0, 0, 1.98]},
+      "left boot": {"rotate": [0, 27.58, 0], "offset": [0, 0, 1.98]},
+      "right leg": {"rotate": [0, -27.58, 0]},
+      "right boot": {"rotate": [0, -27.58, 0]}
+    },
+    "walk2": {
+      "chest": {"offset": [0, 0, 0.9]},
+      "chest plate": {"offset": [0, 0, 0.9]},
+      "backpack": {"offset": [0, 0, 0.9]},
+      "power cell": {"offset": [0, 0, 0.9]},
+      "neck": {"offset": [0, 0, 0.9]},
+      "helmet": {"offset": [0, 0, 0.9]},
+      "visor": {"offset": [0, 0, 0.9]},
+      "left arm": {"offset": [0, 0, 0.9]},
+      "left glove": {"offset": [0, 0, 0.9]},
+      "right arm": {"offset": [0, 0, 0.9]},
+      "right glove": {"offset": [0, 0, 0.9]},
+      "hand tool": {"offset": [0, 0, 0.9]},
+      "left leg": {"offset": [0, 0, 2.8]},
+      "left boot": {"offset": [0, 0, 2.8]}
+    },
+    "walk3": {
+      "chest": {"offset": [0, 0, 0.64]},
+      "chest plate": {"offset": [0, 0, 0.64]},
+      "backpack": {"offset": [0, 0, 0.64]},
+      "power cell": {"offset": [0, 0, 0.64]},
+      "neck": {"offset": [0, 0, 0.64]},
+      "helmet": {"offset": [0, 0, 0.64], "rotate": [0, 0, -1.98]},
+      "visor": {"offset": [0, 0, 0.64], "rotate": [0, 0, -1.98]},
+      "left arm": {"offset": [0, 0, 0.64], "rotate": [0, 15.17, 0]},
+      "left glove": {"offset": [0, 0, 0.64], "rotate": [0, 15.17, 0]},
+      "right arm": {"offset": [0, 0, 0.64], "rotate": [0, -12.14, 0]},
+      "right glove": {"offset": [0, 0, 0.64], "rotate": [0, -12.14, 0]},
+      "hand tool": {"offset": [0, 0, 0.64], "rotate": [0, -12.14, 0]},
+      "left leg": {"rotate": [0, -27.58, 0], "offset": [0, 0, 1.98]},
+      "left boot": {"rotate": [0, -27.58, 0], "offset": [0, 0, 1.98]},
+      "right leg": {"rotate": [0, 27.58, 0]},
+      "right boot": {"rotate": [0, 27.58, 0]}
+    },
+    "walk4": {
+      "left leg": {"rotate": [0, -39.0, 0]},
+      "left boot": {"rotate": [0, -39.0, 0]},
+      "right leg": {"rotate": [0, 39.0, 0]},
+      "right boot": {"rotate": [0, 39.0, 0]},
+      "left arm": {"rotate": [0, 21.45, 0]},
+      "left glove": {"rotate": [0, 21.45, 0]},
+      "right arm": {"rotate": [0, -17.16, 0]},
+      "right glove": {"rotate": [0, -17.16, 0]},
+      "hand tool": {"rotate": [0, -17.16, 0]},
+      "helmet": {"rotate": [0, 0, -2.8]},
+      "visor": {"rotate": [0, 0, -2.8]}
+    },
+    "walk5": {
+      "chest": {"offset": [0, 0, 0.64]},
+      "chest plate": {"offset": [0, 0, 0.64]},
+      "backpack": {"offset": [0, 0, 0.64]},
+      "power cell": {"offset": [0, 0, 0.64]},
+      "neck": {"offset": [0, 0, 0.64]},
+      "helmet": {"offset": [0, 0, 0.64], "rotate": [0, 0, -1.98]},
+      "visor": {"offset": [0, 0, 0.64], "rotate": [0, 0, -1.98]},
+      "left arm": {"offset": [0, 0, 0.64], "rotate": [0, 15.17, 0]},
+      "left glove": {"offset": [0, 0, 0.64], "rotate": [0, 15.17, 0]},
+      "right arm": {"offset": [0, 0, 0.64], "rotate": [0, -12.14, 0]},
+      "right glove": {"offset": [0, 0, 0.64], "rotate": [0, -12.14, 0]},
+      "hand tool": {"offset": [0, 0, 0.64], "rotate": [0, -12.14, 0]},
+      "left leg": {"rotate": [0, -27.58, 0]},
+      "left boot": {"rotate": [0, -27.58, 0]},
+      "right leg": {"rotate": [0, 27.58, 0], "offset": [0, 0, 1.98]},
+      "right boot": {"rotate": [0, 27.58, 0], "offset": [0, 0, 1.98]}
+    },
+    "walk6": {
+      "chest": {"offset": [0, 0, 0.9]},
+      "chest plate": {"offset": [0, 0, 0.9]},
+      "backpack": {"offset": [0, 0, 0.9]},
+      "power cell": {"offset": [0, 0, 0.9]},
+      "neck": {"offset": [0, 0, 0.9]},
+      "helmet": {"offset": [0, 0, 0.9]},
+      "visor": {"offset": [0, 0, 0.9]},
+      "left arm": {"offset": [0, 0, 0.9]},
+      "left glove": {"offset": [0, 0, 0.9]},
+      "right arm": {"offset": [0, 0, 0.9]},
+      "right glove": {"offset": [0, 0, 0.9]},
+      "hand tool": {"offset": [0, 0, 0.9]},
+      "right leg": {"offset": [0, 0, 2.8]},
+      "right boot": {"offset": [0, 0, 2.8]}
+    },
+    "walk7": {
+      "chest": {"offset": [0, 0, 0.64]},
+      "chest plate": {"offset": [0, 0, 0.64]},
+      "backpack": {"offset": [0, 0, 0.64]},
+      "power cell": {"offset": [0, 0, 0.64]},
+      "neck": {"offset": [0, 0, 0.64]},
+      "helmet": {"offset": [0, 0, 0.64], "rotate": [0, 0, 1.98]},
+      "visor": {"offset": [0, 0, 0.64], "rotate": [0, 0, 1.98]},
+      "left arm": {"offset": [0, 0, 0.64], "rotate": [0, -15.17, 0]},
+      "left glove": {"offset": [0, 0, 0.64], "rotate": [0, -15.17, 0]},
+      "right arm": {"offset": [0, 0, 0.64], "rotate": [0, 12.14, 0]},
+      "right glove": {"offset": [0, 0, 0.64], "rotate": [0, 12.14, 0]},
+      "hand tool": {"offset": [0, 0, 0.64], "rotate": [0, 12.14, 0]},
+      "left leg": {"rotate": [0, 27.58, 0]},
+      "left boot": {"rotate": [0, 27.58, 0]},
+      "right leg": {"rotate": [0, -27.58, 0], "offset": [0, 0, 1.98]},
+      "right boot": {"rotate": [0, -27.58, 0], "offset": [0, 0, 1.98]}
+    },
+    "assist0": {
+      "right arm": {"rotate": [0, -62, 0]},
+      "right glove": {"rotate": [0, -62, 0]},
+      "hand tool": {"rotate": [0, -62, 0]},
+      "left arm": {"rotate": [0, -18, 0]},
+      "left glove": {"rotate": [0, -18, 0]},
+      "helmet": {"rotate": [0, -3, -4]},
+      "visor": {"rotate": [0, -3, -4]}
+    },
+    "assist1": {
+      "right arm": {"rotate": [-3, -70, 0]},
+      "right glove": {"rotate": [-3, -70, 0]},
+      "hand tool": {"rotate": [-3, -70, 0]},
+      "left arm": {"rotate": [0, -20, 0]},
+      "left glove": {"rotate": [0, -20, 0]},
+      "helmet": {"rotate": [0, -5, -2]},
+      "visor": {"rotate": [0, -5, -2]}
+    },
+    "assist2": {
+      "right arm": {"rotate": [-1, -66, 0]},
+      "right glove": {"rotate": [-1, -66, 0]},
+      "hand tool": {"rotate": [-1, -66, 0]},
+      "left arm": {"rotate": [0, -22, 0]},
+      "left glove": {"rotate": [0, -22, 0]},
+      "helmet": {"rotate": [0, -4, 0]},
+      "visor": {"rotate": [0, -4, 0]}
+    },
+    "assist3": {
+      "right arm": {"rotate": [1, -63, 0]},
+      "right glove": {"rotate": [1, -63, 0]},
+      "hand tool": {"rotate": [1, -63, 0]},
+      "left arm": {"rotate": [0, -24, 0]},
+      "left glove": {"rotate": [0, -24, 0]},
+      "helmet": {"rotate": [0, -3, 2]},
+      "visor": {"rotate": [0, -3, 2]}
+    }
+  },
+  "animations": {
+    "idle": {"frames": ["idle0", "idle1", "idle2", "idle3"], "fps": 4},
+    "walk": {"frames": ["walk0", "walk1", "walk2", "walk3", "walk4", "walk5", "walk6", "walk7"], "fps": 16},
+    "assist": {"frames": ["assist0", "assist1", "assist2", "assist3"], "fps": 8}
   }
 }

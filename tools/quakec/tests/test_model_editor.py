@@ -66,3 +66,29 @@ class ModelEditorTests(unittest.TestCase):
             path.write_bytes(struct.pack('<4sII', b'PACK', 12+len(palette), 64) + palette
                              + struct.pack('<56sII', b'gfx/palette.lmp', 12, len(palette)))
             self.assertEqual(preview_palette(path)[14], tuple(palette[42:45]))
+
+    def test_buddy_exports_joint_motion_in_stock_frame_groups(self):
+        root = Path(__file__).resolve().parents[3]
+        doc = RecipeDocument(root / 'examples/models/upbuddy.json')
+        self.assertEqual(tuple(doc.animations), ('idle', 'walk', 'assist'))
+        start, end = doc.parts['left boot']
+        front = [p[0][0] for p in doc.frames['walk0'][start:end]]
+        back = [p[0][0] for p in doc.frames['walk4'][start:end]]
+        self.assertGreater(abs(max(front)-max(back)), 15)
+
+        header = struct.unpack_from('<4si3f3ff3f8if', doc.binary)
+        width, height, vertices, triangles, frames = header[13:18]
+        self.assertEqual(frames, 3)
+        offset = 88 + width*height + 12*vertices + 16*triangles
+        for names, fps in doc.animations.values():
+            kind, count = struct.unpack_from('<2i', doc.binary, offset)
+            self.assertEqual((kind, count), (1, len(names)))
+            ends = struct.unpack_from(f'<{count}f', doc.binary, offset+16)
+            for i, end_time in enumerate(ends, 1):
+                self.assertAlmostEqual(end_time, i/fps)
+            body = offset+16+4*count
+            for i, name in enumerate(names):
+                begin = body+i*(24+4*vertices)+8
+                self.assertEqual(doc.binary[begin:begin+16].rstrip(b'\0').decode(), name)
+            offset = body+count*(24+4*vertices)
+        self.assertEqual(offset, len(doc.binary))

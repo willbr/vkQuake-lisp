@@ -4,6 +4,7 @@ import argparse
 from copy import deepcopy
 from importlib import import_module
 import json
+import math
 from pathlib import Path
 import re
 import struct
@@ -12,6 +13,48 @@ import tempfile
 from map_editor import point
 
 bike = import_module('build-bike')
+
+
+def ring_mesh(model, part):
+    x, y, z = point(part.get('origin', (0, 0, 0)))
+    sides = part.get('sides', 8)
+    if type(sides) is not int or not 3 <= sides <= 32:
+        raise ValueError('a ring needs 3 to 32 sides')
+    angle = math.radians(float(part.get('angle', 0)))
+    circle = [(math.cos(angle + i*math.tau/sides), math.sin(angle + i*math.tau/sides))
+              for i in range(sides)]
+    sections = list(map(point, part['rings']))
+    if (len(sections) < 2 or any(rx <= 0 or ry <= 0 for _, rx, ry in sections)
+            or any(a[0] >= b[0] for a, b in zip(sections, sections[1:]))):
+        raise ValueError('rings need positive radii at increasing heights')
+    rings = [[(x + rx*u, y + ry*v, z + height) for u, v in circle] for height, rx, ry in sections]
+    material = part['material']
+    model.face(rings[0][::-1], material)
+    for lower, upper in zip(rings, rings[1:]):
+        for i in range(sides):
+            j = (i+1) % sides
+            model.face([lower[i], lower[j], upper[j], upper[i]], material)
+    model.face(rings[-1], material)
+
+
+def pose_values(value):
+    if isinstance(value, dict):
+        return point(value.get('offset', (0, 0, 0))), point(value.get('rotate', (0, 0, 0)))
+    return point(value), (0, 0, 0)
+
+
+def rotation(angles):
+    x, y, z = map(math.radians, angles)
+    sx, sy, sz = map(math.sin, (x, y, z))
+    cx, cy, cz = map(math.cos, (x, y, z))
+
+    def transform(vector):
+        a, b, c = vector
+        b, c = cx*b - sx*c, sx*b + cx*c
+        a, c = cy*a + sy*c, -sy*a + cy*c
+        return cz*a - sz*b, sz*a + cz*b, c
+
+    return transform
 
 
 def recipe_geometry(recipe):
@@ -28,6 +71,8 @@ def recipe_geometry(recipe):
             if any(a >= b for a, b in zip(low, high)):
                 raise ValueError(f'{name}: box minimum must precede maximum')
             model.box(low, high, part['material'])
+        elif 'rings' in part:
+            ring_mesh(model, part)
         else:
             for face in part['faces']:
                 points = [point(p) for p in face['points']]
@@ -43,12 +88,42 @@ def recipe_geometry(recipe):
         vertices = model.vertices.copy()
         for part, offset in changes.items():
             first, last = parts[part]
-            offset = point(offset)
+            offset, angles = pose_values(offset)
+            rotate = rotation(angles) if any(angles) else None
+            pivot = model_part_origin(recipe['parts'][part], model.vertices[first:last]) if rotate else None
+            normals = {}
             for i in range(first, last):
                 position, normal, material = vertices[i]
+                if rotate is not None:
+                    relative = rotate(tuple(a-b for a, b in zip(position, pivot)))
+                    position = tuple(a+b for a, b in zip(relative, pivot))
+                    if normal not in normals:
+                        normals[normal] = model.nearest_normal(rotate(model.normals[normal]))
+                    normal = normals[normal]
                 vertices[i] = (tuple(a+b for a,b in zip(position, offset)), normal, material)
         poses.append((name, vertices))
     return model, poses, parts
+
+
+def model_part_origin(part, vertices):
+    if 'pivot' in part:
+        return point(part['pivot'])
+    if 'rings' in part:
+        return point(part.get('origin', (0, 0, 0)))
+    return tuple((min(axis)+max(axis))/2 for axis in zip(*(p for p, _, _ in vertices)))
+
+
+def recipe_animations(recipe, names):
+    animations = {}
+    for name, clip in recipe.get('animations', {}).items():
+        frames = clip['frames']
+        fps = clip['fps']
+        if not isinstance(frames, list) or not frames or any(frame not in names for frame in frames):
+            raise ValueError(f'{name}: animation needs existing frame names')
+        if type(fps) not in (int, float) or not .1 <= fps <= 120:
+            raise ValueError(f'{name}: animation FPS must be between 0.1 and 120')
+        animations[name] = frames, fps
+    return animations
 
 
 def model_from_recipe(recipe):
@@ -59,7 +134,8 @@ def model_from_recipe(recipe):
 def build(recipe, output):
     model, poses = model_from_recipe(recipe)
     output.parent.mkdir(parents=True, exist_ok=True)
-    model.write_poses(output, poses, recipe['palette'])
+    animations = recipe_animations(recipe, dict(poses))
+    output.write_bytes(model.encode_poses(poses, recipe['palette'], animations))
 
 
 def write_file(path, data, expected=None):
@@ -118,29 +194,40 @@ class RecipeDocument:
 
     def apply(self, recipe):
         model, frames, parts = recipe_geometry(recipe)
+        animations = recipe_animations(recipe, dict(frames))
         try:
-            data = model.encode_poses(frames, recipe['palette'])
+            data = model.encode_poses(frames, recipe['palette'], animations)
         except (OverflowError, struct.error) as error:
             raise ValueError('a model value is outside the stock MDL format') from error
         self.recipe, self.model, self.parts = recipe, model, parts
         self.frames, self.binary = dict(frames), data
+        self.animations = animations
 
-    def coordinates(self, part_name, frame, size=False):
+    def coordinates(self, part_name, frame, size=False, rotation=False):
         part = self.recipe['parts'][part_name]
         if frame is not None:
-            return point(self.recipe.get('frames', {'idle': {}})[frame].get(part_name, (0, 0, 0)))
+            move = self.recipe.get('frames', {'idle': {}})[frame].get(part_name, (0, 0, 0))
+            offset, angles = pose_values(move)
+            return angles if rotation else offset
+        if 'rings' in part:
+            return point(part.get('origin', (0, 0, 0)))
         if 'low' in part:
             low, high = point(part['low']), point(part['high'])
             return tuple(b-a for a, b in zip(low, high)) if size else low
         return tuple(map(min, zip(*(point(vertex) for face in part['faces'] for vertex in face['points']))))
 
-    def set_coordinates(self, part_name, frame, values, size=False):
+    def set_coordinates(self, part_name, frame, values, size=False, rotation=False):
         values = point(values)
         candidate = deepcopy(self.recipe)
         part = candidate['parts'][part_name]
         if frame is not None:
             moves = candidate.setdefault('frames', {'idle': {}})[frame]
-            if any(values):
+            if rotation:
+                offset, _ = pose_values(moves.get(part_name, (0, 0, 0)))
+                moves[part_name] = {'offset': list(offset), 'rotate': list(values)}
+            elif isinstance(moves.get(part_name), dict):
+                moves[part_name]['offset'] = list(values)
+            elif any(values):
                 moves[part_name] = list(values)
             else:
                 moves.pop(part_name, None)
@@ -148,9 +235,13 @@ class RecipeDocument:
             part['high'] = [a + b for a, b in zip(point(part['low']), values)]
         else:
             offset = tuple(a-b for a, b in zip(values, self.coordinates(part_name, None)))
+            if 'pivot' in part:
+                part['pivot'] = [a+b for a, b in zip(point(part['pivot']), offset)]
             if 'low' in part:
                 for bound in ('low', 'high'):
                     part[bound] = [a+b for a, b in zip(point(part[bound]), offset)]
+            elif 'rings' in part:
+                part['origin'] = list(values)
             else:
                 for face in part['faces']:
                     face['points'] = [[a+b for a, b in zip(point(p), offset)] for p in face['points']]

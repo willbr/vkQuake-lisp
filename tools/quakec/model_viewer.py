@@ -81,6 +81,10 @@ class ModelWindow(OrbitWindow):
         self.palette = palette
         self.part = next(iter(document.parts))
         self.frame = None
+        self.clip = next(iter(document.animations), None)
+        self.playing = False
+        self.playhead = 0
+        self.playback_status = None
         self.size_mode = False
         self.first_part = 0
         self.rows = 1
@@ -94,6 +98,11 @@ class ModelWindow(OrbitWindow):
         self.state = Camera((0, 0, 0), -35, 20, 64)
         self.rebuild()
         self.fit()
+        pyglet.clock.schedule_interval(self.advance_playback, 1/60)
+
+    def close(self):
+        pyglet.clock.unschedule(self.advance_playback)
+        super().close()
 
     def rebuild(self):
         self.switch_to()
@@ -104,7 +113,8 @@ class ModelWindow(OrbitWindow):
                        self.mesh(self.scene.edges, gl.GL_LINES),
                        self.mesh(self.scene.grid, gl.GL_LINES))
         self.close_pending = False
-        self.layout_size = None
+        if not self.playing:
+            self.layout_size = None
 
     def fit(self):
         self.state.target = midpoint(self.scene.low, self.scene.high)
@@ -165,9 +175,19 @@ class ModelWindow(OrbitWindow):
         label('Pose', left, height-84, 12, weight='bold')
         y = height-129
         button('‹', left, y, 30, 28, partial(self.cycle_pose, -1), size=14)
-        label(self.frame or 'Base mesh', left+44, y+14, 11)
+        self.pose_label = pyglet.text.Label(self.frame or 'Base mesh', x=left+44, y=y+14,
+                                             anchor_y='center', font_size=11, color=INK,
+                                             batch=self.hud, group=text)
+        self.items.append(self.pose_label)
         button('›', right-119, y, 30, 28, partial(self.cycle_pose, 1), size=14)
         button('+ Pose', right-79, y, 79, 28, self.add_pose)
+        if self.document.animations or len(self.document.frames) > 1:
+            y -= 39
+            button('‹', left, y, 30, 28, partial(self.cycle_clip, -1), size=14)
+            label(self.clip.title() if self.clip else 'All poses', left+44, y+14, 11)
+            button('›', right-119, y, 30, 28, partial(self.cycle_clip, 1), size=14)
+            button('Pause' if self.playing else 'Play', right-79, y, 79, 28,
+                   self.toggle_playback, color=SELECTED if self.playing else PANEL_BUTTON)
 
         label('Parts', left, y-26, 12, weight='bold')
         button('+ Box', right-79, y-39, 79, 25, self.add_box)
@@ -185,11 +205,17 @@ class ModelWindow(OrbitWindow):
                   self.part_list_top-27*rows-12, 9, MUTED)
 
         start = self.part_list_top-27*rows-40
-        caption = 'Pose offset' if self.frame else 'Box size' if self.size_mode else 'Position'
+        if self.frame:
+            caption = 'Rotation (°)' if self.size_mode else 'Pose offset'
+        else:
+            caption = 'Box size' if self.size_mode else 'Position'
         label(caption, left, start, 12, weight='bold')
-        if self.frame is None and 'low' in self.document.recipe['parts'][self.part]:
-            button('Position' if self.size_mode else 'Size', right-79, start-13, 79, 25, self.toggle_size)
-        coordinates = self.document.coordinates(self.part, self.frame, self.size_mode)
+        if self.frame or 'low' in self.document.recipe['parts'][self.part]:
+            toggle = ('Offset' if self.size_mode else 'Rotate') if self.frame else (
+                'Position' if self.size_mode else 'Size')
+            button(toggle, right-79, start-13, 79, 25, self.toggle_size)
+        coordinates = self.selected_coordinates()
+        self.coordinate_labels = []
         for i, (axis, value) in enumerate(zip('XYZ', coordinates)):
             y = start-43-33*i
             label(axis, left+1, y+13, 10, MUTED)
@@ -198,6 +224,7 @@ class ModelWindow(OrbitWindow):
             display = self.text+'│' if active else f'{value:.5g}'
             button(display[:22], left+66, y, right-left-103, 26, partial(self.edit_value, i),
                    color=SELECTED if active else PANEL_BUTTON)
+            self.coordinate_labels.append(self.items[-1])
             button('+', right-32, y, 32, 26, partial(self.nudge, i, 1))
 
         y = start-171
@@ -217,6 +244,45 @@ class ModelWindow(OrbitWindow):
         button('Save recipe', right-258, 7, 125, 28, self.save)
         button('Export MDL', right-125, 7, 125, 28, self.export, color=ACCENT, ink=(16, 29, 34, 255))
 
+    def playback_sequence(self):
+        return self.document.animations.get(self.clip, (tuple(self.document.frames), 8))
+
+    def cycle_clip(self, direction):
+        clips = tuple(self.document.animations)
+        if not clips:
+            return
+        self.clip = clips[(clips.index(self.clip) + direction) % len(clips)]
+        if self.playing:
+            self.set_playing(True)
+        self.layout_size = None
+
+    def set_playing(self, enabled):
+        self.playing = enabled
+        if enabled:
+            self.playhead = 0
+            self.frame = self.playback_sequence()[0][0]
+            self.size_mode, self.editing = False, None
+            self.rebuild()
+        self.layout_size = None
+
+    def toggle_playback(self):
+        self.set_playing(not self.playing)
+
+    def advance_playback(self, elapsed):
+        if not self.playing:
+            return
+        frames, fps = self.playback_sequence()
+        self.playhead += elapsed
+        frame = frames[int(self.playhead*fps) % len(frames)]
+        if frame == self.frame:
+            return
+        self.frame = frame
+        self.rebuild()
+        if self.layout_size is not None:
+            self.pose_label.text = frame
+            for label, value in zip(self.coordinate_labels, self.selected_coordinates()):
+                label.text = f'{value:.5g}'
+
     def message(self, status):
         self.status = status
         self.layout_size = None
@@ -224,29 +290,34 @@ class ModelWindow(OrbitWindow):
     def select(self, part):
         self.part, self.size_mode, self.editing = part, False, None
         self.rebuild()
+        self.layout_size = None
 
     def keep_part_visible(self):
         index = list(self.document.parts).index(self.part)
         self.first_part = clamp(self.first_part, max(0, index-self.rows+1), index)
 
     def cycle_pose(self, direction):
+        self.set_playing(False)
         options = (None, *self.document.frames)
         self.frame = options[(options.index(self.frame)+direction) % len(options)]
         self.size_mode, self.editing = False, None
         self.rebuild()
 
     def add_pose(self):
+        self.set_playing(False)
         self.frame = self.document.add_frame(self.frame)
         self.size_mode, self.editing = False, None
         self.rebuild()
 
     def add_box(self):
+        self.set_playing(False)
         self.frame = None
         self.select(self.document.add_box())
         self.keep_part_visible()
         self.fit()
 
     def toggle_size(self):
+        self.set_playing(False)
         self.size_mode = not self.size_mode
         self.editing = None
         self.layout_size = None
@@ -254,20 +325,28 @@ class ModelWindow(OrbitWindow):
     def apply_material(self, slot):
         self.document.set_material(self.part, slot)
         self.rebuild()
+        self.layout_size = None
+
+    def selected_coordinates(self):
+        return self.document.coordinates(self.part, self.frame, self.size_mode,
+                                         rotation=self.frame is not None and self.size_mode)
 
     def change_value(self, index, value):
-        values = list(self.document.coordinates(self.part, self.frame, self.size_mode))
+        self.set_playing(False)
+        values = list(self.selected_coordinates())
         values[index] = value
-        self.document.set_coordinates(self.part, self.frame, values, self.size_mode)
+        self.document.set_coordinates(self.part, self.frame, values, self.size_mode,
+                                      rotation=self.frame is not None and self.size_mode)
         self.editing = None
         self.close_pending = False
         self.rebuild()
 
     def nudge(self, index, direction):
-        value = self.document.coordinates(self.part, self.frame, self.size_mode)[index]
+        value = self.selected_coordinates()[index]
         self.change_value(index, value+direction)
 
     def edit_value(self, index):
+        self.set_playing(False)
         self.editing = index
         self.text = ''
         self.message('Type a coordinate and press Return · Esc cancels')
@@ -336,6 +415,8 @@ class ModelWindow(OrbitWindow):
             return
         if symbol == key.F:
             self.fit()
+        elif symbol == key.SPACE:
+            self.toggle_playback()
         elif symbol == key.S and modifiers & (key.MOD_CTRL | key.MOD_COMMAND):
             try:
                 self.save()
@@ -354,25 +435,40 @@ class ModelWindow(OrbitWindow):
     def remote_state(self):
         return {**asdict(self.state), 'part': self.part, 'pose': self.frame,
                 'parts': list(self.document.parts), 'poses': list(self.document.frames),
-                'position': self.document.coordinates(self.part, self.frame), 'dirty': self.document.dirty}
+                'position': self.document.coordinates(self.part, self.frame),
+                'rotate': self.document.coordinates(self.part, self.frame, rotation=True)
+                if self.frame is not None else None,
+                'clip': self.clip, 'clips': list(self.document.animations), 'playing': self.playing,
+                'dirty': self.document.dirty}
 
     def update_remote(self, patch):
         if not isinstance(patch, dict):
             raise ValueError('expected a JSON object with view fields')
-        if patch.keys() - {'target', 'yaw', 'pitch', 'span', 'pose', 'part', 'position'}:
+        if patch.keys() - {'target', 'yaw', 'pitch', 'span', 'pose', 'part', 'position', 'clip', 'playing'}:
             raise ValueError('unknown model view field')
         part = patch.get('part', self.part)
         frame = patch.get('pose', self.frame)
         if part not in self.document.parts or (frame is not None and frame not in self.document.frames):
             raise ValueError('unknown part or pose')
+        clip = patch.get('clip', self.clip)
+        if (clip is not None and clip not in self.document.animations) or not isinstance(
+            patch.get('playing', self.playing), bool
+        ):
+            raise ValueError('expected an existing clip and a boolean playing value')
         state = update_camera(self.state, {k: v for k, v in patch.items() if k in asdict(self.state)})
         if 'position' in patch:
             self.document.set_coordinates(part, frame, patch['position'])
         if part != self.part or frame != self.frame or 'position' in patch:
+            if 'pose' in patch or 'position' in patch:
+                self.set_playing(False)
             self.part, self.frame = part, frame
             self.size_mode, self.editing = False, None
             self.rebuild()
             self.keep_part_visible()
+            self.layout_size = None
+        if 'playing' in patch or clip != self.clip:
+            self.clip = clip
+            self.set_playing(patch.get('playing', self.playing))
         self.state = state
 
 

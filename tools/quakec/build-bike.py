@@ -104,7 +104,7 @@ class Model:
     def write_poses(self, output, named_poses, palette):
         output.write_bytes(self.encode_poses(named_poses, palette))
 
-    def encode_poses(self, named_poses, palette):
+    def encode_poses(self, named_poses, palette, animations=None):
         if not named_poses or not self.vertices or not 1 <= len(palette) <= 8:
             raise ValueError('stock alias model requires geometry, poses, and up to eight palette colors')
         if len(self.vertices) > 2000 or len(self.triangles) > 2048:
@@ -120,26 +120,41 @@ class Model:
         size = tuple(max(point[i] - origin[i] for pose in poses for point, _, _ in pose) for i in range(3))
         scales = tuple(max(.25, axis / 255) for axis in size)
         radius = max(math.sqrt(sum(coord * coord for coord in point)) for pose in poses for point, _, _ in pose)
+        clips = list((animations or {}).values())
+        grouped = {name for sequence, _ in clips for name in sequence}
+        singles = [name for name, _ in named_poses if name not in grouped]
         data = bytearray(struct.pack('<4si3f3ff3f8if', b'IDPO', 6, *scales, *origin,
                                      radius, 0., 0., 22., 1, 32, 32, len(self.vertices),
-                                     len(self.triangles), len(poses), 0, 0, 1.))
+                                     len(self.triangles), len(clips)+len(singles), 0, 0, 1.))
         data += struct.pack('<i', 0)
         data += bytes(palette[min(x // 4, len(palette) - 1)] for _ in range(32) for x in range(32))
         for _, _, material in self.vertices:
             data += struct.pack('<3i', 0, 2 + 4 * material, 4)
         for triangle in self.triangles:
             data += struct.pack('<4i', *triangle)
+        frames = {}
         for name, pose in named_poses:
-            name = name.encode('ascii')
-            if not 1 <= len(name) <= 15 or b'\0' in name:
+            encoded = name.encode('ascii')
+            if not 1 <= len(encoded) <= 15 or b'\0' in encoded:
                 raise ValueError('frame names must contain 1–15 ASCII bytes')
             points = [tuple(round((point[i] - origin[i]) / scales[i]) for i in range(3)) + (normal,)
                       for point, normal, _ in pose]
             low = tuple(min(point[i] for point in points) for i in range(3))
             high = tuple(max(point[i] for point in points) for i in range(3))
-            data += struct.pack('<i8B16s', 0, *low, 0, *high, 0, name)
-            for point in points:
-                data += struct.pack('<4B', *point)
+            frame = struct.pack('<8B16s', *low, 0, *high, 0, encoded) + bytes(
+                channel for point in points for channel in point)
+            frames[name] = low, high, frame
+        for sequence, fps in clips:
+            members = [frames[name] for name in sequence]
+            low = tuple(map(min, zip(*(member[0] for member in members))))
+            high = tuple(map(max, zip(*(member[1] for member in members))))
+            data += struct.pack('<2i8B', 1, len(members), *low, 0, *high, 0)
+            # Quake stores cumulative frame end times.
+            data += struct.pack(f'<{len(members)}f', *(i / fps for i in range(1, len(members)+1)))
+            for _, _, frame in members:
+                data += frame
+        for name in singles:
+            data += struct.pack('<i', 0) + frames[name][2]
         return data
 
 
