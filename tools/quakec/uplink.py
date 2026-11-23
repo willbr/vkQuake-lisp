@@ -1,5 +1,6 @@
 """Drive the uplink blockout with the stock DOS client and inspect its saves."""
 import json
+import math
 from pathlib import Path
 import re
 import shutil
@@ -15,7 +16,7 @@ from map_editor import MapDocument, coordinates
 MAP_SOURCE = Path(__file__).resolve().parents[2] / 'examples/uplink.map'
 TOUR_STOPS = (
     ((-3650, -2780, -2560, 90), (-3750, -2780, -2560, 90)),
-    ((-2693, -3550, -3840, 0), (-3370, -3770, -3840, 0)),
+    ((-2693, -3550, -3840, 0), (-3430, -3608, -3840, 0)),
     ((3220, -3290, 1280, 0), (3268, -3410, 1280, 0)),
     ((3840, -2960, 1280, 0), (3700, -3100, 1280, 0)),
     ((3250, 3850, 2560, 180), (-2150, 3590, 2560, 180)),
@@ -171,7 +172,19 @@ def verify(dosbox, output, env, base, mod):
     require('uplink: buddy arrived by service route' in pump and
             number(named(client.save('holding'), 'uplink_buddy', 'classname'), 'buddy-state') == 3,
             'buddy did not take the sump service route')
-    client.place('holding', 'atpump', -2693, -3550, -3815, 0)
+    # A buddy already on the sump deck must reach the valve on foot.
+    approach = '-3284 -3546 -3840'
+    edit(client.save('athold'), client.save('walkhold'), [
+        ('classname', 'uplink_buddy', {'origin': approach, 'oldorigin': approach}),
+    ])
+    client.run('pump-approach', 'walkhold', ['impulse 3', *wait(50), 'save atstat'])
+    buddy = named(client.save('atstat'), 'uplink_buddy', 'classname')
+    valve = named(client.save('atstat'), 'pump-hold')
+    buddy_xy = tuple(map(float, buddy['origin'].split()[:2]))
+    valve_xy = tuple(map(float, valve['origin'].split()[:2]))
+    require(number(buddy, 'buddy-state') == 3 and math.dist(buddy_xy, valve_xy) < 88,
+        'buddy could not walk to the valve from the sump approach')
+    client.place('atstat', 'atpump', -2693, -3550, -3815, 0)
     pump = client.run('pump-breaker', 'atpump', ['impulse 3', *wait(8), 'save pumped'])
     require('uplink: pumps online' in pump and
             number(named(client.save('pumped'), 'mission-journal'), 'uplink-saved-flags') == 3,
@@ -189,7 +202,11 @@ def verify(dosbox, output, env, base, mod):
             'cargo lift did not reach switchgear')
     client.place('switch', 'atpulse', -3200, -3750, 1305, 0)
     client.run('pulse-pickup', 'atpulse', ['impulse 21', 'wait', 'impulse 2', *wait(4), 'save armed'])
-    client.place('armed', 'atguard', 3220, -3290, 1305, 0)
+    client.place('armed', 'atlong', 2600, -3290, 1305, 0)
+    approach = client.run('switchgear-approach', 'atlong', [*wait(35), 'save approach'])
+    require('qslisp: guard alerted' not in approach and number(player(client.save('approach')), 'health') == 100,
+            'the switchgear guard engaged the player from beyond its authored range')
+    client.place('approach', 'atguard', 3220, -3290, 1305, 0)
     fight = client.run('switch-room', 'atguard', ['+attack', 'wait', '-attack', *wait(120), 'save cleared'])
     require('uplink: pulse resolved' in fight and 'uplink: buddy fired' in fight
             and not named(client.save('cleared'), 'switch-guard'),
@@ -268,7 +285,7 @@ def coop_maps(output):
     stock_map = MAP_SOURCE.read_text(encoding='ascii')
     layouts = {
         'updock': ((-3316, -2258, 0, 270), (-3136, -2258, 0, 270)),
-        'uppump': ((-2693, -3550, -3840, 0), (-3370, -3770, -3840, 0)),
+        'uppump': ((-2693, -3550, -3840, 0), (-3430, -3608, -3840, 0)),
         'uprope': ((-410, 3127, 2560, 181), (-342, 3154, 2560, 185)),
         'uptour': ((-3316, -2258, 0, 270), (-3136, -2258, 0, 270)),
     }

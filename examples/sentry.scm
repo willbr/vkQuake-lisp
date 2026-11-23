@@ -3,6 +3,7 @@
   (patrol-route-0 patrol-route-1 patrol-route-2 patrol-route-3))
 (define-field patrol-count)
 (define-field sentry-state)
+(define-field sentry-range)
 (define-field attack-time)
 (define-field respawn-ready)
 
@@ -95,16 +96,18 @@
     (+ (* x x) (* y y))))
 
 (define (sentry-visible? actor player)
-  (and (not (quake:world? player))
-       (> (quake:field player health) 0)
-       (quake:entity=? player
-         (quake:traceline (quake:vector (quake:field actor origin_x)
-                                       (quake:field actor origin_y)
-                                       (+ (quake:field actor origin_z) 32))
-                          (quake:vector (quake:field player origin_x)
-                                       (quake:field player origin_y)
-                                       (+ (quake:field player origin_z) (quake:field player view_ofs_z)))
-                          0 actor))))
+  (let ((range (quake:field actor sentry-range)))
+    (and (not (quake:world? player))
+         (> (quake:field player health) 0)
+         (or (<= range 0) (<= (sentry-distance-squared actor player) (* range range)))
+         (quake:entity=? player
+           (quake:traceline (quake:vector (quake:field actor origin_x)
+                                         (quake:field actor origin_y)
+                                         (+ (quake:field actor origin_z) 32))
+                            (quake:vector (quake:field player origin_x)
+                                         (quake:field player origin_y)
+                                         (+ (quake:field player origin_z) (quake:field player view_ofs_z)))
+                            0 actor)))))
 
 (define (visible-player actor cursor)
   (let ((player (quake:find cursor classname "qslisp_player")))

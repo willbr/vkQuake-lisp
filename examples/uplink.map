@@ -1964,7 +1964,7 @@
 {
 "classname" "uplink_waypoint"
 "targetname" "pump-hold"
-"origin" "-3370 -3730 -3816"
+"origin" "-3430 -3608 -3816"
 }
 {
 "classname" "uplink_waypoint"
@@ -2222,6 +2222,7 @@
 "classname" "qslisp_guard"
 "angle" "180"
 "targetname" "switch-guard"
+"sentry-range" "640"
 "origin" "3700 -3290 1304"
 }
 {

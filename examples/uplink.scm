@@ -124,7 +124,14 @@
     ((not (uplink-close? actor goal 6000 58)) (quake:set-field! actor buddy-trace-reason 3))
     ((<= (sentry-distance-squared actor goal) (* radius radius))
      (quake:set-field! actor buddy-trace-reason 4))
-    (else (quake:set-field! actor buddy-trace-reason (if (> (sentry-step actor goal 14) 0) 1 2)))))
+    (else
+     (let* ((direct (> (sentry-step actor goal 14) 0))
+            (yaw (quake:field actor angles_y))
+            (moving (or direct
+                        (and (= (quake:field actor buddy-state) buddy-assist)
+                             (or (> (quake:walkmove (+ yaw 90) 14) 0)
+                                 (> (quake:walkmove (- yaw 90) 14) 0))))))
+       (quake:set-field! actor buddy-trace-reason (if moving 1 2))))))
 
 (define (uplink-buddy-arrive actor player waypoint)
   ; Regroup at a mapper-checked service landing after a short radio delay.

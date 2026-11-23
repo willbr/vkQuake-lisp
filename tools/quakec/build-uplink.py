@@ -156,7 +156,8 @@ def course():
     yield marker('uplink_waypoint', -3460, -2490, SERVICE, targetname='dock-rendezvous')
     yield marker('uplink_waypoint', -3376, -2000, FREIGHT, targetname='freight-rendezvous')
     yield marker('uplink_waypoint', -3072, -3640, SUMP, targetname='sump-rendezvous')
-    yield marker('uplink_waypoint', -3370, -3730, SUMP, targetname='pump-hold')
+    # Keep the buddy on the approach side of the solid valve console.
+    yield marker('uplink_waypoint', -3430, -3608, SUMP, targetname='pump-hold')
     yield marker('uplink_waypoint', -3290, -3730, SWITCHGEAR, targetname='switch-rendezvous')
     yield marker('uplink_waypoint', 3250, -3100, SWITCHGEAR, targetname='switch-cover')
     yield marker('uplink_waypoint', 3590, -2230, GANTRIES, targetname='gantry-rendezvous')
@@ -186,7 +187,8 @@ def course():
     yield station('pump-breaker', -2608, -3550, SUMP, target='cargo-lift')
     yield station('switch-breaker', 3940, -2960, SWITCHGEAR, target='gantry-lift')
     yield entity('uplink_pulse_relay', (3300, -3144, SWITCHGEAR+54), target='switch-breaker')
-    yield marker('qslisp_guard', 3700, -3290, SWITCHGEAR, angle=180, targetname='switch-guard')
+    yield marker('qslisp_guard', 3700, -3290, SWITCHGEAR, angle=180, targetname='switch-guard',
+                 **{'sentry-range': 640})
     yield entity('qslisp_bike_bank', brushes=bank((-3504, -2144, FREIGHT), (80, 470), (90, 180), 60, 6, TRIM))
     yield entity('qslisp_bike_bank', brushes=bank((3424, 3424, GANTRIES), (92, 576), (0, 90), 66, 6, TRIM))
     for name, x in (('east-relay', 3072), ('west-relay', -2320)):
