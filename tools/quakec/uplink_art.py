@@ -1,16 +1,5 @@
-"""Original indexed materials and lettering for the Relay Annex."""
+"""Original indexed fixtures and lettering for the Relay Annex."""
 from functools import partial
-
-# Each metal ramp runs from recess to highlight in the stock Quake palette.
-DECKS = {
-    'yard': ((4, 7, 8, 10), (188, 185, 181, 178), (.47, .55, .48)),
-    'freight': ((38, 40, 42, 46), (41, 43, 45, 46), (.40, .47, .67)),
-    'flood': ((190, 187, 184, 181), (188, 185, 181, 177), (.35, .58, .51)),
-    'sump': ((115, 117, 119, 122), (118, 121, 123, 126), (.65, .44, .29)),
-    'switch': ((5, 7, 8, 10), (217, 216, 214, 212), (.40, .53, .70)),
-    'gantry': ((163, 162, 161, 160), (186, 184, 180, 177), (.60, .56, .42)),
-    'roof': ((6, 8, 10, 12), (39, 42, 44, 46), (.56, .65, .77)),
-}
 
 SIGNS = {
     'yard_bikes': ('BIKES', 237),
@@ -48,39 +37,6 @@ LETTERS = {
 }
 
 
-def deck_plate(metal, x, y):
-    edge = min(x % 32, y % 32, 31 - x % 32, 31 - y % 32)
-    if edge == 0:
-        return metal[0]
-    if edge == 1:
-        return metal[2]
-    if x % 8 in (2, 3) and (y + x // 8 * 4) % 8 in (1, 2, 3):
-        return metal[2]
-    return metal[1 + ((x * 13 + y * 17) % 37 == 0)]
-
-
-def bulkhead(metal, x, y):
-    edge = min(x, 63 - x)
-    if edge < 2 or y in (0, 63):
-        return metal[0]
-    if edge < 4:
-        return metal[2]
-    if y in (5, 58) and edge in (5, 6):
-        return metal[3]
-    if 9 <= y <= 15:
-        if 22 <= x <= 41 and y in (11, 12) and x % 6 < 4:
-            return metal[3]
-        return metal[0]
-    if 22 <= y <= 51 and 10 <= x <= 53:
-        bevel = min(x - 10, 53 - x, y - 22, 51 - y)
-        if bevel == 0:
-            return metal[0]
-        if bevel == 1:
-            return metal[3]
-        return metal[1 + ((x * 19 + y * 23) % 29 == 0)]
-    return metal[2]
-
-
 def sign(word, ink, x, y):
     if min(x, y, 63 - x, 63 - y) < 3:
         return 8
@@ -116,19 +72,9 @@ def dock_gate(x, y):
     return 7 + ((x * 13 + y * 17) % 37 == 0)
 
 
-def lift_tread(x, y):
-    if y < 7 or y >= 57:
-        return 109 if (x + y) % 16 < 8 else 5
-    return deck_plate((4, 8, 10, 13), x, y)
-
-
-def materials():
-    for name, (floor, wall, _) in DECKS.items():
-        yield f'{name}_deck', partial(deck_plate, floor)
-        yield f'{name}_wall', partial(bulkhead, wall)
+def fixtures():
     for name, (word, ink) in SIGNS.items():
         yield name, partial(sign, word, ink)
     yield 'annex_rib', rib
     yield 'annex_lamp', lambda x, y: 246 if 7 <= y <= 55 and x % 16 < 13 else 7
     yield 'annex_gate', dock_gate
-    yield 'lift_deck', lift_tread

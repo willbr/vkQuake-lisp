@@ -1,0 +1,16 @@
+{
+  "name": "gantry_wall",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 827,
+  "colors": [186, 185, 184, 61, 182, 63, 181, 180, 179, 178, 176, 8],
+  "stages": [
+    {"kind": "solid", "amount": 100, "blend": "mix", "params": {"value": 74}},
+    {"kind": "fractal", "amount": 36, "blend": "add", "params": {"columns": 10, "rows": 4, "octaves": 4, "gain": 46, "seed_offset": 0}},
+    {"kind": "white", "amount": 17, "blend": "add", "params": {"seed_offset": 11}},
+    {"kind": "bands", "amount": 38, "blend": "multiply", "params": {"across": 0, "down": 4, "width": 83, "phase": 0}},
+    {"kind": "grid", "amount": 29, "blend": "multiply", "params": {"columns": 2, "rows": 2, "gap": 9, "stagger": 50}},
+    {"kind": "emboss", "amount": 30, "blend": "mix", "params": {"distance": 1, "angle": 72}}
+  ]
+}

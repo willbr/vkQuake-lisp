@@ -1,0 +1,17 @@
+{
+  "name": "flood_wall",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 101,
+  "colors": [188, 187, 186, 185, 184, 183, 182, 181, 180, 179, 178, 176],
+  "stages": [
+    {"kind": "solid", "amount": 100, "blend": "mix", "params": {"value": 73}},
+    {"kind": "fractal", "amount": 62, "blend": "add", "params": {"columns": 13, "rows": 3, "octaves": 4, "gain": 46, "seed_offset": 0}},
+    {"kind": "cellular", "amount": 11, "blend": "add", "params": {"columns": 8, "rows": 4, "jitter": 81, "seed_offset": 7}},
+    {"kind": "white", "amount": 9, "blend": "add", "params": {"seed_offset": 11}},
+    {"kind": "bands", "amount": 47, "blend": "multiply", "params": {"across": 4, "down": 0, "width": 85, "phase": 0}},
+    {"kind": "bands", "amount": 18, "blend": "multiply", "params": {"across": 0, "down": 2, "width": 93, "phase": 0}},
+    {"kind": "emboss", "amount": 37, "blend": "mix", "params": {"distance": 1, "angle": 22}}
+  ]
+}

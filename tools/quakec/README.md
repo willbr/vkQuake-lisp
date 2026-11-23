@@ -256,6 +256,17 @@ For maps that use `signal.wad`, each `--wad` adds textures to the stock build's
 WAD. A matching texture name replaces the earlier entry, as `relay_wall` does
 in the example. Use the exported texture name on map faces.
 
+The Uplink map uses generated wall and floor textures for its seven decks and
+the lift tread. Its [editable recipes](../../examples/textures/uplink) and
+[WAD2](../../examples/textures/uplink.wad) are checked in. The map build
+automatically embeds the textures it uses. Run the two commands below after
+editing a recipe to refresh the WAD and BSP.
+
+```sh
+python3 tools/quakec/build-uplink-textures.py
+python3 tools/quakec/map_editor.py examples/uplink.map build build/uplink.bsp
+```
+
 ## VM listings and fixtures
 
 ```sh

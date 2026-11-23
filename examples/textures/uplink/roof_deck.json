@@ -1,0 +1,16 @@
+{
+  "name": "roof_deck",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 618,
+  "colors": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+  "stages": [
+    {"kind": "solid", "amount": 100, "blend": "mix", "params": {"value": 63}},
+    {"kind": "fractal", "amount": 44, "blend": "add", "params": {"columns": 4, "rows": 3, "octaves": 4, "gain": 46, "seed_offset": 0}},
+    {"kind": "cellular", "amount": 20, "blend": "add", "params": {"columns": 8, "rows": 8, "jitter": 86, "seed_offset": 7}},
+    {"kind": "white", "amount": 12, "blend": "add", "params": {"seed_offset": 11}},
+    {"kind": "grid", "amount": 26, "blend": "multiply", "params": {"columns": 2, "rows": 2, "gap": 7, "stagger": 0}},
+    {"kind": "emboss", "amount": 18, "blend": "mix", "params": {"distance": 1, "angle": 45}}
+  ]
+}

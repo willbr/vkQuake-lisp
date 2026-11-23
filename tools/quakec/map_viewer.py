@@ -12,7 +12,17 @@ from pyglet.math import Vec4
 from pyglet.window import key, mouse
 
 from map_editor import MapDocument, dot, point
-from uplink_art import DECKS, SIGNS
+from uplink_art import SIGNS
+
+DECK_COLORS = {
+    'yard': (.47, .55, .48),
+    'freight': (.40, .47, .67),
+    'flood': (.35, .58, .51),
+    'sump': (.65, .44, .29),
+    'switch': (.40, .53, .70),
+    'gantry': (.60, .56, .42),
+    'roof': (.56, .65, .77),
+}
 
 SURFACE_COLORS = {
     'relay_floor': (.29, .48, .53),
@@ -25,7 +35,7 @@ SURFACE_COLORS = {
     'lift_deck': (.64, .54, .30),
     **{sign: (.95, .69, .32) for sign in SIGNS},
 }
-for deck, (_, _, color) in DECKS.items():
+for deck, color in DECK_COLORS.items():
     SURFACE_COLORS[f'{deck}_deck'] = color
     SURFACE_COLORS[f'{deck}_wall'] = tuple(channel * .75 for channel in color)
 

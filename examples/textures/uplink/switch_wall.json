@@ -1,0 +1,17 @@
+{
+  "name": "switch_wall",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 576,
+  "colors": [222, 221, 35, 220, 36, 219, 38, 39, 40, 41, 42, 44],
+  "stages": [
+    {"kind": "solid", "amount": 100, "blend": "mix", "params": {"value": 73}},
+    {"kind": "fractal", "amount": 21, "blend": "add", "params": {"columns": 5, "rows": 11, "octaves": 4, "gain": 46, "seed_offset": 0}},
+    {"kind": "white", "amount": 7, "blend": "add", "params": {"seed_offset": 11}},
+    {"kind": "grid", "amount": 17, "blend": "multiply", "params": {"columns": 8, "rows": 8, "gap": 31, "stagger": 50}},
+    {"kind": "bands", "amount": 38, "blend": "multiply", "params": {"across": 4, "down": 0, "width": 87, "phase": 0}},
+    {"kind": "bands", "amount": 23, "blend": "multiply", "params": {"across": 0, "down": 2, "width": 91, "phase": 0}},
+    {"kind": "emboss", "amount": 34, "blend": "mix", "params": {"distance": 1, "angle": 48}}
+  ]
+}

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build the original Lisp maps and their indexed textures for stock Quake."""
 import argparse
-from collections import Counter
 import os
 from pathlib import Path
 import shutil
@@ -9,29 +8,21 @@ import subprocess
 import tempfile
 
 from quake_assets import encode_miptex, encode_wad, read_wad_textures
-from uplink_art import DECKS, materials
+from uplink_art import fixtures
 
 ROOT = Path(__file__).resolve().parents[2]
 QUTILS = ROOT / 'third_party/quake-tools/qutils'
+UPLINK_WAD = ROOT / 'examples/textures/uplink.wad'
 
 
-def texture(name, pixel, filter_mips=False):
+def texture(name, pixel):
     size = 64
     base = bytes(pixel(x, y) for y in range(size) for x in range(size))
     levels = [base]
     for stride in (2, 4, 8):
-        data = bytearray()
-        for y in range(0, size, stride):
-            for x in range(0, size, stride):
-                center = base[(y + stride // 2) * size + x + stride // 2]
-                if filter_mips:
-                    # Indices are categorical. Preserve the dominant shade
-                    # in each block without averaging unrelated palette ramps.
-                    block = Counter(base[row * size + col]
-                                    for row in range(y, y + stride) for col in range(x, x + stride))
-                    center = max(block, key=lambda shade: (block[shade], shade == center))
-                data.append(center)
-        levels.append(data)
+        levels.append(bytes(base[y * size + x]
+                            for y in range(stride // 2, size, stride)
+                            for x in range(stride // 2, size, stride)))
     return encode_miptex(name, size, size, levels)
 
 
@@ -69,11 +60,9 @@ def goal_pixel(x, y):
 def write_wad(path, extra_wads=()):
     textures = {b'relay_floor': floor_pixel, b'relay_wall': wall_pixel,
                 b'relay_trim': trim_pixel, b'relay_goal': goal_pixel}
-    textures.update((name.encode('ascii'), pixel) for name, pixel in materials())
-    filtered = {f'{deck}_{surface}'.encode('ascii') for deck in DECKS for surface in ('deck', 'wall')}
-    filtered.add(b'lift_deck')
-    lumps = {name: texture(name, pixel, filter_mips=name in filtered)
-             for name, pixel in textures.items()}
+    textures.update((name.encode('ascii'), pixel) for name, pixel in fixtures())
+    lumps = {name: texture(name, pixel) for name, pixel in textures.items()}
+    lumps.update(read_wad_textures(UPLINK_WAD))
     for wad in extra_wads:
         lumps.update(read_wad_textures(wad))
     path.write_bytes(encode_wad(lumps))

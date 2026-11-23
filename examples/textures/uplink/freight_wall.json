@@ -1,0 +1,16 @@
+{
+  "name": "freight_wall",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 713,
+  "colors": [34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45],
+  "stages": [
+    {"kind": "solid", "amount": 100, "blend": "mix", "params": {"value": 72}},
+    {"kind": "fractal", "amount": 37, "blend": "add", "params": {"columns": 4, "rows": 11, "octaves": 4, "gain": 46, "seed_offset": 0}},
+    {"kind": "white", "amount": 7, "blend": "add", "params": {"seed_offset": 11}},
+    {"kind": "bands", "amount": 38, "blend": "multiply", "params": {"across": 0, "down": 8, "width": 73, "phase": 0}},
+    {"kind": "bands", "amount": 37, "blend": "multiply", "params": {"across": 2, "down": 0, "width": 89, "phase": 0}},
+    {"kind": "emboss", "amount": 37, "blend": "mix", "params": {"distance": 1, "angle": 65}}
+  ]
+}

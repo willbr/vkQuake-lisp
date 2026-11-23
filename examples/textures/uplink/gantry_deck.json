@@ -1,0 +1,17 @@
+{
+  "name": "gantry_deck",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 395,
+  "colors": [50, 52, 54, 56, 58, 60, 62, 63, 201, 200, 199, 198],
+  "stages": [
+    {"kind": "solid", "amount": 100, "blend": "mix", "params": {"value": 76}},
+    {"kind": "fractal", "amount": 26, "blend": "add", "params": {"columns": 5, "rows": 4, "octaves": 4, "gain": 46, "seed_offset": 0}},
+    {"kind": "white", "amount": 12, "blend": "add", "params": {"seed_offset": 11}},
+    {"kind": "bands", "amount": 27, "blend": "multiply", "params": {"across": 6, "down": 6, "width": 71, "phase": 0}},
+    {"kind": "bands", "amount": 22, "blend": "multiply", "params": {"across": 6, "down": -6, "width": 71, "phase": 25}},
+    {"kind": "grid", "amount": 36, "blend": "multiply", "params": {"columns": 2, "rows": 2, "gap": 7, "stagger": 0}},
+    {"kind": "emboss", "amount": 32, "blend": "mix", "params": {"distance": 1, "angle": 75}}
+  ]
+}
