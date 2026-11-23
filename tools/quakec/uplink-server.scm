@@ -89,6 +89,9 @@
            ((> (bike-abs (- expected actual)) 10)
             (driver-fail player "lift-test: rider separated from platform\n"))
            ((= (quake:field lift lift-moving) 1)
+            (let ((camera (quake:field player bike-camera)))
+              (trace-numbers "lift-test moving platform-z/camera-z"
+                (+ (quake:field lift lift-floor) height) (quake:field camera origin_z)))
             (quake:set-field! player driver-ride-samples (+ samples 1)))
            ((and (< height 1) (> samples 20)
                  (quake:entity=? (quake:field player groundentity) lift))

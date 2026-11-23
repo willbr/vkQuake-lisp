@@ -38,6 +38,7 @@
 (define bike-wheelbase 48)
 (define bike-solid 2)
 (define bike-chase-pitch 19)
+(define move-fly 5)
 
 (define (riding-bike? player)
   (not (quake:world? (quake:field player riding))))
@@ -347,13 +348,22 @@
 (define (bike-chase-view player)
   (let* ((camera (bike-camera-for player))
          (dt (quake:frametime))
-         (yaw (bike-camera-heading player dt)))
+         (yaw (bike-camera-heading player dt))
+         (ground (quake:field player groundentity))
+         (on-lift (and (> (quake:bit-and (quake:field player flags) flag-ground) 0)
+                       (string=? (quake:field ground classname) "uplink_lift"))))
+    ; Stock pushers move after PlayerPostThink. Carry the camera in the same
+    ; physics step as the rider so the view stays attached to the platform.
+    (quake:set-field! camera movetype (if on-lift move-fly 0))
+    (quake:set-field! camera groundentity (if on-lift ground (quake:world)))
+    (quake:set-field! camera flags (if on-lift flag-ground 0))
     (quake:make-vectors (quake:vector 0 yaw 0))
     (let* ((x (quake:field player origin_x))
            (y (quake:field player origin_y))
            (z (quake:field player origin_z))
            (previous (quake:field player bike-camera-floor))
-           (floor (bike-clamp (+ previous (* (- z previous) (/ dt (+ 0.12 dt)))) (- z 24) (+ z 24)))
+           (floor (if on-lift z
+                      (bike-clamp (+ previous (* (- z previous) (/ dt (+ 0.12 dt)))) (- z 24) (+ z 24))))
            (dx (* -156 (quake:forward-x)))
            (dy (* -156 (quake:forward-y)))
            (eye (+ z (quake:field player view_ofs_z)))

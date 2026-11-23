@@ -64,7 +64,7 @@ def station(name, x, y, floor, **keys):
     return entity('uplink_station', brushes=[brush], targetname=name, **keys)
 
 
-def floor_light(x, y, floor, strength=350):
+def floor_light(x, y, floor, strength=480):
     return entity('light', (x, y, floor + 144), light=strength)
 
 
@@ -182,6 +182,10 @@ def course():
     )
     for name, x, y, low, high, locked in lift_specs:
         yield lift(name, x, y, low, high, locked=locked)
+        yield floor_light(x+240, y+240, low)
+        yield floor_light(x+240, y+240, high)
+        for height in range(low+440, high-120, 400):
+            yield entity('light', (x+240, y+240, height), light=440)
     yield station('flood-valve', -3650, -2696, FLOOD, target='sump-lift')
     yield station('hold-pump', -3370, -3660, SUMP)
     yield station('pump-breaker', -2608, -3550, SUMP, target='cargo-lift')
@@ -200,24 +204,44 @@ def course():
     yield marker('uplink_recall', 3530, -1500, FREIGHT, targetname='freight-service')
     yield marker('uplink_recall', 3580, -2180, GANTRIES, targetname='gantry-service')
     yield station('roof-extract', 3890, 3700, ROOF)
-    # Small regularly spaced pools reveal bends and inter-floor destinations.
+    # Overlap light along the ride lines and keep side rooms and controls visible.
     for x, y, z in (
-        (-3700,-2050,0),(-3060,-3080,0),(-3210,-3500,-48),(-1650,-3500,-258),
-        (0,-3500,-484),(1280,-3024,-640),(500,-2570,-720),(-1000,-2570,-934),
-        (-2450,-2570,-1136),(-3740,-2420,FREIGHT),(-2100,-1888,FREIGHT),
-        (-200,-1840,FREIGHT),(800,-1400,FREIGHT),(2400,-1400,FREIGHT),(3320,-1400,FREIGHT),
-        (3320,-1400,FLOOD),(2300,-1830,FLOOD),(1100,-1830,FLOOD),(-210,-1900,FLOOD),
-        (-1300,-2350,FLOOD),(-2630,-2350,FLOOD),(-3650,-2630,FLOOD),(-3650,-2870,FLOOD),
-        (-3620,-3230,SUMP),(-3750,-3790,SUMP),(-3180,-3690,SUMP),(-2580,-3730,SUMP),
-        (-3350,-3730,SWITCHGEAR),(-2100,-3740,SWITCHGEAR),(-900,-3740,SWITCHGEAR),
-        (210,-3420,SWITCHGEAR),(1450,-3240,SWITCHGEAR),(2770,-3240,SWITCHGEAR),
-        (3400,-3315,SWITCHGEAR),(3840,-2920,SWITCHGEAR),(3660,-2060,GANTRIES),
-        (3660,-1070,GANTRIES),(3190,-120,GANTRIES),(3190,900,GANTRIES),(3190,1900,GANTRIES),
-        (3660,2550,GANTRIES),(3670,3450,GANTRIES),(2500,3720,GANTRIES),
-        (950,3720,GANTRIES),(-550,3720,GANTRIES),(-2030,3720,GANTRIES),
-        (-132,3180,GANTRIES),(-1570,3160,GANTRIES),
-        (-3250,3720,GANTRIES),(-3750,3700,GANTRIES),(-3400,3710,ROOF),
-        (-1800,3710,ROOF),(-350,3710,ROOF),(1140,3710,ROOF),(2300,3710,ROOF),(3620,3710,ROOF),
+        # Service yard and the two downhill passes.
+        (-3700,-2050,SERVICE),(-3050,-2150,SERVICE),(-3248,-2650,SERVICE),(-3248,-3120,SERVICE),
+        (-3210,-3504,-41),(-2590,-3504,-128),(-1970,-3504,-215),(-1350,-3504,-301),
+        (-730,-3504,-388),(-110,-3504,-475),(510,-3504,-561),(1100,-3504,-640),
+        (1330,-3024,-640),(1100,-2560,-640),(480,-2560,-723),(-140,-2560,-810),
+        (-760,-2560,-896),(-1380,-2560,-983),(-2000,-2560,-1070),
+        (-2620,-2560,-1156),(-3240,-2560,-1243),
+        # Freight route, bridge and flood bypass.
+        (-3740,-2420,FREIGHT),(-3660,-2000,FREIGHT),(-3040,-1888,FREIGHT),
+        (-2420,-1888,FREIGHT),(-1800,-1888,FREIGHT),(-1180,-1888,FREIGHT),
+        (-560,-1888,FREIGHT),(40,-1650,FREIGHT),(550,-1376,FREIGHT),
+        (1070,-1376,FREIGHT),(1690,-1376,FREIGHT),(2310,-1376,FREIGHT),
+        (2930,-1376,FREIGHT),(3390,-1376,FREIGHT),(785,-1376,FREIGHT-64),
+        (3350,-1330,FLOOD),(3330,-1840,FLOOD),(2710,-1850,FLOOD),(2090,-1850,FLOOD),
+        (1470,-1850,FLOOD),(850,-1850,FLOOD),(230,-1850,FLOOD),(-370,-1920,FLOOD),
+        (-610,-2350,FLOOD),(-1230,-2350,FLOOD),(-1850,-2350,FLOOD),
+        (-2470,-2350,FLOOD),(-3090,-2350,FLOOD),(-3650,-2340,FLOOD),(-3650,-2690,FLOOD),
+        # Pump room, switchgear aisle and guard room.
+        (-3620,-3500,SUMP),(-3380,-3660,SUMP),(-3050,-3770,SUMP),
+        (-2620,-3550,SUMP),(-2700,-3880,SUMP-176),
+        (-3400,-3750,SWITCHGEAR),(-2780,-3750,SWITCHGEAR),(-2160,-3750,SWITCHGEAR),
+        (-1540,-3750,SWITCHGEAR),(-920,-3750,SWITCHGEAR),(-300,-3750,SWITCHGEAR),
+        (180,-3480,SWITCHGEAR),(660,-3240,SWITCHGEAR),(1280,-3240,SWITCHGEAR),
+        (1900,-3240,SWITCHGEAR),(2520,-3240,SWITCHGEAR),(3140,-3240,SWITCHGEAR),
+        (3730,-3290,SWITCHGEAR),(3790,-2920,SWITCHGEAR),
+        # East gantries, tether alcove and final rooftop straight.
+        (3680,-2060,GANTRIES),(3680,-1440,GANTRIES),(3680,-820,GANTRIES),(3460,-260,GANTRIES),
+        (3180,270,GANTRIES),(3180,890,GANTRIES),(3180,1510,GANTRIES),(3180,2130,GANTRIES),
+        (3610,2540,GANTRIES),(3680,3100,GANTRIES),(3680,3630,GANTRIES),
+        (3060,3720,GANTRIES),(2440,3720,GANTRIES),(1820,3720,GANTRIES),(1200,3720,GANTRIES),
+        (580,3720,GANTRIES),(-40,3720,GANTRIES),(-660,3720,GANTRIES),(-1280,3720,GANTRIES),
+        (-1900,3720,GANTRIES),(-2520,3720,GANTRIES),(-3140,3720,GANTRIES),
+        (-132,3180,GANTRIES),(-1510,3170,GANTRIES-192),(-880,3120,GANTRIES-384),
+        (-3300,3710,ROOF),(-2680,3710,ROOF),(-2060,3710,ROOF),(-1440,3710,ROOF),
+        (-820,3710,ROOF),(-200,3710,ROOF),(420,3710,ROOF),(1040,3710,ROOF),
+        (1660,3710,ROOF),(2280,3710,ROOF),(2900,3710,ROOF),(3520,3710,ROOF),(3890,3700,ROOF),
     ):
         yield floor_light(x, y, z)
 

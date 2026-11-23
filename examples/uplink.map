@@ -2095,6 +2095,26 @@
 }
 }
 {
+"classname" "light"
+"light" "480"
+"origin" "3344 -880 -2416"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3344 -880 -1136"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "3344 -880 -2120"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "3344 -880 -1720"
+}
+{
 "classname" "uplink_lift"
 "targetname" "sump-lift"
 "lift-travel" "1280"
@@ -2110,6 +2130,26 @@
 ( -3402 -3010 -3856 ) ( -3878 -3010 -3840 ) ( -3878 -3010 -3856 ) relay_trim 0 0 0 1 1
 ( -3878 -3010 -3856 ) ( -3878 -3486 -3840 ) ( -3878 -3486 -3856 ) relay_trim 0 0 0 1 1
 }
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-3640 -3248 -3696"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-3640 -3248 -2416"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3640 -3248 -3400"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3640 -3248 -3000"
 }
 {
 "classname" "uplink_lift"
@@ -2129,6 +2169,76 @@
 }
 }
 {
+"classname" "light"
+"light" "480"
+"origin" "-3760 -3776 -3696"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-3760 -3776 1424"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -3400"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -3000"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -2600"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -2200"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -1800"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -1400"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -1000"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -600"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 -200"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 200"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 600"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 -3776 1000"
+}
+{
 "classname" "uplink_lift"
 "targetname" "gantry-lift"
 "lift-travel" "1280"
@@ -2146,6 +2256,26 @@
 }
 }
 {
+"classname" "light"
+"light" "480"
+"origin" "3680 -2560 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3680 -2560 2704"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "3680 -2560 1720"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "3680 -2560 2120"
+}
+{
 "classname" "uplink_lift"
 "targetname" "roof-lift"
 "lift-travel" "1280"
@@ -2161,6 +2291,26 @@
 ( -3522 3998 2544 ) ( -3998 3998 2560 ) ( -3998 3998 2544 ) relay_trim 0 0 0 1 1
 ( -3998 3998 2544 ) ( -3998 3522 2560 ) ( -3998 3522 2544 ) relay_trim 0 0 0 1 1
 }
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-3760 3760 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-3760 3760 3984"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 3760 3000"
+}
+{
+"classname" "light"
+"light" "440"
+"origin" "-3760 3760 3400"
 }
 {
 "classname" "uplink_station"
@@ -2458,281 +2608,541 @@
 }
 {
 "classname" "light"
-"light" "350"
+"light" "480"
 "origin" "-3700 -2050 144"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3060 -3080 144"
+"light" "480"
+"origin" "-3050 -2150 144"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3210 -3500 96"
+"light" "480"
+"origin" "-3248 -2650 144"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-1650 -3500 -114"
+"light" "480"
+"origin" "-3248 -3120 144"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "0 -3500 -340"
+"light" "480"
+"origin" "-3210 -3504 103"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "1280 -3024 -496"
+"light" "480"
+"origin" "-2590 -3504 16"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "500 -2570 -576"
+"light" "480"
+"origin" "-1970 -3504 -71"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-1000 -2570 -790"
+"light" "480"
+"origin" "-1350 -3504 -157"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-2450 -2570 -992"
+"light" "480"
+"origin" "-730 -3504 -244"
 }
 {
 "classname" "light"
-"light" "350"
+"light" "480"
+"origin" "-110 -3504 -331"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "510 -3504 -417"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1100 -3504 -496"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1330 -3024 -496"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1100 -2560 -496"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "480 -2560 -579"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-140 -2560 -666"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-760 -2560 -752"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-1380 -2560 -839"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-2000 -2560 -926"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-2620 -2560 -1012"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-3240 -2560 -1099"
+}
+{
+"classname" "light"
+"light" "480"
 "origin" "-3740 -2420 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-2100 -1888 -1136"
+"light" "480"
+"origin" "-3660 -2000 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-200 -1840 -1136"
+"light" "480"
+"origin" "-3040 -1888 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "800 -1400 -1136"
+"light" "480"
+"origin" "-2420 -1888 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "2400 -1400 -1136"
+"light" "480"
+"origin" "-1800 -1888 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3320 -1400 -1136"
+"light" "480"
+"origin" "-1180 -1888 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3320 -1400 -2416"
+"light" "480"
+"origin" "-560 -1888 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "2300 -1830 -2416"
+"light" "480"
+"origin" "40 -1650 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "1100 -1830 -2416"
+"light" "480"
+"origin" "550 -1376 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-210 -1900 -2416"
+"light" "480"
+"origin" "1070 -1376 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-1300 -2350 -2416"
+"light" "480"
+"origin" "1690 -1376 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-2630 -2350 -2416"
+"light" "480"
+"origin" "2310 -1376 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3650 -2630 -2416"
+"light" "480"
+"origin" "2930 -1376 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3650 -2870 -2416"
+"light" "480"
+"origin" "3390 -1376 -1136"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3620 -3230 -3696"
+"light" "480"
+"origin" "785 -1376 -1200"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3750 -3790 -3696"
+"light" "480"
+"origin" "3350 -1330 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3180 -3690 -3696"
+"light" "480"
+"origin" "3330 -1840 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-2580 -3730 -3696"
+"light" "480"
+"origin" "2710 -1850 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3350 -3730 1424"
+"light" "480"
+"origin" "2090 -1850 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-2100 -3740 1424"
+"light" "480"
+"origin" "1470 -1850 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-900 -3740 1424"
+"light" "480"
+"origin" "850 -1850 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "210 -3420 1424"
+"light" "480"
+"origin" "230 -1850 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "1450 -3240 1424"
+"light" "480"
+"origin" "-370 -1920 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "2770 -3240 1424"
+"light" "480"
+"origin" "-610 -2350 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3400 -3315 1424"
+"light" "480"
+"origin" "-1230 -2350 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3840 -2920 1424"
+"light" "480"
+"origin" "-1850 -2350 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3660 -2060 2704"
+"light" "480"
+"origin" "-2470 -2350 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3660 -1070 2704"
+"light" "480"
+"origin" "-3090 -2350 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3190 -120 2704"
+"light" "480"
+"origin" "-3650 -2340 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3190 900 2704"
+"light" "480"
+"origin" "-3650 -2690 -2416"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3190 1900 2704"
+"light" "480"
+"origin" "-3620 -3500 -3696"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3660 2550 2704"
+"light" "480"
+"origin" "-3380 -3660 -3696"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3670 3450 2704"
+"light" "480"
+"origin" "-3050 -3770 -3696"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "2500 3720 2704"
+"light" "480"
+"origin" "-2620 -3550 -3696"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "950 3720 2704"
+"light" "480"
+"origin" "-2700 -3880 -3872"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-550 3720 2704"
+"light" "480"
+"origin" "-3400 -3750 1424"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-2030 3720 2704"
+"light" "480"
+"origin" "-2780 -3750 1424"
 }
 {
 "classname" "light"
-"light" "350"
+"light" "480"
+"origin" "-2160 -3750 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-1540 -3750 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-920 -3750 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-300 -3750 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "180 -3480 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "660 -3240 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1280 -3240 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1900 -3240 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "2520 -3240 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3140 -3240 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3730 -3290 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3790 -2920 1424"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3680 -2060 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3680 -1440 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3680 -820 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3460 -260 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3180 270 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3180 890 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3180 1510 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3180 2130 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3610 2540 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3680 3100 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3680 3630 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3060 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "2440 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1820 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1200 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "580 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-40 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-660 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-1280 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-1900 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-2520 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "-3140 3720 2704"
+}
+{
+"classname" "light"
+"light" "480"
 "origin" "-132 3180 2704"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-1570 3160 2704"
+"light" "480"
+"origin" "-1510 3170 2512"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3250 3720 2704"
+"light" "480"
+"origin" "-880 3120 2320"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3750 3700 2704"
+"light" "480"
+"origin" "-3300 3710 3984"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-3400 3710 3984"
+"light" "480"
+"origin" "-2680 3710 3984"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-1800 3710 3984"
+"light" "480"
+"origin" "-2060 3710 3984"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "-350 3710 3984"
+"light" "480"
+"origin" "-1440 3710 3984"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "1140 3710 3984"
+"light" "480"
+"origin" "-820 3710 3984"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "2300 3710 3984"
+"light" "480"
+"origin" "-200 3710 3984"
 }
 {
 "classname" "light"
-"light" "350"
-"origin" "3620 3710 3984"
+"light" "480"
+"origin" "420 3710 3984"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1040 3710 3984"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "1660 3710 3984"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "2280 3710 3984"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "2900 3710 3984"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3520 3710 3984"
+}
+{
+"classname" "light"
+"light" "480"
+"origin" "3890 3700 3984"
 }
