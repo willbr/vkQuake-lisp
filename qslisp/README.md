@@ -330,6 +330,8 @@ the bike, steers to the landing, calls the lift, and boards it using the
 shared bike and interaction code. It checks the rider's height against the
 moving platform on each tick of the descent to the flood deck. The server
 console records each stage and the rider's position and heading on failure.
+Add `--watch` to see the ride in a 3D window. The window stays open at the
+flood deck after the test passes.
 
 ### Two-player co-op
 

@@ -183,7 +183,7 @@ def boot_coop(dosbox, quake_dir, output, level):
         return scenario(dosbox, output, engine_env(False), host, guest)
 
 
-def boot_server_driver(dosbox, quake_dir, output):
+def boot_server_driver(dosbox, quake_dir, output, *, watch=False):
     fixture = output / 'uplink.map'
     uplink_server.write_fixture(fixture)
     prepare(output, ('uplink',), program_source='tools/quakec/uplink-server.scm',
@@ -192,7 +192,10 @@ def boot_server_driver(dosbox, quake_dir, output):
         base = Path(staged)
         host = stage(quake_dir, output, base / 'host')
         guest = stage(quake_dir, output, base / 'guest')
-        return uplink_server.verify(dosbox, output, engine_env(False), host, guest)
+        if watch:
+            print(f'Opening the 3D rider window for the freight lift test. Artifacts {output}', flush=True)
+        return uplink_server.verify(dosbox, output, engine_env(False), host, guest,
+                                    watch_env=engine_env(True) if watch else None)
 
 
 def main():
@@ -202,6 +205,7 @@ def main():
     mode.add_argument('--verify', action='store_true', help='test a Lisp map in a scripted client')
     mode.add_argument('--verify-coop', action='store_true', help='test the campaign or uplink with two IPX clients')
     mode.add_argument('--verify-server', action='store_true', help='run the uplink freight lift driver on a dedicated server')
+    parser.add_argument('--watch', action='store_true', help='show the 3D rider window during --verify-server')
     parser.add_argument('--protected-cycles', type=int, help='set DOSBox Staging protected-mode cycles for --play')
     parser.add_argument('--map', choices=('start', 'signal', 'annex', 'uplink'),
                         help='map to load (default: start, or signal with --verify)')
@@ -215,6 +219,8 @@ def main():
         parser.error('--verify-coop runs the campaign by default or the uplink with --map uplink')
     if args.verify_server and level != 'uplink':
         parser.error('--verify-server requires uplink')
+    if args.watch and not args.verify_server:
+        parser.error('--watch requires --verify-server')
     if args.protected_cycles is not None and (not args.play or args.protected_cycles <= 0):
         parser.error('--protected-cycles requires a positive value and --play')
     dosbox = shutil.which(args.dosbox)
@@ -225,7 +231,7 @@ def main():
     output = Path(tempfile.mkdtemp(prefix='run-', dir=runs))
     try:
         if args.verify_server:
-            console = boot_server_driver(Path(dosbox).resolve(), args.quake_dir.resolve(), output)
+            console = boot_server_driver(Path(dosbox).resolve(), args.quake_dir.resolve(), output, watch=args.watch)
         elif args.verify_coop:
             console = boot_coop(Path(dosbox).resolve(), args.quake_dir.resolve(), output, level)
         else:

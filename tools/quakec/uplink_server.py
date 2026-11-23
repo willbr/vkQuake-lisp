@@ -21,7 +21,7 @@ def write_fixture(destination):
     destination.write_text(document.text, encoding='ascii')
 
 
-def verify(dosbox, output, env, host, guest):
+def verify(dosbox, output, env, host, guest, *, watch_env=None):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.bind(('127.0.0.1', 0))
         port = probe.getsockname()[1]
@@ -30,7 +30,8 @@ def verify(dosbox, output, env, host, guest):
     with coop.client(dosbox, output, env, host, 'server', f'ipxnet startserver {port}',
                      '-dedicated 2 +exec driver.cfg') as server:
         coop.wait_for(server, host, lambda log: 'Server spawned.' in log, 'dedicated server did not spawn')
-        with coop.client(dosbox, output, env, guest, 'rider', f'ipxnet connect 127.0.0.1 {port}',
+        with coop.client(dosbox, output, watch_env if watch_env is not None else env,
+                         guest, 'rider', f'ipxnet connect 127.0.0.1 {port}',
                          '+name TestRider +connect uplinktest') as rider:
             coop.wait_for(rider, guest, lambda log: 'CL_SignonReply: 4' in log, 'rider did not sign on')
             coop.wait_for(server, host, lambda log: 'lift-test: passed' in log or 'lift-test failure' in log,
@@ -38,6 +39,16 @@ def verify(dosbox, output, env, host, guest):
             server_log, rider_log = coop.read_console(host), coop.read_console(guest)
             require(rider.poll() is None and 'CL_EstablishConnection: connected to uplinktest' in rider_log,
                     'rider did not stay connected over IPX')
+            check_lift(server_log)
+            if watch_env is not None:
+                (output / 'server-qconsole.log').write_text(server_log, encoding='cp437')
+                (output / 'rider-qconsole.log').write_text(rider_log, encoding='cp437')
+                print('Freight lift test passed. The 3D client is open at the flood deck.', flush=True)
+                rider.wait()
+    return output / 'server-qconsole.log'
+
+
+def check_lift(server_log):
     failure = next((line for line in server_log.splitlines() if line.startswith('lift-test failure')), None)
     require(failure is None, failure)
     order = ('qslisp: ClientConnect', 'lift-test: mounting', 'qslisp: bike mounted',
@@ -58,4 +69,3 @@ def verify(dosbox, output, env, host, guest):
     rider_z, platform_z, samples = map(float, arrived[1].split())
     require(abs(rider_z + 2536) < 2 and abs(platform_z + 2560) < 1 and samples > 20,
             'rider did not travel from freight to the flood deck on the platform')
-    return output / 'server-qconsole.log'
