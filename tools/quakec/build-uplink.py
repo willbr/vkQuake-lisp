@@ -4,11 +4,18 @@ import argparse
 from itertools import product
 from pathlib import Path
 
-from map_editor import bank, box, coordinates, quoted, ramp, switchback
+from map_editor import Brush, Face, bank, box, coordinates, quoted, ramp, switchback
 
-FLOOR, WALL, TRIM, MARKER = 'relay_floor', 'relay_wall', 'relay_trim', 'relay_goal'
+TRIM, MARKER = 'relay_trim', 'relay_goal'
 SERVICE, FREIGHT, FLOOD, SUMP, SWITCHGEAR, GANTRIES, ROOF = 0, -1280, -2560, -3840, 1280, 2560, 3840
 THICKNESS = 16
+DECK_AT_FLOOR = {
+    -656: 'yard', -640: 'yard', -1296: 'yard', SERVICE: 'yard',
+    FREIGHT: 'freight', FREIGHT-64: 'freight', FLOOD: 'flood',
+    SUMP: 'sump', SUMP-176: 'sump', SWITCHGEAR: 'switch',
+    GANTRIES: 'gantry', GANTRIES-192: 'gantry', GANTRIES-384: 'gantry',
+    ROOF: 'roof',
+}
 
 
 def room(x, xx, y, yy, z, ceiling=None):
@@ -29,6 +36,7 @@ def cut(rect, opening):
 def seal(regions):
     """Build the boundary of joined rectilinear volumes as world brushes."""
     for current, (low, high) in enumerate(regions):
+        deck = DECK_AT_FLOOR[low[2]]
         for axis, positive in product(range(3), (False, True)):
             a, b = (i for i in range(3) if i != axis)
             boundary = high[axis] if positive else low[axis]
@@ -43,8 +51,74 @@ def seal(regions):
                 start[axis], end[axis] = ((boundary, boundary + THICKNESS) if positive
                                            else (boundary - THICKNESS, boundary))
                 start[a], start[b], end[a], end[b] = x, y, xx, yy
-                texture = FLOOR if axis == 2 and not positive else WALL
+                texture = f'{deck}_deck' if axis == 2 and not positive else f'{deck}_wall'
                 yield box(start, end, texture)
+
+
+def placard(texture, x, y, z, axis, facing):
+    """Mount one face of a shallow sign, aligned to a full texture tile."""
+    low, high = [x, y, z], [x, y, z + 42]
+    across = 1 - axis
+    low[axis] -= 2
+    high[axis] += 2
+    low[across] -= 90
+    high[across] += 90
+    brush = box(low, high, 'annex_rib')
+    scale_x = 180 / 64 * facing * (1 if axis == 0 else -1)
+    scale_y = 42 / 64
+    start = low[across] if scale_x > 0 else high[across]
+    axes = (str(round(-start / scale_x)), str(round(high[2] / scale_y)),
+            '0', str(scale_x), str(scale_y))
+    return Brush(tuple(Face(face.points, texture, axes) if face.plane()[0][axis] * facing < -0.99
+                       else face for face in brush.faces))
+
+
+def overhead_rib(x, y, ceiling, axis, width):
+    low, high = [x, y, ceiling - 28], [x, y, ceiling]
+    low[axis] -= width // 2
+    high[axis] += width // 2
+    low[1 - axis] -= 15
+    high[1 - axis] += 15
+    yield box(low, high, 'annex_rib')
+    low[axis], high[axis] = ((x, y)[axis] - 74, (x, y)[axis] + 74)
+    low[1 - axis] += 6
+    high[1 - axis] -= 6
+    low[2], high[2] = ceiling - 32, ceiling - 28
+    yield box(low, high, 'annex_lamp')
+
+
+def fixtures():
+    for spec in (
+        ('yard_bikes', -3248, -2508, SERVICE+164, 1, 1),
+        ('freight_jump', 376, -1376, FREIGHT+148, 0, -1),
+        ('flood_valve', -3650, -2658, FLOOD+148, 1, 1),
+        ('sump_pumps', -2672, -3584, SUMP+154, 0, -1),
+        ('switch_relay', 3180, -3240, SWITCHGEAR+152, 0, -1),
+        ('gantry_array', 3680, 2840, GANTRIES+148, 1, -1),
+        ('roof_exit', 3840, 3700, ROOF+126, 0, -1),
+    ):
+        yield placard(*spec)
+    for spec in (
+        (-3072, -2130, SERVICE+224, 1, 704),
+        (1232, -1376, FREIGHT+224, 1, 480),
+        (2960, -1376, FREIGHT+224, 1, 480),
+        (-1740, -2344, FLOOD+224, 1, 480),
+        (-3370, -3650, SUMP+224, 0, 400),
+        (-1700, -3760, SWITCHGEAR+224, 1, 480),
+        (2440, -3248, SWITCHGEAR+224, 1, 480),
+        (3170, 1300, GANTRIES+224, 0, 480),
+        (-2176, 3720, GANTRIES+224, 1, 544),
+        (2896, 3720, 4016, 1, 544),
+    ):
+        yield from overhead_rib(*spec)
+    # Give the back of the pump room a service manifold and vertical supports.
+    yield box((-3550, -3999, SUMP+100), (-2990, -3950, SUMP+148), 'sump_wall')
+    for x in (-3510, -3264, -3020):
+        yield box((x-18, -3999, SUMP+50), (x+18, -3960, SUMP+180), 'annex_rib')
+    # Frame the extraction panel against the end bulkhead.
+    for y in (3552, 3848):
+        yield box((3960, y-18, ROOF), (4016, y+18, 4016), 'annex_rib')
+    yield from overhead_rib(3986, 3700, 4016, 1, 326)
 
 
 def entity(classname, origin=None, brushes=(), **keys):
@@ -130,20 +204,21 @@ def course():
     ]
 
     world = list(seal(regions))
-    descent = switchback((-3504, -3760, 0), 4576, 512, 928, 1280, 2, FLOOR)
+    descent = switchback((-3504, -3760, 0), 4576, 512, 928, 1280, 2, 'yard_deck')
     # The switchback pad is built into its room floor. Keep the two sloped runs.
     world.extend((descent[0], descent[-1]))
     world.extend((
         ramp((448, -1536, 672, -1216), (FREIGHT + 1, FREIGHT + 108), 'x', FREIGHT - 16, TRIM),
-        ramp((792, -1632, 912, -1120), (-1343, FREIGHT), 'x', -1352, FLOOR),
+        ramp((792, -1632, 912, -1120), (-1343, FREIGHT), 'x', -1352, 'freight_deck'),
         box((-2912, -3776, -3936), (-2560, -3616, -3904), TRIM),
         box((3360, -3088, SWITCHGEAR), (3488, -3024, SWITCHGEAR+48), TRIM),
         box((3776, -3488, SWITCHGEAR), (3872, -3360, SWITCHGEAR+60), TRIM),
-        ramp((-1280, 2976, -736, 3072), (GANTRIES-192, GANTRIES-384), 'x', GANTRIES-400, FLOOR),
-        ramp((-1792, 2848, -1280, 3424), (GANTRIES, GANTRIES-192), 'x', GANTRIES-208, FLOOR),
+        ramp((-1280, 2976, -736, 3072), (GANTRIES-192, GANTRIES-384), 'x', GANTRIES-400, 'gantry_deck'),
+        ramp((-1792, 2848, -1280, 3424), (GANTRIES, GANTRIES-192), 'x', GANTRIES-208, 'gantry_deck'),
         box((-352, 2900, GANTRIES+80), (-32, 3020, GANTRIES+96), TRIM),
         ramp((2960, 1896, 3312, 2176), (GANTRIES+1, GANTRIES+35), 'y', GANTRIES-12, TRIM),
     ))
+    world.extend(fixtures())
     yield entity('worldspawn', brushes=world, message='Relay Annex - Restore the Uplink', wad='signal.wad')
     yield marker('info_player_start', -3750, -2096, SERVICE)
     yield marker('info_player_coop', -3816, -2192, SERVICE)
@@ -151,7 +226,8 @@ def course():
     yield marker('qslisp_bike', -3136, -2334, SERVICE, angle=270)
     yield marker('uplink_buddy', -3650, -2000, SERVICE)
     yield marker('uplink_journal', -3750, -1952, SERVICE, targetname='mission-journal')
-    yield entity('qslisp_gate', brushes=[box((-3504, -2528, SERVICE), (-2992, -2512, SERVICE+144), MARKER)],
+    yield entity('qslisp_gate',
+                 brushes=[box((-3504, -2528, SERVICE), (-2992, -2512, SERVICE+144), 'annex_gate')],
                  targetname='bike-dock')
     yield marker('uplink_waypoint', -3460, -2490, SERVICE, targetname='dock-rendezvous')
     yield marker('uplink_waypoint', -3376, -2000, FREIGHT, targetname='freight-rendezvous')

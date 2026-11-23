@@ -15,6 +15,7 @@ from pyglet.math import Mat4, Vec3, Vec4
 from pyglet.window import key, mouse
 
 from map_editor import MapDocument, dot, point
+from uplink_art import DECKS, SIGNS
 
 VERTEX_SHADER = """#version 150 core
 in vec3 position;
@@ -54,6 +55,19 @@ MUTED = (156, 177, 194, 255)
 ACCENT = (87, 208, 187, 255)
 PANEL = (25, 38, 49)
 EDGE = (52, 73, 89)
+SURFACE_COLORS = {
+    'relay_floor': (.29, .48, .53),
+    'relay_wall': (.31, .40, .50),
+    'relay_trim': (.48, .52, .56),
+    'relay_goal': (.95, .68, .31),
+    'annex_rib': (.47, .50, .53),
+    'annex_lamp': (.66, .92, .90),
+    'annex_gate': (.63, .48, .29),
+    **{sign: (.95, .69, .32) for sign in SIGNS},
+}
+for deck, (_, _, _, color) in DECKS.items():
+    SURFACE_COLORS[f'{deck}_deck'] = color
+    SURFACE_COLORS[f'{deck}_wall'] = tuple(channel * .75 for channel in color)
 
 
 def clamp(value, low, high):
@@ -70,15 +84,9 @@ def midpoint(low, high):
 
 
 def surface_color(texture, normal, classname):
-    palette = {
-        'relay_floor': (.29, .48, .53),
-        'relay_wall': (.31, .40, .50),
-        'relay_trim': (.48, .52, .56),
-        'relay_goal': (.95, .68, .31),
-    }
     if classname in ('uplink_hint', 'uplink_relay') or classname.startswith('trigger_'):
         return None
-    rgb = palette.get(texture.lower(), (.36, .56, .62))
+    rgb = SURFACE_COLORS.get(texture.lower(), (.36, .56, .62))
     shade = .66 + .34 * max(0, dot(normal, (-.36, -.38, .85)))
     return tuple(component * shade for component in rgb)
 

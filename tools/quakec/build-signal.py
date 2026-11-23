@@ -8,6 +8,8 @@ import struct
 import subprocess
 import tempfile
 
+from uplink_art import materials
+
 ROOT = Path(__file__).resolve().parents[2]
 QUTILS = ROOT / 'third_party/quake-tools/qutils'
 
@@ -57,6 +59,7 @@ def goal_pixel(x, y):
 def write_wad(path):
     textures = {b'relay_floor': floor_pixel, b'relay_wall': wall_pixel,
                 b'relay_trim': trim_pixel, b'relay_goal': goal_pixel}
+    textures.update((name.encode('ascii'), pixel) for name, pixel in materials())
     lumps = bytearray()
     directory = bytearray()
     for name, pixel in textures.items():
