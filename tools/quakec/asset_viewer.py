@@ -96,6 +96,8 @@ def update_camera(view, patch):
 
 
 class WindowRequests:
+    request_timeout = 3
+
     def start_requests(self):
         self.requests = SimpleQueue()
         pyglet.clock.schedule(self.handle_requests)
@@ -104,7 +106,7 @@ class WindowRequests:
         future = Future()
         self.requests.put((action, data, future))
         try:
-            return future.result(timeout=3)
+            return future.result(timeout=self.request_timeout)
         except TimeoutError as error:
             future.cancel()
             raise TimeoutError('viewer is busy') from error

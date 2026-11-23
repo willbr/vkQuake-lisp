@@ -206,26 +206,46 @@ different copy of Quake's `pak0.pak` or `gfx/palette.lmp`.
 python3 tools/quakec/texture_editor.py --port 8767
 ```
 
-Choose stone blocks, concrete, metal panels, slotted grate, or hazard stripes.
-Set the palette ramp, dimensions, pattern repeats, wear, and seed. The 3 × 3
-preview shows how the texture tiles, and the thumbnails switch between the
-four mip levels. Each pixel is a stock Quake palette index.
+Use **Pipeline** to add sources such as value, fractal, cellular, and white
+noise, or solid values, bands, and grids. Each source has editable parameters,
+a blend mode, and an amount. Add filters for blur, sharpen, emboss, threshold,
+or invert. The stages run from top to bottom. Select a stage to edit it, move
+it up or down, or remove it. Click a number to enter an exact value.
+
+Use **Texture** to set the name, dimensions, and seed. Use **Palette** to select
+a stock ramp or choose individual Quake palette indices in the order that
+values should map to them. The 3 × 3 preview shows how the texture tiles, and
+the thumbnails switch between four mip levels. Noise and filters wrap across
+the tile edges. The pipeline maps the processed values to palette indices
+after the last stage.
 
 Use **Export WAD2, PNG, and recipe** to write all three files under
 `build/textures`, or set `--output-dir` to choose another destination. Pass
 the saved JSON as a positional argument to reopen it. Add `--export` to rebuild
-the files from a recipe without opening the window.
+the files from a recipe without opening the window. The original material
+preset recipes can be exported using the original editor at commit `7be02052`.
 
 With `--port`, the editor listens on `127.0.0.1` while the window is open.
 `GET /` lists available settings. `GET /view` reads the current recipe and
 preview settings, and `POST /view` updates them. Send any of `recipe` (a patch
-to the current recipe), `tiles` (1 or 3), or `mip` (0 through 3).
+to the current recipe), `tiles` (1 or 3), `mip` (0 through 3), or `tab`
+(`pipeline`, `texture`, or `palette`). When present, `recipe.stages` replaces
+the ordered list. Each stage takes a `kind`, optional `params` and `amount`
+from 0 to 100, and an optional `blend` for sources. `recipe.colors` sets the
+ordered indices for a custom ramp. An empty list uses the named `recipe.ramp`.
 `GET /view.png` captures the window. `GET /texture.png`, `GET /texture.wad`,
 and `GET /recipe.json` download the current draft.
 
 ```sh
 curl -fsS -H 'Content-Type: application/json' \
-  -d '{"recipe":{"material":"stone","name":"relay_wall","seed":42},"tiles":3}' \
+  -d '{
+    "recipe": {"name":"relay_wall","ramp":"sandstone","seed":42,"stages":[
+      {"kind":"grid","params":{"columns":4,"rows":8}},
+      {"kind":"fractal","blend":"add","amount":50},
+      {"kind":"emboss","amount":25}
+    ]},
+    "tiles":3
+  }' \
   http://127.0.0.1:8767/view
 curl -fsS --create-dirs http://127.0.0.1:8767/texture.wad -o build/textures/relay_wall.wad
 python3 tools/quakec/map_editor.py examples/signal.map build build/signal-stone.bsp \

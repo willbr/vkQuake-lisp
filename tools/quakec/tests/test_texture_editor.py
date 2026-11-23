@@ -10,25 +10,43 @@ import zlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quake_assets import read_wad_textures
-from texture_editor import MATERIALS, RAMPS, TextureDocument, TextureRecipe, generate_mips
+from texture_editor import TextureDocument, TextureRecipe, generate_mips
+from texture_pipeline import SOURCES, Stage, blur, render
 
 PALETTE = tuple((i, i, i) for i in range(256))
 
 
 class TextureEditorTests(unittest.TestCase):
-    def test_seeded_materials_use_only_their_quake_indices(self):
-        for material in MATERIALS:
-            with self.subTest(material=material):
-                recipe = TextureRecipe().updated({'material': material, 'width': 32, 'height': 64})
+    def test_sources_use_only_selected_quake_indices(self):
+        allowed = [0, 33, 77, 142, 200, 254]
+        for source in SOURCES:
+            with self.subTest(source=source):
+                recipe = TextureRecipe().updated({'stages': [{'kind': source}], 'width': 32,
+                                                  'height': 64, 'colors': allowed})
                 mips = generate_mips(recipe, PALETTE)
-                allowed = set(RAMPS[recipe.ramp][1])
-                if material == 'hazard':
-                    allowed.update(RAMPS['steel'][1])
                 self.assertEqual(tuple(map(len, mips)), (2048, 512, 128, 32))
-                self.assertTrue(all(set(level) <= allowed for level in mips))
-                self.assertGreater(len(set(mips[0])), 3)
+                self.assertTrue(all(set(level) <= set(allowed) for level in mips))
                 self.assertEqual(mips, generate_mips(recipe, PALETTE))
-                self.assertNotEqual(mips[0], generate_mips(recipe.updated({'seed': 8}), PALETTE)[0])
+                if source in ('value', 'fractal', 'cellular', 'white'):
+                    self.assertNotEqual(mips[0], generate_mips(recipe.updated({'seed': 8}), PALETTE)[0])
+
+    def test_pipeline_respects_filter_order_amount_and_source_blend(self):
+        base = Stage('solid', params={'value': 20})
+        overlay = Stage('solid', amount=50, blend='add', params={'value': 90})
+        self.assertAlmostEqual(render([base, overlay], 32, 32, 1)[0], .4)
+        texture = Stage('bands', params={'across': 3, 'down': 1})
+        threshold, smooth = Stage('threshold'), Stage('blur', params={'radius': 2})
+        after = render([texture, smooth, threshold], 32, 32, 1)
+        before = render([texture, threshold, smooth], 32, 32, 1)
+        self.assertEqual(set(after), {0., 1.})
+        self.assertTrue(any(0 < value < 1 for value in before))
+        self.assertEqual(before, render([texture, threshold, smooth, Stage('invert', amount=0)], 32, 32, 1))
+
+    def test_blur_samples_across_both_tile_edges(self):
+        result = blur([1.] + [0.] * 15, 4, 4, 1)
+        for index in (0, 1, 3, 4, 5, 7, 12, 13, 15):
+            self.assertAlmostEqual(result[index], 1 / 9)
+        self.assertEqual(result[10], 0.)
 
     def test_exported_png_and_wad_contain_the_same_indices(self):
         recipe = TextureRecipe().updated({'name': 'relay_wall', 'width': 32, 'height': 64})
@@ -70,7 +88,7 @@ class TextureEditorTests(unittest.TestCase):
         recipe = TextureRecipe()
         doc = TextureDocument(recipe, PALETTE)
         previous = doc.levels
-        with self.assertRaisesRegex(ValueError, 'width and height'):
-            doc.apply({'material': 'stone', 'width': 48})
+        with self.assertRaisesRegex(ValueError, 'Radius'):
+            doc.apply({'width': 128, 'stages': [{'kind': 'blur', 'params': {'radius': 0}}]})
         self.assertEqual(doc.recipe, recipe)
         self.assertIs(doc.levels, previous)
