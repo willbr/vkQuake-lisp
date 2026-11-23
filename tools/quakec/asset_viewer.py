@@ -95,7 +95,49 @@ def update_camera(view, patch):
     return candidate
 
 
-class OrbitWindow(pyglet.window.Window):
+class WindowRequests:
+    def start_requests(self):
+        self.requests = SimpleQueue()
+        pyglet.clock.schedule(self.handle_requests)
+
+    def request(self, action, data=None):
+        future = Future()
+        self.requests.put((action, data, future))
+        try:
+            return future.result(timeout=3)
+        except TimeoutError as error:
+            future.cancel()
+            raise TimeoutError('viewer is busy') from error
+
+    def handle_requests(self, _):
+        try:
+            action, data, future = self.requests.get_nowait()
+        except Empty:
+            return
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            future.set_result(self.remote_response(action, data))
+        except Exception as error:
+            future.set_exception(error)
+
+    def remote_response(self, action, data):
+        if action == 'update':
+            self.update_remote(data)
+        if action == 'snapshot':
+            self.switch_to()
+            self.on_draw()
+            stream = BytesIO()
+            pyglet.image.get_buffer_manager().get_color_buffer().save('preview.png', stream)
+            return stream.getvalue()
+        return self.remote_state()
+
+    def close(self):
+        pyglet.clock.unschedule(self.handle_requests)
+        super().close()
+
+
+class OrbitWindow(WindowRequests, pyglet.window.Window):
     sidebar = 240
     header = 62
     footer = 35
@@ -105,11 +147,10 @@ class OrbitWindow(pyglet.window.Window):
         super().__init__(width=width, height=height, caption=caption, resizable=True,
                          config=gl.Config(double_buffer=True, depth_size=24))
         self.set_minimum_size(*minimum)
-        self.requests = SimpleQueue()
         self.program = ShaderProgram(Shader(VERTEX_SHADER, 'vertex'), Shader(FRAGMENT_SHADER, 'fragment'))
         self.drag = None
         self.layout_size = None
-        pyglet.clock.schedule(self.handle_requests)
+        self.start_requests()
 
     @property
     def view_size(self):
@@ -123,41 +164,11 @@ class OrbitWindow(pyglet.window.Window):
                                         position=('f', [v for p in positions for v in p]),
                                         color=('f', [v for rgb in colors for v in rgb]))
 
-    def request(self, action, data=None):
-        future = Future()
-        self.requests.put((action, data, future))
-        try:
-            return future.result(timeout=3)
-        except TimeoutError as error:
-            future.cancel()
-            raise TimeoutError('viewer is busy') from error
-
     def remote_state(self):
         return asdict(self.state)
 
     def update_remote(self, patch):
         self.state = update_camera(self.state, patch)
-
-    def handle_requests(self, _):
-        try:
-            action, data, future = self.requests.get_nowait()
-        except Empty:
-            return
-        if not future.set_running_or_notify_cancel():
-            return
-        try:
-            if action == 'update':
-                self.update_remote(data)
-            if action == 'snapshot':
-                self.switch_to()
-                self.on_draw()
-                stream = BytesIO()
-                pyglet.image.get_buffer_manager().get_color_buffer().save('preview.png', stream)
-                future.set_result(stream.getvalue())
-            else:
-                future.set_result(self.remote_state())
-        except Exception as error:
-            future.set_exception(error)
 
     def camera_direction(self):
         yaw, pitch = map(math.radians, (self.state.yaw, self.state.pitch))
@@ -201,10 +212,6 @@ class OrbitWindow(pyglet.window.Window):
         if x < self.view_size[0]:
             self.state.span = clamp(self.state.span * .88 ** clamp(scroll_y, -10, 10),
                                     self.min_span, self.scene.size * 8)
-
-    def close(self):
-        pyglet.clock.unschedule(self.handle_requests)
-        super().close()
 
 
 def run_preview(window, port, server_factory):

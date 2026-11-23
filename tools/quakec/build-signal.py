@@ -5,10 +5,10 @@ from collections import Counter
 import os
 from pathlib import Path
 import shutil
-import struct
 import subprocess
 import tempfile
 
+from quake_assets import encode_miptex, encode_wad, read_wad_textures
 from uplink_art import DECKS, materials
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,21 +18,21 @@ QUTILS = ROOT / 'third_party/quake-tools/qutils'
 def texture(name, pixel, filter_mips=False):
     size = 64
     base = bytes(pixel(x, y) for y in range(size) for x in range(size))
-    data = bytearray()
-    offsets = []
-    for stride in (1, 2, 4, 8):
-        offsets.append(40 + len(data))
+    levels = [base]
+    for stride in (2, 4, 8):
+        data = bytearray()
         for y in range(0, size, stride):
             for x in range(0, size, stride):
                 center = base[(y + stride // 2) * size + x + stride // 2]
-                if filter_mips and stride > 1:
+                if filter_mips:
                     # Indices are categorical. Preserve the dominant shade
                     # in each block without averaging unrelated palette ramps.
                     block = Counter(base[row * size + col]
                                     for row in range(y, y + stride) for col in range(x, x + stride))
                     center = max(block, key=lambda shade: (block[shade], shade == center))
                 data.append(center)
-    return struct.pack('<16s6I', name, size, size, *offsets) + data
+        levels.append(data)
+    return encode_miptex(name, size, size, levels)
 
 
 def floor_pixel(x, y):
@@ -66,22 +66,20 @@ def goal_pixel(x, y):
     return 97 if distance < 28 else 227
 
 
-def write_wad(path):
+def write_wad(path, extra_wads=()):
     textures = {b'relay_floor': floor_pixel, b'relay_wall': wall_pixel,
                 b'relay_trim': trim_pixel, b'relay_goal': goal_pixel}
     textures.update((name.encode('ascii'), pixel) for name, pixel in materials())
     filtered = {f'{deck}_{surface}'.encode('ascii') for deck in DECKS for surface in ('deck', 'wall')}
     filtered.add(b'lift_deck')
-    lumps = bytearray()
-    directory = bytearray()
-    for name, pixel in textures.items():
-        miptex = texture(name, pixel, filter_mips=name in filtered)
-        directory += struct.pack('<iiiBB2x16s', 12 + len(lumps), len(miptex), len(miptex), 68, 0, name)
-        lumps += miptex
-    path.write_bytes(struct.pack('<4sii', b'WAD2', len(textures), 12 + len(lumps)) + lumps + directory)
+    lumps = {name: texture(name, pixel, filter_mips=name in filtered)
+             for name, pixel in textures.items()}
+    for wad in extra_wads:
+        lumps.update(read_wad_textures(wad))
+    path.write_bytes(encode_wad(lumps))
 
 
-def build(output, level, source=None):
+def build(output, level, source=None, extra_wads=()):
     if not QUTILS.is_dir():
         raise SystemExit('Missing map tools. Run ./tools/quakec/setup.sh first.')
     output = output.resolve()
@@ -110,7 +108,7 @@ def build(output, level, source=None):
         map_path = work / 'quake/id1/maps' / f'{level}.map'
         map_path.parent.mkdir(parents=True)
         shutil.copyfile(source or ROOT / 'examples' / map_path.name, map_path)
-        write_wad(work / 'quake/id1/signal.wad')
+        write_wad(work / 'quake/id1/signal.wad', extra_wads)
         subprocess.run([binaries / 'qbsp', map_path], cwd=work, check=True)
         bsp = map_path.with_suffix('.bsp')
         subprocess.run([binaries / 'vis', bsp], cwd=work, check=True)
@@ -125,5 +123,10 @@ if __name__ == '__main__':
     source = parser.add_mutually_exclusive_group()
     source.add_argument('--map', choices=('signal', 'annex', 'uplink'))
     source.add_argument('--source', type=Path, help='stock .map file to compile')
+    parser.add_argument('--wad', type=Path, action='append', default=[],
+                        help='include textures from an additional WAD2 (repeatable)')
     args = parser.parse_args()
-    build(args.output, args.source.stem if args.source else args.map or 'signal', args.source)
+    try:
+        build(args.output, args.source.stem if args.source else args.map or 'signal', args.source, args.wad)
+    except (OSError, ValueError) as error:
+        parser.exit(1, f'{error}\n')

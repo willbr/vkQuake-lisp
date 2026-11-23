@@ -12,7 +12,7 @@ class LocalServer(TCPServer):
 class PreviewHandler(BaseHTTPRequestHandler):
     viewer = None
 
-    def respond(self, value, status=200):
+    def respond(self, value, status=200, *, content_type=None):
         if isinstance(value, str):
             body, media = value.encode(), 'image/svg+xml'
         elif isinstance(value, bytes):
@@ -20,7 +20,7 @@ class PreviewHandler(BaseHTTPRequestHandler):
         else:
             body, media = json.dumps(value).encode(), 'application/json'
         self.send_response(status)
-        self.send_header('Content-Type', media)
+        self.send_header('Content-Type', content_type or media)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
@@ -66,8 +66,8 @@ class PreviewHandler(BaseHTTPRequestHandler):
             self.respond({'error': str(error)}, status)
 
 
-def viewer_server(port, window):
-    class Handler(PreviewHandler):
+def viewer_server(port, window, handler=PreviewHandler):
+    class Handler(handler):
         viewer = window
 
     return LocalServer(('127.0.0.1', port), Handler)

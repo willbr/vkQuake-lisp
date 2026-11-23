@@ -8,9 +8,9 @@ import math
 from pathlib import Path
 import re
 import struct
-import tempfile
 
 from map_editor import point
+from quake_assets import read_palette, write_file
 
 bike = import_module('build-bike')
 
@@ -138,47 +138,10 @@ def build(recipe, output):
     output.write_bytes(model.encode_poses(poses, recipe['palette'], animations))
 
 
-def write_file(path, data, expected=None):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    stream = tempfile.NamedTemporaryFile(dir=path.parent, delete=False)
-    staged = Path(stream.name)
-    try:
-        with stream:
-            stream.write(data)
-        if expected is not None and path.read_bytes() != expected:
-            raise ValueError('recipe changed on disk. Reopen it before saving.')
-        if path.exists():
-            staged.chmod(path.stat().st_mode & 0o777)
-        staged.replace(path)
-    finally:
-        staged.unlink(missing_ok=True)
-
-
 def preview_palette(path):
     if path is None:
         return tuple((i, i, i) for i in range(256))
-    if path.suffix.lower() == '.pak':
-        with path.open('rb') as pak:
-            header = pak.read(12)
-            if len(header) != 12:
-                raise ValueError('incomplete PAK header')
-            magic, directory, length = struct.unpack('<4sII', header)
-            if magic != b'PACK' or length % 64 or directory + length > path.stat().st_size:
-                raise ValueError('invalid PAK directory')
-            pak.seek(directory)
-            records = pak.read(length)
-            for name, offset, size in struct.iter_unpack('<56sII', records):
-                if name.rstrip(b'\0') == b'gfx/palette.lmp' and size == 768:
-                    pak.seek(offset)
-                    palette = pak.read(size)
-                    break
-            else:
-                raise ValueError('PAK does not contain gfx/palette.lmp')
-    else:
-        palette = path.read_bytes()
-    if len(palette) != 768:
-        raise ValueError('the palette must contain 256 RGB colors')
-    return tuple(struct.iter_unpack('3B', palette))
+    return read_palette(path)
 
 
 class RecipeDocument:

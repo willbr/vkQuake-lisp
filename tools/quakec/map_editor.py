@@ -495,6 +495,8 @@ def main():
     view3d.add_argument('--port', type=int, help='also start the localhost editor API')
     build = sub.add_parser('build')
     build.add_argument('output', type=Path)
+    build.add_argument('--wad', type=Path, action='append', default=[],
+                       help='include textures from an additional WAD2 (repeatable)')
     args = parser.parse_args()
     try:
         if args.command == 'serve':
@@ -512,7 +514,8 @@ def main():
             sys.stdout.write(result['diff'])
         elif args.command == 'build':
             subprocess.run([sys.executable, Path(__file__).with_name('build-signal.py'),
-                            args.output, '--source', args.map], check=True)
+                            args.output, '--source', args.map,
+                            *(arg for wad in args.wad for arg in ('--wad', wad))], check=True)
         else:
             document = MapDocument(args.map.read_text(encoding='utf-8'))
             if args.command == 'preview':

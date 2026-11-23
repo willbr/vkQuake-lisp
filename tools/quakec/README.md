@@ -195,6 +195,47 @@ the part's `pivot`, with its center or ring origin as the default.
 The buddy's groups are idle, walk, and assist in that order.
 [Uplink asset build](build-uplink-assets.py)
 
+## Procedural textures
+
+Open the native Python editor with the same Pyglet installation used by the
+model viewer. The editor looks for `id1/pak0.pak` and the setup's linked game
+data at `build/quakec/run/id1/pak0.pak`. Use `--palette` to point it at a
+different copy of Quake's `pak0.pak` or `gfx/palette.lmp`.
+
+```sh
+python3 tools/quakec/texture_editor.py --port 8767
+```
+
+Choose stone blocks, concrete, metal panels, slotted grate, or hazard stripes.
+Set the palette ramp, dimensions, pattern repeats, wear, and seed. The 3 × 3
+preview shows how the texture tiles, and the thumbnails switch between the
+four mip levels. Each pixel is a stock Quake palette index.
+
+Use **Export WAD2, PNG, and recipe** to write all three files under
+`build/textures`, or set `--output-dir` to choose another destination. Pass
+the saved JSON as a positional argument to reopen it. Add `--export` to rebuild
+the files from a recipe without opening the window.
+
+With `--port`, the editor listens on `127.0.0.1` while the window is open.
+`GET /` lists available settings. `GET /view` reads the current recipe and
+preview settings, and `POST /view` updates them. Send any of `recipe` (a patch
+to the current recipe), `tiles` (1 or 3), or `mip` (0 through 3).
+`GET /view.png` captures the window. `GET /texture.png`, `GET /texture.wad`,
+and `GET /recipe.json` download the current draft.
+
+```sh
+curl -fsS -H 'Content-Type: application/json' \
+  -d '{"recipe":{"material":"stone","name":"relay_wall","seed":42},"tiles":3}' \
+  http://127.0.0.1:8767/view
+curl -fsS --create-dirs http://127.0.0.1:8767/texture.wad -o build/textures/relay_wall.wad
+python3 tools/quakec/map_editor.py examples/signal.map build build/signal-stone.bsp \
+  --wad build/textures/relay_wall.wad
+```
+
+For maps that use `signal.wad`, each `--wad` adds textures to the stock build's
+WAD. A matching texture name replaces the earlier entry, as `relay_wall` does
+in the example. Use the exported texture name on map faces.
+
 ## VM listings and fixtures
 
 ```sh
