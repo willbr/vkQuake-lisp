@@ -43,6 +43,13 @@ without rebuilding.
 Port id's `dog.qc` to Lisp against the PAK's `dog.mdl` and compare statement
 count, globals, and peak locals with `--report` against the FTEQCC build.
 
+### Scoreboard stats and sprint
+
+Add `quake:update-stat` (`svc_updatestat`) and the stock
+`svc_killedmonster` and `svc_foundsecret` messages, emitted like
+`quake:beam`, so the tab scoreboard's monster and secret counts work. Expose
+`sprint` (#24) for per-player co-op messages.
+
 ### Compile-time quine sign
 
 A host macro embeds the program's source lines as string literals and a sign
@@ -85,14 +92,6 @@ budget. The conduit graph uses map-authored `target`/`targetname` links.
 The sweep hides unreachable platforms (non-solid, model name kept in a field)
 rather than removing them, so reset and save keep working. A player outside
 any trigger linked to a marked node takes damage.
-
-### call/cc rune
-
-Picking up the rune captures a continuation: origin, angles, health, ammo,
-items, and weapon in a per-player `define-saved-record`. Invoking it restores
-the player with `set-origin` and `fixangle`, but the world keeps its state.
-One use is an escape continuation; a reusable rune is re-entrant. Co-op safe.
-[Saved records](qslisp/persistence.scm)
 
 ### amb rooms
 
@@ -141,3 +140,89 @@ Hide `quote`, `atom`, `eq`, `car`, `cdr`, `cons`, and `cond` runes across an
 episode as bits in `serverflags`, which survives level changes and saves.
 Use bits 4 and up: the stock HUD draws the low four as episode sigils. Show
 the count by centerprint. Needs more than one map.
+
+## Weapons
+
+The stock HUD has seven weapon slots (`items` bits 1–64) and four ammo pools.
+The shotgun (bit 1, shells), pulse carbine (bit 4, nails), and tether (bit 8)
+leave four slots and the rocket and cell pools. Proposed layout:
+
+| Key | Bit | Weapon | Ammo |
+| --- | ---: | --- | --- |
+| 1 | 1 | Shotgun | shells |
+| 2 | 2 | Linker | none |
+| 3 | 4 | Pulse carbine | nails |
+| 4 | 8 | Tether | none |
+| 5 | 16 | Continuation beacon | one beacon |
+| 6 | 32 | Tail-call ricochet | rockets |
+| 7 | 64 | Mark-and-sweep | cells |
+
+### Match keys to HUD slots
+
+Key `1` now selects the shotgun shown in HUD position 2. Remap impulses to
+the layout above and draw each icon's number to match its key.
+[Progression](examples/progression.scm)
+
+### Linker
+
+Fire at one entity, then another, and store the second in the first's link
+field; a refreshed `quake:beam` shows the pointer. It rewires `cdr` pads in
+the cons-cell puzzles and elsewhere chains a sentry to a relay, an enemy to a
+hazard, or a lift to a switch.
+
+### Tail-call ricochet
+
+One bolt that reflects off walls using the trace normal, hitting harder on
+each bounce while staying one entity: a tail call that never grows. Cut the
+splitting rocket idea, which doubles entities and plays like a rocket.
+
+### Mark-and-sweep
+
+Hold fire to beam-mark up to four targets in entity fields; release to damage
+everything marked at once. Pairs with the garbage collector monster.
+
+### Continuation beacon
+
+`call/cc` as a weapon, replacing the rune pickup. Throw a beacon, then fire
+again to return to it with `set-origin` and `fixangle` while the world keeps
+its state. The beacon is a toss entity with the player's bounding box, so it
+only rests where the player hull fits; stock has no builtin to test that
+otherwise. Keep the owner's return state in a per-player
+`define-saved-record`. A one-shot beacon is an escape continuation; a
+reusable one is re-entrant. Build it last: save/load and co-op tests carry
+most of the risk. [Saved records](qslisp/persistence.scm)
+
+## HUD
+
+The stock client draws the HUD in `sbar.c`. A mod controls its art through
+`gfx.wad` and its data through player fields: `items`, `weapon`,
+`currentammo`, the four ammo pools, `armorvalue`, and `health`.
+
+### Generated gfx.wad
+
+`W_LoadWadFile` runs after `-game` sets the search path, so a mod
+`gfx.wad` replaces the status bar art. Add a WAD2 tool that reads the
+player's PAK copy at build time, replaces chosen lumps, and keeps every other
+lump, since the client errors on a missing one. Never commit id's art. Draw
+with the procedural texture tool in the Quake palette. Replace the status and
+inventory bars, the seven weapon icons with their selected and flash
+variants, the four ammo icons, the face as an operator portrait, and the key,
+sigil, and armor icons. Menu and console art are loose `gfx/*.lmp` files.
+[Procedural textures](tools/quakec/README.md#procedural-textures)
+
+### Stock indicators
+
+- Keys (`IT_KEY1`, `IT_KEY2`) become mission keycards.
+- Sigils are the low four `serverflags` bits: episode progress.
+- Armor icon and value could show tether or bike integrity, only if wanted.
+- Powerup bits tint the view (`view.c`), and the ring also hides the weapon
+  model (`r_main.c`). Use them deliberately, such as the quad tint while a
+  continuation beacon is out, never as plain status icons.
+
+### Scoreboard and messages
+
+The tab scoreboard shows the worldspawn `message` as the level title and
+fixed `Monsters` and `Secrets` labels; keep their meanings literal (hostiles
+disabled, secrets found). Use centerprint for objectives, `bprint` for shared
+events, and `sprint` for one co-op player. Do not send `viewsize` or
+`crosshair` changes: they persist in the player's config after the mod.
