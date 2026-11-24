@@ -555,6 +555,12 @@ Every weapon's view and pickup model is generated from a recipe in
 ricochet bolt. View models sit below eye level like id's, about 35 units long
 and a few wide. Pickups reuse their view model's parts, centered on the floor,
 with the stock MDL flag that spins items; the beacon and bolt set trail flags.
+
+Health, shells, rockets, cells, and the lift crates are brush models too, as
+in id's game. [`build-items.py`](../tools/quakec/build-items.py) builds each as
+one box with generated side and top textures, centered over its entity and
+resting on its floor, and bakes its lighting with the pinned `qbsp` and
+`light`. The launcher builds them into `maps/b_*.bsp` for every run.
 Nothing from id's PAKs is committed. The Lambda Lab verifier takes a stock
 screenshot and compares the inventory slots and face with the generated art.
 

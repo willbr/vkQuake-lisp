@@ -71,6 +71,27 @@ def write_wad(path, extra_wads=()):
     path.write_bytes(encode_wad(lumps))
 
 
+def compile_tools(work):
+    """Build the pinned qbsp, light, and vis in a scratch directory."""
+    if not QUTILS.is_dir():
+        raise SystemExit('Missing map tools. Run ./tools/quakec/setup.sh first.')
+    for group in ('COMMON', 'QBSP', 'LIGHT', 'VIS'):
+        dest = work / group.lower()
+        dest.mkdir()
+        for tool_source in (QUTILS / group).iterdir():
+            if tool_source.suffix in ('.C', '.H'):
+                shutil.copyfile(tool_source, dest / tool_source.name.lower())
+    binaries = work / 'bin'
+    binaries.mkdir()
+    common = ['common/bspfile.c', 'common/cmdlib.c', 'common/mathlib.c']
+    for name in ('qbsp', 'light', 'vis'):
+        sources = sorted(str(path.relative_to(work)) for path in (work / name).glob('*.c'))
+        subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu89', '-O2', '-fcommon',
+                        '-include', 'unistd.h', '-Icommon', '-o', binaries / name,
+                        *sources, *common, '-lm'], cwd=work, check=True)
+    return binaries
+
+
 def build(output, level, source=None, extra_wads=()):
     if not QUTILS.is_dir():
         raise SystemExit('Missing map tools. Run ./tools/quakec/setup.sh first.')
@@ -80,21 +101,7 @@ def build(output, level, source=None, extra_wads=()):
     # in the absolute path to locate the mod's WAD.
     with tempfile.TemporaryDirectory(prefix='qslisp-', dir='/tmp') as directory:
         work = Path(directory)
-        for group in ('COMMON', 'QBSP', 'LIGHT', 'VIS'):
-            dest = work / group.lower()
-            dest.mkdir()
-            for tool_source in (QUTILS / group).iterdir():
-                if tool_source.suffix in ('.C', '.H'):
-                    shutil.copyfile(tool_source, dest / tool_source.name.lower())
-
-        binaries = work / 'bin'
-        binaries.mkdir()
-        common = ['common/bspfile.c', 'common/cmdlib.c', 'common/mathlib.c']
-        for name in ('qbsp', 'light', 'vis'):
-            sources = sorted(str(path.relative_to(work)) for path in (work / name).glob('*.c'))
-            subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu89', '-O2', '-fcommon',
-                            '-include', 'unistd.h', '-Icommon', '-o', binaries / name,
-                            *sources, *common, '-lm'], cwd=work, check=True)
+        binaries = compile_tools(work)
 
         # qbsp locates the mod directory from the absolute .../quake/<mod>/ path.
         map_path = work / 'quake/id1/maps' / f'{level}.map'

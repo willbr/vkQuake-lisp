@@ -290,6 +290,8 @@ It writes `gfx.wad` and `gfx/conback.lmp` into the mod directory. The launcher
 runs it for every staged game. [`build-uplink-assets.py`](build-uplink-assets.py)
 builds every model recipe, including each weapon's view model and its
 `g_*` pickup; a recipe's optional `flags` sets the stock MDL flags.
+[`build-items.py`](build-items.py) builds the health, ammo, and crate brush
+models into a mod directory's `maps` folder.
 
 ## VM listings and fixtures
 

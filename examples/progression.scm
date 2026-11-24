@@ -8,13 +8,13 @@
   (quake:set-size item (quake:vector -14 -14 -18) (quake:vector 14 14 20)))
 
 (define (qslisp_health)
-  (quake:precache-model "maps/b_bh25.bsp")
-  (set-pickup-model (quake:self) "maps/b_bh25.bsp")
+  (quake:precache-model "maps/b_health.bsp")
+  (set-pickup-model (quake:self) "maps/b_health.bsp")
   (quake:set-callback! (quake:self) touch collect-health))
 
 (define (qslisp_ammo)
-  (quake:precache-model "maps/b_shell0.bsp")
-  (set-pickup-model (quake:self) "maps/b_shell0.bsp")
+  (quake:precache-model "maps/b_shells.bsp")
+  (set-pickup-model (quake:self) "maps/b_shells.bsp")
   (quake:set-callback! (quake:self) touch collect-shells))
 
 (define (qslisp_pulse)
