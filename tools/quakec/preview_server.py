@@ -26,7 +26,19 @@ class PreviewHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def local(self):
+        # A page on another site can reach this port through DNS rebinding,
+        # but only under its own host name.
+        host = self.headers.get('Host', '')
+        if host in (f'{name}:{self.server.server_address[1]}' for name in ('127.0.0.1', 'localhost')):
+            return True
+        self.respond({'error': 'requests must address 127.0.0.1 or localhost'}, 403)
+        return False
+
     def read_json(self):
+        # Browsers cannot send this type across origins without a preflight.
+        if self.headers.get_content_type() != 'application/json':
+            raise ValueError('updates require application/json')
         length = int(self.headers.get('Content-Length', '0'))
         if not 0 < length <= 1024 * 1024:
             raise ValueError('invalid request size')
@@ -39,6 +51,8 @@ class PreviewHandler(BaseHTTPRequestHandler):
         self.respond({'error': 'unknown endpoint'}, 404)
 
     def do_GET(self):
+        if not self.local():
+            return
         try:
             url = urlsplit(self.path)
             if self.viewer is not None and url.path in ('/view', '/view.png'):
@@ -52,10 +66,10 @@ class PreviewHandler(BaseHTTPRequestHandler):
             self.respond({'error': str(error)}, 400)
 
     def do_POST(self):
+        if not self.local():
+            return
         try:
             if self.path == '/view' and self.viewer is not None:
-                if self.headers.get_content_type() != 'application/json':
-                    raise ValueError('view updates require application/json')
                 self.respond(self.viewer.request('update', self.read_json()))
             else:
                 self.post_resource()

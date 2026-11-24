@@ -82,6 +82,16 @@ class MapEditorTests(unittest.TestCase):
                     urlopen(request, timeout=3)
                 self.assertEqual(rejected.exception.code, 409)
                 rejected.exception.close()
+                for headers, status in (({'Content-Type': 'text/plain'}, 400),
+                                        ({'Content-Type': 'application/json', 'Host': 'attacker.example'}, 403)):
+                    with self.assertRaises(HTTPError) as rejected:
+                        urlopen(Request(url+'/edit', data=request.data, headers=headers), timeout=3)
+                    self.assertEqual(rejected.exception.code, status)
+                    rejected.exception.close()
+                with self.assertRaises(HTTPError) as rejected:
+                    urlopen(Request(url, headers={'Host': 'attacker.example'}), timeout=3)
+                self.assertEqual(rejected.exception.code, 403)
+                rejected.exception.close()
             finally:
                 server.terminate()
                 server.wait(timeout=3)

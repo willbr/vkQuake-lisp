@@ -158,6 +158,9 @@ For a persistent session, run `serve --port 8765` on a map. Read `GET /` for
 the current revision and entity indices. Send `POST /edit` with that
 `revision`, an `operations` array, and optional `write: true`. An intervening
 edit invalidates the old revision. `GET /preview?view=side` returns an SVG.
+Every editor server listens on 127.0.0.1 only, answers only requests addressed
+to `127.0.0.1` or `localhost`, and accepts `POST` bodies only as
+`application/json`.
 
 ## Model editing
 
