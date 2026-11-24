@@ -347,6 +347,21 @@ class CompilerTests(CompilerCase):
                 with self.assertRaisesRegex(CompileError, 'spawn parm from 1 to 16'):
                     compile_source(f'(define (test) {call})', 'parms.scm')
 
+    def test_carried_lists_round_trip_through_spawn_parms(self):
+        library = (ROOT / 'qslisp/persistence.scm').read_text()
+        self.value(library + """
+        (define (test)
+          (carry! (list 4 8 15 16 23 42))
+          (fold + 0 (carried)))
+        (import "list.scm")
+        """, 108, filename=str(ROOT / 'qslisp/carry.scm'))
+        result = self.execute(library + """
+        (define (count n) (if (= n 0) () (cons n (count (- n 1)))))
+        (define (test) (carry! (count 16)))
+        """)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('at most 15 numbers', result.stderr)
+
     def test_source_printer_broadcasts_each_line_of_its_file(self):
         with tempfile.TemporaryDirectory() as directory:
             source = pathlib.Path(directory) / 'printer.scm'
