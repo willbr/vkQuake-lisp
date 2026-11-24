@@ -303,6 +303,33 @@ class CompilerTests(CompilerCase):
         self.assertIn('builtin #20', result.stderr)
         self.assertIn('requires the game engine', result.stderr)
 
+    def test_stock_lightstyle_bprint_pointcontents_and_serverflags(self):
+        source = '''
+        (define (id x) x)
+        (define (sigils) (quake:set-serverflags! (quake:bit-or (quake:serverflags) 6)) (quake:serverflags))
+        (define (style n) (quake:lightstyle (id n) "az"))
+        (define (constant-style) (quake:lightstyle 63 "m"))
+        (define (broadcast) (quake:bprint "hello\\n"))
+        (define (contents) (quake:point-contents (quake:vector 0 0 0)))
+        '''
+        self.value(source, 6, 'sigils')
+        for name, arguments, builtin in [('style', (32,), 35), ('constant-style', (), 35),
+                                         ('broadcast', (), 23), ('contents', (), 41)]:
+            with self.subTest(name=name):
+                result = self.execute(source, name, *arguments)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f'builtin #{builtin}', result.stderr)
+        for style in (-1, 64):
+            with self.subTest(style=style):
+                result = self.execute(source, 'style', style)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn('light style must be 0 to 63', result.stderr)
+        data = compile_source(source, 'flags.scm')
+        header = STOCK.validate(data)
+        definitions = [struct.unpack_from('<HHi', data, header[4] + 8 * i) for i in range(header[5])]
+        saved = {data[header[10] + name:].split(b'\0', 1)[0] for kind, _, name in definitions if kind & 0x8000}
+        self.assertEqual(saved, {b'serverflags'})
+
     def test_quake_builtin_literal_diagnostics(self):
         cases = [
             ('(quake:dprint)', 'requires one string literal'),
@@ -312,6 +339,12 @@ class CompilerTests(CompilerCase):
             ('(quake:precache-model "")', 'requires a stock model path'),
             ('(quake:precache-model "' + 'a' * 64 + '")', 'requires a stock model path'),
             ('(quake:change-level "annex; quit")', 'requires a literal map name'),
+            ('(quake:bprint "' + 'é' * 128 + '")', 'stock 255-byte limit'),
+            ('(quake:lightstyle 64 "a")', 'style from 0 to 63'),
+            ('(quake:lightstyle 32 "aZ")', 'pattern of 1–63 letters'),
+            ('(quake:lightstyle 32 "")', 'pattern of 1–63 letters'),
+            ('(quake:lightstyle 32 "' + 'a' * 64 + '")', 'pattern of 1–63 letters'),
+            ('(quake:set-serverflags! #t)', 'require numbers'),
         ]
         for call, message in cases:
             with self.subTest(call=call):

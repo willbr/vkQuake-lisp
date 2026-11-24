@@ -440,6 +440,18 @@ reads the endpoint's height. Use `quake:entity=?` to compare references and
 `(quake:sound entity channel "path.wav" volume attenuation)` plays the sample.
 `(quake:particle origin direction color count)` emits stock palette particles.
 `(quake:centerprint client "message")` shows a message to that client.
+`(quake:bprint "message")` prints a literal to every client's console.
+`(quake:point-contents vector)` returns the stock contents number at a point:
+`-1` empty, `-2` solid, `-3` water, `-4` slime, `-5` lava, `-6` sky.
+`(quake:lightstyle style "pattern")` sets a light style for the server and all
+clients, and stock saves record it. Patterns are 1–63 letters `a`–`z`, where
+`a` is dark, `m` normal, and `z` brightest; the engine steps through them ten
+times a second. Styles run from 0 to 63; a computed style outside that range
+stops with a source location before the call, because the stock engine does
+not check it. The map light tool gives switchable lights styles from 32.
+`(quake:serverflags)` reads and `(quake:set-serverflags! number)` writes the
+stock global that survives level changes and, as in id's progs, saved games.
+The stock HUD draws its low four bits as episode sigils.
 
 ## Pair arena
 

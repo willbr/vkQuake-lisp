@@ -20,13 +20,6 @@ what ordinary Quake entity fields can represent. The pair arena lasts for one
 engine entry, so such state must still be projected onto typed entity fields.
 [Current persistence helper](qslisp/persistence.scm) · [Pair arena](qslisp/README.md#pair-arena)
 
-### Remaining stock builtins and globals
-
-Expose `lightstyle` (#35), `bprint` (#23), `pointcontents` (#41), and the
-`serverflags` global. Several gameplay ideas below need them, and each is a
-small compiler form. Avoid `cvar_set` (#72) for gameplay: it changes the whole
-server and outlives the level.
-
 ### Actor restarts
 
 A Common Lisp style condition system scoped to actors. The stock `error`
@@ -131,7 +124,7 @@ as a bug.
 
 A secret room with procedural console and space-cadet keyboard textures. The
 Tom Knight koan appears by centerprint, and the power-cycle switch sets a
-baked light style to `"a"` and back. Needs `lightstyle`.
+baked light style to `"a"` and back with `quake:lightstyle`.
 [Procedural textures](tools/quakec/README.md#procedural-textures)
 
 ### AI Winter map
@@ -146,5 +139,5 @@ outside heat triggers. Decorative fans and dishes can spin as non-solid
 
 Hide `quote`, `atom`, `eq`, `car`, `cdr`, `cons`, and `cond` runes across an
 episode as bits in `serverflags`, which survives level changes and saves.
-The stock HUD draws only four sigils, so show the count by centerprint.
-Needs `serverflags` and more than one map.
+Use bits 4 and up: the stock HUD draws the low four as episode sigils. Show
+the count by centerprint. Needs more than one map.

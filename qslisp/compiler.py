@@ -39,10 +39,13 @@ ENGINE_CALLS = {
     'quake:precache-sound': (19, ('sample',)),
     'quake:precache-model': (20, ('model',)),
     'quake:client-command': (21, ('entity', 'command')),
+    'quake:bprint': (23, ('string',)),
     'quake:dprint': (25, ('string',)),
     'quake:walkmove': (32, ('number', 'number')),
     'quake:drop-to-floor': (34, ()),
+    'quake:lightstyle': (35, ('style', 'style-pattern')),
     'quake:floor': (37, ('number',)),
+    'quake:point-contents': (41, ('vector',)),
     'quake:cvar': (45, ('string',)),
     'quake:particle': (48, ('vector', 'vector', 'number', 'number')),
     'quake:change-level': (70, ('level',)),
@@ -51,7 +54,8 @@ ENGINE_CALLS = {
 ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'entity'),
                   'quake:world': ('world', 'entity'),
                   'quake:time': ('time', 'number'), 'quake:frametime': ('frametime', 'number'),
-                  'quake:coop': ('coop', 'number'), 'quake:trace-fraction': ('trace_fraction', 'number'),
+                  'quake:coop': ('coop', 'number'), 'quake:serverflags': ('serverflags', 'number'),
+                  'quake:trace-fraction': ('trace_fraction', 'number'),
                   'quake:trace-normal-x': ('trace_plane_normal_x', 'number'),
                   'quake:trace-normal-y': ('trace_plane_normal_y', 'number'),
                   'quake:trace-normal-z': ('trace_plane_normal_z', 'number'),
@@ -60,7 +64,7 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
 ENTITY_RESULTS = {'quake:spawn': 1, 'quake:find': 1, 'quake:traceline': 'trace_ent'}
 NUMERIC_RESULTS = {'quake:vector-length', 'quake:vector-yaw', 'quake:walkmove', 'quake:drop-to-floor',
-                   'quake:floor', 'quake:cvar'}
+                   'quake:floor', 'quake:cvar', 'quake:point-contents'}
 PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
               ENGINE_CALLS.keys() | ENGINE_GLOBALS.keys()) | {
     'not', 'cons', 'car', 'cdr', 'pair?', 'list', 'append', 'list?', 'null?', 'symbol?', 'string?', 'eq?', 'equal?',
@@ -69,7 +73,7 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
     'quake:set-callback!', 'quake:call-callback', 'quake:set-view', 'quake:set-view-angles!', 'quake:beam',
-    'quake:dprint-number',
+    'quake:dprint-number', 'quake:set-serverflags!',
 }
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
                     'quake:vector?': 'vector', 'quake:entity?': 'entity', 'procedure?': 'procedure'}
@@ -937,8 +941,12 @@ class Compiler:
             raise CompileError(literal.location, f'{name} requires a string literal here')
         text = literal.value.text
         encoded = text.encode('utf-8')
-        if name in ('quake:dprint', 'quake:error', 'quake:centerprint', 'quake:client-command') and len(encoded) > 255:
+        if name in ('quake:dprint', 'quake:bprint', 'quake:error', 'quake:centerprint',
+                    'quake:client-command') and len(encoded) > 255:
             raise CompileError(literal.location, f'{name} text exceeds the stock 255-byte limit')
+        # The stock client copies a style into a 64-byte buffer and maps a-z to brightness.
+        if kind == 'style-pattern' and not (1 <= len(text) <= 63 and all('a' <= char <= 'z' for char in text)):
+            raise CompileError(literal.location, f'{name} requires a pattern of 1–63 letters a–z')
         if kind in ('model', 'sample') and (not encoded or encoded[0] <= 32 or len(encoded) > 63):
             raise CompileError(literal.location, f'{name} requires a stock {kind} path of 1–63 bytes')
         if kind == 'level' and (not 1 <= len(text) <= 63 or not text.isascii() or
@@ -1101,6 +1109,8 @@ class Compiler:
                 value = self.expression(frame, arg, environment)
                 self.number(frame, value, arg)
                 slot = value.slot
+            elif kind == 'style':
+                slot = self.light_style(frame, arg, environment)
             elif kind == 'precache-name' and isinstance(arg.value, StringLiteral):
                 slot = self.engine_string(name, arg, 'model')
             elif kind in ('precache-name', 'string-value'):
@@ -1127,6 +1137,25 @@ class Compiler:
             frame.emit(OP_STORE, 1, result.slot)
             return result
         return Value(self.zero, 'number')
+
+    def light_style(self, frame, node, environment):
+        # Stock lightstyle indexes a 64-entry server table and the client's
+        # table without bounds checks, so reject other styles before the call.
+        if type(node.value) in (int, float):
+            if not 0 <= node.value < 64:
+                raise CompileError(node.location, 'quake:lightstyle requires a style from 0 to 63')
+            return self.program.constant(node.value)
+        value = self.expression(frame, node, environment)
+        self.number(frame, value, node)
+        low, high = frame.allocate(1), frame.allocate(1)
+        frame.emit(OP_GE, value.slot, self.zero, low)
+        frame.emit(OP_LT, value.slot, self.program.constant(64), high)
+        frame.emit(OP_AND, low, high, low)
+        skip = frame.emit(OP_IF, low)
+        frame.emit(OP_STORE, self.program.message(f'{node.location}: light style must be 0 to 63\n'), 4)
+        frame.emit(OP_CALL0 + 1, self.program.error_function)
+        frame.patch(skip, 2, len(frame.code))
+        return value.slot
 
     def view_message(self, frame, node, name, args, environment):
         angles = name == 'quake:set-view-angles!'
@@ -1278,6 +1307,13 @@ class Compiler:
             frame.emit(OP_STORE, 1, 4)
             frame.emit(OP_CALL0 + 1, printer)
             return Value(self.zero, 'number')
+        if name == 'quake:set-serverflags!':
+            if len(args) != 1:
+                raise CompileError(node.location, 'quake:set-serverflags! requires one number')
+            value = self.expression(frame, args[0], environment)
+            self.number(frame, value, args[0])
+            frame.emit(OP_STORE, value.slot, self.program.names['serverflags'])
+            return value
         if name in ENGINE_GLOBALS:
             if args:
                 raise CompileError(node.location, f'{name} takes no arguments')
