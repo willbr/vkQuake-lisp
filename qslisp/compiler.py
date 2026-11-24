@@ -344,15 +344,20 @@ class Compiler:
     def values(self, frame, nodes, environment):
         return [self.expression(frame, node, environment) for node in nodes]
 
-    def sequence(self, frame, nodes, environment):
-        result = None
+    def discard(self, frame, nodes, environment):
+        # A value nobody reads leaves nothing live: its temporaries, and any
+        # bindings scoped inside it, can be reused by what follows.
         for node in nodes:
-            result = self.expression(frame, node, environment)
-        return result
+            words = frame.words
+            self.expression(frame, node, environment)
+            frame.release(words)
+
+    def sequence(self, frame, nodes, environment):
+        self.discard(frame, nodes[:-1], environment)
+        return self.expression(frame, nodes[-1], environment)
 
     def tail_sequence(self, frame, nodes, environment, function):
-        for node in nodes[:-1]:
-            self.expression(frame, node, environment)
+        self.discard(frame, nodes[:-1], environment)
         self.tail_expression(frame, nodes[-1], environment, function)
 
     def application(self, node, environment):
@@ -459,9 +464,13 @@ class Compiler:
             if name == 'if':
                 if len(args) != 3:
                     raise CompileError(node.location, 'if requires a condition and two branches')
+                # The test is dead once branched on, and only one arm runs.
+                words = frame.words
                 condition = self.expression(frame, args[0], environment)
                 to_else = frame.emit(OP_IF, self.false_test(frame, condition))
+                frame.release(words)
                 self.tail_expression(frame, args[1], environment, function)
+                frame.release(words)
                 frame.patch(to_else, 2, len(frame.code))
                 self.tail_expression(frame, args[2], environment, function)
                 return
@@ -799,6 +808,8 @@ class Compiler:
         plan, success, failure = args
         scope = environment.copy()
         misses = []
+        result = frame.allocate() if function is None else None
+        words = frame.words  # Checks and bindings are dead once this clause is decided.
         for check in plan.value:
             name, expression = check.value
             value = self.expression(frame, expression, scope)
@@ -809,10 +820,10 @@ class Compiler:
         if function is not None:
             self.tail_expression(frame, success, scope, function)
         else:
-            result = frame.allocate()
             yes = self.expression(frame, success, scope)
             frame.emit(OP_STORE_V, yes.slot, result)
             done = frame.emit(OP_GOTO)
+        frame.release(words)
         for branch in misses:
             frame.patch(branch, 2, len(frame.code))
         if function is not None:
@@ -820,6 +831,7 @@ class Compiler:
             return None
         no = self.expression(frame, failure, environment)
         frame.emit(OP_STORE_V, no.slot, result)
+        frame.release(words)
         frame.patch(done, 1, len(frame.code))
         return Value(result, yes.kind if yes.kind == no.kind else 'unknown',
                      schema=yes.schema if yes.schema == no.schema else None)
@@ -1210,15 +1222,22 @@ class Compiler:
         if name == 'if':
             if len(args) != 3:
                 raise CompileError(node.location, 'if requires a condition and two branches')
+            # The test is dead once branched on, and only one arm runs: both
+            # arms share the slots after the result.
+            words = frame.words
             condition = self.expression(frame, args[0], environment)
             to_else = frame.emit(OP_IF, self.false_test(frame, condition))
+            frame.release(words)
             result = frame.allocate()
+            words = frame.words
             yes = self.expression(frame, args[1], environment)
             frame.emit(OP_STORE_V, yes.slot, result)
+            frame.release(words)
             to_end = frame.emit(OP_GOTO)
             frame.patch(to_else, 2, len(frame.code))
             no = self.expression(frame, args[2], environment)
             frame.emit(OP_STORE_V, no.slot, result)
+            frame.release(words)
             frame.patch(to_end, 1, len(frame.code))
             return Value(result, yes.kind if yes.kind == no.kind else 'unknown')
         if name == 'let':

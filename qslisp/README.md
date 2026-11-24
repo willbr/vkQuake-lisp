@@ -121,7 +121,7 @@ fit the original engine's 256-byte error-message buffer.
 
 This is a scoped Scheme-style language, not a conforming Scheme implementation.
 Non-tail recursion
-uses the stock call/local stacks; all execution remains subject to the original
+uses the stock call/local stacks, about 29 calls deep; all execution remains subject to the original
 instruction watchdog. Syntax keywords,
 primitive function names, `__qslisp*` global names, and stock ABI global/field names
 are reserved for function definitions. Stock function hooks such as `StartFrame`
@@ -566,7 +566,10 @@ of parameters from the registers.
 Instructions are first emitted into a small per-function IR containing local
 slot references. Constants are allocated separately, and locals are relocated
 into contiguous frames afterward. This preserves the stock interpreter's
-save/restore behavior, including recursive calls. The emitter diagnoses frames
+save/restore behavior, including recursive calls. A frame reuses the slots of
+values nothing reads again: the temporaries of a discarded body expression, a
+condition once it has been branched on, and the other arm of an `if`, `cond`,
+or `match`. Operands of one expression and `let` bindings keep their own slots. The emitter diagnoses frames
 over 2,048 words, total storage over 32,768 words, and out-of-range branches.
 Nested frame totals, call depth, and instruction budgets remain runtime limits.
 

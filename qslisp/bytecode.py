@@ -185,7 +185,7 @@ class Frame:
                                 else tuple(parameter_width))
         if not 0 <= arity <= 8 or len(self.parameter_sizes) != arity or any(w not in (1, 2, 3) for w in self.parameter_sizes):
             raise CompileError(location, 'invalid VM parameter layout')
-        self.words = sum(self.parameter_sizes)
+        self.words = self.peak = sum(self.parameter_sizes)
         self.code = []
         self.source = location
         self.locations = []
@@ -202,9 +202,15 @@ class Frame:
     def allocate(self, words=3):
         slot = Local(self.words)
         self.words += words
-        if self.words > 2048:
+        self.peak = max(self.peak, self.words)
+        if self.peak > 2048:
             raise CompileError(self.location, 'function exceeds stock saved-locals limit (2,048 slots)')
         return slot
+
+    def release(self, words):
+        # Reuse every slot allocated since self.words had this value. The
+        # caller guarantees that no later instruction reads them.
+        self.words = words
 
     def emit(self, opcode, a=0, b=0, c=0):
         self.code.append((opcode, a, b, c))
@@ -217,7 +223,7 @@ class Frame:
         self.code[instruction] = tuple(statement)
 
     def finish(self):
-        start = self.program.allocate(self.words)
+        start = self.program.allocate(self.peak)
         first = len(self.program.statements)
         for op, *args in self.code:
             resolved = [start + a.offset if isinstance(a, Local) else a for a in args]
@@ -226,7 +232,7 @@ class Frame:
             self.program.statements.append((op, *resolved))
         old = self.program.functions[self.index]
         sizes = list(self.parameter_sizes) + [0] * (8 - self.arity)
-        self.program.functions[self.index] = (first, start, self.words, 0, old[4], old[5], self.arity, *sizes)
+        self.program.functions[self.index] = (first, start, self.peak, 0, old[4], old[5], self.arity, *sizes)
         for offset, location in enumerate(self.locations):
             ranges = self.program.source_ranges
             if ranges and ranges[-1][2:] == (self.index, location):
