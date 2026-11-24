@@ -43,13 +43,6 @@ without rebuilding.
 Port id's `dog.qc` to Lisp against the PAK's `dog.mdl` and compare statement
 count, globals, and peak locals with `--report` against the FTEQCC build.
 
-### Scoreboard stats and sprint
-
-Add `quake:update-stat` (`svc_updatestat`) and the stock
-`svc_killedmonster` and `svc_foundsecret` messages, emitted like
-`quake:beam`, so the tab scoreboard's monster and secret counts work. Expose
-`sprint` (#24) for per-player co-op messages.
-
 ### Compile-time quine sign
 
 A host macro embeds the program's source lines as string literals and a sign
