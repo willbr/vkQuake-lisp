@@ -338,7 +338,7 @@
       ((> (quake:field hit takedamage) 0)
        (let ((bounces (quake:field bolt bolt-bounces)))
          (quake:point-effect spike (trace-end))
-         (damage hit (quake:field bolt owner) (+ 20 (* 15 bounces)))
+         (damage hit (quake:field bolt owner) (+ (tunable 8 20) (* 15 bounces)))
          (quake:dprint "weapon: ricochet hit after ")
          (quake:dprint-number bounces)
          (quake:dprint " bounces\n")
@@ -387,7 +387,7 @@
   (when (and (not (quake:world? target)) (> (quake:field target health) 0))
     (quake:lightning player (player-eye player) (quake:field target origin))
     (quake:point-effect tar-explosion (quake:field target origin))
-    (damage target player 40)
+    (damage target player (tunable 7 40))
     (quake:dprint "weapon: swept\n")))
 
 (define (clear-marks player sweep)

@@ -89,6 +89,46 @@
     (quake:update-stat 13 (quake:field counts lambda-found))
     (quake:update-stat 14 (quake:field counts lambda-killed))))
 
+;; Live tunables. The stock engine registers scratch1-4 and saved1-4 for
+;; QuakeC; impulse 25 copies them onto the stats entity, and nonzero values
+;; replace a gameplay constant until the level ends. The saved cvars persist
+;; in config.cfg.
+(define-field tune-1)
+(define-field tune-2)
+(define-field tune-3)
+(define-field tune-4)
+(define-field tune-5)
+(define-field tune-6)
+(define-field tune-7)
+(define-field tune-8)
+
+(define (tunables-input player)
+  (when (= (quake:field player impulse) 25)
+    (quake:set-field! player impulse 0)
+    (let ((counts (stats)))
+      (quake:set-field! counts tune-1 (quake:cvar "scratch1"))
+      (quake:set-field! counts tune-2 (quake:cvar "scratch2"))
+      (quake:set-field! counts tune-3 (quake:cvar "scratch3"))
+      (quake:set-field! counts tune-4 (quake:cvar "scratch4"))
+      (quake:set-field! counts tune-5 (quake:cvar "saved1"))
+      (quake:set-field! counts tune-6 (quake:cvar "saved2"))
+      (quake:set-field! counts tune-7 (quake:cvar "saved3"))
+      (quake:set-field! counts tune-8 (quake:cvar "saved4"))
+      (quake:dprint "tunables:")
+      (quake:dprint-number (quake:field counts tune-1))
+      (quake:dprint " ")
+      (quake:dprint-number (quake:field counts tune-2))
+      (quake:dprint "\n")
+      (quake:sprint player "Tunables reread from scratch1-4 and saved1-4.\n"))))
+
+(define (tunable index default)
+  (let* ((counts (stats))
+         (value (cond ((= index 1) (quake:field counts tune-1)) ((= index 2) (quake:field counts tune-2))
+                      ((= index 3) (quake:field counts tune-3)) ((= index 4) (quake:field counts tune-4))
+                      ((= index 5) (quake:field counts tune-5)) ((= index 6) (quake:field counts tune-6))
+                      ((= index 7) (quake:field counts tune-7)) (else (quake:field counts tune-8)))))
+    (if (= value 0) default value)))
+
 (define (count-monster)
   (quake:set-field! (stats) lambda-monsters (+ 1 (quake:field (stats) lambda-monsters))))
 

@@ -2,6 +2,10 @@
 import json
 import math
 
+from pathlib import Path
+import subprocess
+import sys
+
 from challenge import read_edicts, require
 
 SAVES = ('patrol', 'exposed', 'covered', 'safe', 'respawn', 'disabled', 'supplies',
@@ -333,3 +337,44 @@ def verify_bike(states, lines, output):
     require((output / 'quake03.pcx').is_file(), 'missing depot riding screenshot')
     require((output / 'quake04.pcx').is_file(), 'missing jump screenshot')
     require((output / 'quake05.pcx').is_file(), 'missing bank screenshot')
+
+
+def verify_restarts(dosbox, output, env, base, mod):
+    """A sentry route with five waypoints parks the sentry with restarts
+    instead of ending the server. Check retry, skip, and abort."""
+    from map_editor import MapDocument
+    from uplink import Client, named, number, wait
+
+    document = MapDocument((Path(__file__).resolve().parents[2] / 'examples/annex.map').read_text(encoding='ascii'))
+    far = next(i for i in range(len(document.entities)) if document.value(i, 'targetname') == 'patrol_far')
+    document.set(far, 'target', 'patrol_3')
+    for index, (x, after) in enumerate(((100, 'patrol_4'), (130, 'patrol_5'), (150, 'patrol_near')), 3):
+        document.add_entity({'classname': 'qslisp_waypoint', 'origin': f'{x} 150 16',
+                             'targetname': f'patrol_{index}', 'target': after})
+    source = output / 'restarts.map'
+    source.write_text(document.text, encoding='ascii')
+    with (output / 'restarts-build.log').open('w') as log:
+        subprocess.run([sys.executable, Path(__file__).with_name('build-signal.py'), '--source', source,
+                        mod / 'maps/restarts.bsp'], stdout=log, stderr=subprocess.STDOUT, check=True)
+    client = Client(dosbox, output, env, base, mod, level='restarts')
+    parked = client.run('restart-park', None, [*wait(70), 'save parked'])
+    sentry = next(e for e in read_edicts(client.save('parked')) if e.get('classname') == 'qslisp_sentry')
+    require('actor: condition signaled' in parked and 'more than four waypoints' in parked
+            and sentry.get('actor-parked') == 'parked' and sentry.get('think') == 'actor-remind',
+            'a five-waypoint route did not park the sentry with restarts')
+    # Loading a save first spawns the map's own entities for a few frames, so
+    # only the console after each restart counts.
+    retry = client.run('restart-retry', 'parked', ['impulse 26', *wait(10)])
+    require('actor: restart retry' in retry
+            and 'actor: condition signaled' in retry.split('actor: restart retry', 1)[1],
+            'retry did not run the failing step again')
+    skip = client.run('restart-skip', 'parked', ['impulse 27', *wait(10), 'save skipped'])
+    sentry = next(e for e in read_edicts(client.save('skipped')) if e.get('classname') == 'qslisp_sentry')
+    require('actor: restart skip' in skip
+            and 'actor: condition signaled' not in skip.split('actor: restart skip', 1)[1]
+            and sentry.get('think') == 'sentry-think' and number(sentry, 'patrol-route-length') == 4,
+            'skip did not resume the sentry on its first four waypoints')
+    abort = client.run('restart-abort', 'parked', ['impulse 28', *wait(4), 'save aborted'])
+    require('actor: restart abort' in abort and
+            not any(e.get('classname') == 'qslisp_sentry' for e in read_edicts(client.save('aborted'))),
+            'abort did not remove the parked sentry')

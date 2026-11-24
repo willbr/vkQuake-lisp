@@ -179,6 +179,8 @@
              (trace-command player)
              (uplink-buddy-commands player)
              (tether-input player)
+             (actor-restart-input player)
+             (tunables-input player)
              (follow-pending-pad player)
              (interact player)
              (cond

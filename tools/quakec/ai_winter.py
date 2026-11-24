@@ -38,6 +38,11 @@ def verify(dosbox, output, env, base, mod):
     snow = slide(client, 'snow', 'start', -950, -150)
     ice = slide(client, 'ice', 'start', -300, 0)
     require(ice > 2 * snow and ice > 150, f'ice did not keep the slide going: snow {snow:.0f}, ice {ice:.0f}')
+    # Live tunables: scratch1 replaces the ice grip once impulse 25 rereads it.
+    tune = client.run('tune', 'start', ['scratch1 0.1', 'impulse 25', *wait(2), 'save tuned'])
+    require('tunables:0.1' in tune.replace(' ', ''), 'impulse 25 did not reread the scratch cvars')
+    tuned = slide(client, 'tuned', 'tuned', -300, 0)
+    require(tuned < ice * 0.6, f'the tuned ice grip did not shorten the slide: {ice:.0f} -> {tuned:.0f}')
 
     client.place('later', 'atcold', 500, 0, 25, 0, armorvalue=100)
     client.run('cold', 'atcold', [*wait(60), 'save cooled'])

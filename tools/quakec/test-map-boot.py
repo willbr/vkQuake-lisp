@@ -158,6 +158,9 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protecte
                     name = path.name.lower()
                     if name in artifacts:
                         shutil.copyfile(path, output / name)
+        if verify and level == 'annex':
+            # Runs after the scenario's console log and saves are collected.
+            annex.verify_restarts(dosbox, output, env, base, mod)
 
     if not console.is_file():
         raise RuntimeError('Quake did not write a console log')

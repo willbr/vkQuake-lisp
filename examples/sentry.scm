@@ -6,6 +6,7 @@
 (define-field sentry-range)
 (define-field attack-time)
 (define-field respawn-ready)
+(define-field route-truncated)
 
 (define-record damage-event (victim entity) (source entity) (amount number))
 (define-record patrol-leg (waypoint entity) (remaining list))
@@ -129,7 +130,10 @@
 (define (collect-patrol-route first next remaining)
   (cond
     ((or (quake:world? next) (quake:entity=? first next)) ())
-    ((= remaining 0) (quake:error "sentry patrol route must contain at most four waypoints\n"))
+    ((= remaining 0)
+     (when (= (quake:field (quake:self) route-truncated) 0)
+       (signal-actor (quake:self) "Sentry route has more than four waypoints.\n"))
+     ())
     (else (cons next (collect-patrol-route first (find-linked next) (- remaining 1))))))
 
 (define (start-patrol-route actor)
@@ -192,7 +196,12 @@
       (if visible
           (when (>= (quake:time) (quake:field actor attack-time)) (pursue actor player))
           (resume-patrol actor)))
-    (sentry-chase (if visible (pursue actor player) (resume-patrol actor)))))
+    (sentry-chase (if visible (pursue actor player) (resume-patrol actor))))
+  ; Retry reads the route again; skip keeps its first four waypoints.
+  (restart sentry-restart
+    (quake:set-field! actor patrol-route-length 0)
+    (begin (quake:set-field! actor route-truncated 1)
+           (quake:set-field! actor patrol-route-length 0))))
 
 (define (guard-reset actor)
   (quake:set-field! actor sentry-state sentry-patrol)

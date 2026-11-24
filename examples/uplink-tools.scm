@@ -158,7 +158,8 @@
                (z (/ (quake:vector-z offset) distance)))
           (tether-draw player)
           (if (= (quake:field anchor tether-swing) 0)
-              (quake:set-field! player velocity (quake:vector (* x 440) (* y 440) (* z 440)))
+              (let ((pull (tunable 2 440)))
+                (quake:set-field! player velocity (quake:vector (* x pull) (* y pull) (* z pull))))
               (tether-swing-step player distance x y z))))))
 
 (define (tether-swing-step player distance x y z)

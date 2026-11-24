@@ -93,7 +93,7 @@
             (begin
               (quake:sound dog 2 "dog/dattack1.wav" 1 1)
               (when (and (< (dog-distance dog enemy) 100) (sentry-visible? dog enemy))
-                (damage enemy dog 12)))
+                (damage enemy dog (tunable 4 12))))
             (quake:walkmove (quake:field dog angles_y) 10)))))
 
 (define (dog-leap-step dog enemy step)

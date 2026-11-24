@@ -146,7 +146,7 @@
     ((<= (sentry-distance-squared actor goal) (* radius radius))
      (quake:set-field! actor buddy-trace-reason 4))
     (else
-     (let* ((direct (> (sentry-step actor goal 14) 0))
+     (let* ((direct (> (sentry-step actor goal (tunable 3 14)) 0))
             (yaw (quake:field actor angles_y))
             (moving (or direct
                         (and (= (quake:field actor buddy-state) buddy-assist)

@@ -289,6 +289,16 @@ using entity fields for shared state.
 Annex defines typed records for damage events, patrol legs, and attack states.
 Its Lisp procedures destructure these records with `match`.
 
+`define-actor`'s optional `(restart name retry skip)` clause gives an actor
+Common Lisp style restarts. Stock Quake cannot unwind, and its `error` builtin
+ends the server, so `(signal-actor actor message)` parks the actor instead.
+Its think stops running states and, every two seconds, offers every player
+**8** retry, **9** skip, or **0** abort (impulses 26–28). The actor's `use`
+callback runs the retry or skip expression and resumes its think, or removes
+the actor. A sentry route longer than four waypoints now signals rather than
+stopping the server; retry reads the route again and skip keeps the first
+four. The Annex verifier builds a five-waypoint variant to check all three.
+
 ### Service bicycle
 
 Follow the service lane past the guard to the bike dock. Look at the bike
@@ -385,6 +395,13 @@ answers, and extraction then completes; use the panel again to leave for the
 Lambda Lab. Switchgear and the probe each hand out a stock keycard, and
 extraction sets the first sigil. Two of the seven Lisp primitives, `car` and
 `cdr`, wait by the carbine and past the tether swing.
+
+A REPL into a running stock server is impossible, but the engine registers
+`scratch1`–`scratch4` and `saved1`–`saved4` for QuakeC. Set them at the
+console and run `tunables_reread` (impulse 25): nonzero values then replace
+the ice grip, tether pull speed, buddy stride, dog bite, Winter warmth drain
+and gain, sweep damage, and ricochet base damage, in that order, until the
+level ends. The `saved` cvars persist in `config.cfg`.
 
 Use `developer 1` and `gameplay_trace` (impulse 24) for up to 12 seconds of
 console samples. The trace records bike steering, ground contact, speed,
