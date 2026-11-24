@@ -311,10 +311,18 @@ class CompilerTests(CompilerCase):
         (define (constant-style) (quake:lightstyle 63 "m"))
         (define (broadcast) (quake:bprint "hello\\n"))
         (define (contents) (quake:point-contents (quake:vector 0 0 0)))
+        (define (tell) (quake:sprint (quake:self) "hi\\n"))
+        (define (kills n) (quake:update-stat 14 n))
+        (define (zap) (quake:lightning (quake:self) (quake:vector 0 0 0) (quake:vector 1 2 3)))
+        (define (flash) (quake:point-effect teleport (quake:vector 0 0 0)))
+        (define (steer) (quake:move-to-goal 8))
+        (define (turn) (quake:change-yaw))
         '''
         self.value(source, 6, 'sigils')
         for name, arguments, builtin in [('style', (32,), 35), ('constant-style', (), 35),
-                                         ('broadcast', (), 23), ('contents', (), 41)]:
+                                         ('broadcast', (), 23), ('contents', (), 41),
+                                         ('tell', (), 24), ('kills', (3,), 52), ('zap', (), 52),
+                                         ('flash', (), 52), ('steer', (), 67), ('turn', (), 49)]:
             with self.subTest(name=name):
                 result = self.execute(source, name, *arguments)
                 self.assertEqual(result.returncode, 2)
@@ -328,7 +336,8 @@ class CompilerTests(CompilerCase):
         header = STOCK.validate(data)
         definitions = [struct.unpack_from('<HHi', data, header[4] + 8 * i) for i in range(header[5])]
         saved = {data[header[10] + name:].split(b'\0', 1)[0] for kind, _, name in definitions if kind & 0x8000}
-        self.assertEqual(saved, {b'serverflags'})
+        self.assertEqual(saved, {b'serverflags', b'total_secrets', b'total_monsters',
+                                 b'found_secrets', b'killed_monsters'})
 
     def test_quake_builtin_literal_diagnostics(self):
         cases = [
@@ -345,6 +354,9 @@ class CompilerTests(CompilerCase):
             ('(quake:lightstyle 32 "")', 'pattern of 1–63 letters'),
             ('(quake:lightstyle 32 "' + 'a' * 64 + '")', 'pattern of 1–63 letters'),
             ('(quake:set-serverflags! #t)', 'require numbers'),
+            ('(quake:update-stat 3 1)', 'scoreboard stat'),
+            ('(quake:point-effect sparkle (quake:vector 0 0 0))', 'effect name'),
+            ('(quake:sprint (quake:self) "' + 'é' * 128 + '")', 'stock 255-byte limit'),
         ]
         for call, message in cases:
             with self.subTest(call=call):

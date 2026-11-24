@@ -18,6 +18,7 @@ OP_STORE, OP_STORE_V, OP_RETURN, OP_NOT = 31, 32, 43, 44
 OP_NOT_ENT = 47
 OP_IF, OP_IFNOT, OP_CALL0, OP_GOTO, OP_AND, OP_OR = 49, 50, 51, 61, 62, 63
 DEF_SAVEGLOBAL = 1 << 15
+SAVED_GLOBALS = {'serverflags', 'total_secrets', 'total_monsters', 'found_secrets', 'killed_monsters'}
 OP_BITAND, OP_BITOR = 64, 65
 TAGS = {'number': 0, 'boolean': 1, 'pair': 2, 'entity': 3, 'string': 4,
         'null': 5, 'symbol': 6, 'vector': 7, 'procedure': 8, 'closure': 9, 'uninitialized': 10,
@@ -104,9 +105,9 @@ class Program:
                         entries.extend((name + '_' + axis, 2, offset + i) for i, axis in enumerate('xyz'))
                     for label, kind, field_offset in entries:
                         if layout == 'globalvars_t':
-                            # Stock saves write only flagged globals. Flag serverflags,
-                            # as id's progs do, so loading a game restores it.
-                            saved = DEF_SAVEGLOBAL if label == 'serverflags' else 0
+                            # Stock saves write only flagged globals. Flag the ones id's
+                            # progs save so loading a game restores them.
+                            saved = DEF_SAVEGLOBAL if label in SAVED_GLOBALS else 0
                             self.globaldefs.append((kind | saved, field_offset, self.string(label)))
                             self.names[label] = field_offset
                             self.kinds[label] = kind

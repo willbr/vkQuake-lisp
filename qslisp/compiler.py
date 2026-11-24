@@ -40,9 +40,12 @@ ENGINE_CALLS = {
     'quake:precache-model': (20, ('model',)),
     'quake:client-command': (21, ('entity', 'command')),
     'quake:bprint': (23, ('string',)),
+    'quake:sprint': (24, ('entity', 'string')),
     'quake:dprint': (25, ('string',)),
     'quake:walkmove': (32, ('number', 'number')),
     'quake:drop-to-floor': (34, ()),
+    'quake:change-yaw': (49, ()),
+    'quake:move-to-goal': (67, ('number',)),
     'quake:lightstyle': (35, ('style', 'style-pattern')),
     'quake:floor': (37, ('number',)),
     'quake:point-contents': (41, ('vector',)),
@@ -59,6 +62,8 @@ ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'en
                   'quake:trace-normal-x': ('trace_plane_normal_x', 'number'),
                   'quake:trace-normal-y': ('trace_plane_normal_y', 'number'),
                   'quake:trace-normal-z': ('trace_plane_normal_z', 'number'),
+                  'quake:trace-end-x': ('trace_endpos_x', 'number'),
+                  'quake:trace-end-y': ('trace_endpos_y', 'number'),
                   'quake:trace-end-z': ('trace_endpos_z', 'number'),
                   'quake:forward-x': ('v_forward_x', 'number'),
                   'quake:forward-y': ('v_forward_y', 'number'), 'quake:forward-z': ('v_forward_z', 'number')}
@@ -73,8 +78,15 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
     'quake:field', 'quake:set-field!', 'quake:vector', 'quake:vector?', 'string=?',
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
     'quake:set-callback!', 'quake:call-callback', 'quake:set-view', 'quake:set-view-angles!', 'quake:beam',
-    'quake:dprint-number', 'quake:set-serverflags!',
+    'quake:lightning', 'quake:point-effect',
+    'quake:dprint-number', 'quake:set-serverflags!', 'quake:update-stat',
 }
+# Stock temp entities that take one position. The client loads their models and sounds.
+POINT_EFFECTS = {name: number for name, number in (
+    ('spike', 0), ('gunshot', 2), ('explosion', 3), ('tar-explosion', 4),
+    ('lava-splash', 10), ('teleport', 11))}
+# Scoreboard stats that stock Host_Spawn_f resends from these globals.
+STAT_GLOBALS = {11: 'total_secrets', 12: 'total_monsters', 13: 'found_secrets', 14: 'killed_monsters'}
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
                     'quake:vector?': 'vector', 'quake:entity?': 'entity', 'procedure?': 'procedure'}
 VECTOR_COMPONENTS = {'quake:vector-x': 0, 'quake:vector-y': 1, 'quake:vector-z': 2}
@@ -941,7 +953,7 @@ class Compiler:
             raise CompileError(literal.location, f'{name} requires a string literal here')
         text = literal.value.text
         encoded = text.encode('utf-8')
-        if name in ('quake:dprint', 'quake:bprint', 'quake:error', 'quake:centerprint',
+        if name in ('quake:dprint', 'quake:bprint', 'quake:sprint', 'quake:error', 'quake:centerprint',
                     'quake:client-command') and len(encoded) > 255:
             raise CompileError(literal.location, f'{name} text exceeds the stock 255-byte limit')
         # The stock client copies a style into a 64-byte buffer and maps a-z to brightness.
@@ -1138,6 +1150,20 @@ class Compiler:
             return result
         return Value(self.zero, 'number')
 
+    def update_stat(self, frame, node, args, environment):
+        if len(args) != 2 or args[0].value not in STAT_GLOBALS:
+            raise CompileError(node.location, 'quake:update-stat requires a scoreboard stat (11-14) and a number')
+        value = self.expression(frame, args[1], environment)
+        self.number(frame, value, args[1])
+        # Joining clients and saves read the global; connected clients get svc_updatestat.
+        frame.emit(OP_STORE, value.slot, self.program.names[STAT_GLOBALS[args[0].value]])
+        payload = [(52, self.program.constant(3)), (52, self.program.constant(args[0].value)), (55, value.slot)]
+        for writer, slot in payload:
+            frame.emit(OP_STORE, self.program.constant(2), 4)  # MSG_ALL
+            frame.emit(OP_STORE, slot, 7)
+            frame.emit(OP_CALL0 + 2, self.program.builtin(f'__qslisp_builtin_{writer}', writer, 2))
+        return value
+
     def light_style(self, frame, node, environment):
         # Stock lightstyle indexes a 64-entry server table and the client's
         # table without bounds checks, so reject other styles before the call.
@@ -1188,19 +1214,33 @@ class Compiler:
         frame.emit(OP_STORE, previous, recipient)
         return Value(self.zero, 'number')
 
-    def beam(self, frame, node, args, environment):
+    def beam(self, frame, node, name, args, environment):
         if len(args) != 3:
-            raise CompileError(node.location, 'quake:beam requires an entity, start, and end')
+            raise CompileError(node.location, f'{name} requires an entity, start, and end')
         source = self.entity(frame, args[0], environment)
         start, end = (self.vector(frame, arg, environment) for arg in args[1:])
-        # svc_temp_entity TE_BEAM uses one entity number and six stock coordinates.
-        payload = [(52, self.program.constant(23)), (52, self.program.constant(13)), (59, source)]
+        # svc_temp_entity TE_BEAM and TE_LIGHTNING2 use one entity number and six
+        # stock coordinates. The client loads the lightning model itself.
+        kind = 13 if name == 'quake:beam' else 6
+        payload = [(52, self.program.constant(23)), (52, self.program.constant(kind)), (59, source)]
         payload.extend((56, advance(vector, i)) for vector in (start, end) for i in range(3))
+        self.broadcast(frame, payload)
+        return Value(self.zero, 'number')
+
+    def point_effect(self, frame, node, args, environment):
+        if len(args) != 2 or args[0].value not in POINT_EFFECTS:
+            raise CompileError(node.location, 'quake:point-effect requires an effect name and a position')
+        point = self.vector(frame, args[1], environment)
+        payload = [(52, self.program.constant(23)), (52, self.program.constant(POINT_EFFECTS[args[0].value]))]
+        payload.extend((56, advance(point, i)) for i in range(3))
+        self.broadcast(frame, payload)
+        return Value(self.zero, 'number')
+
+    def broadcast(self, frame, payload):
         for writer, slot in payload:
             frame.emit(OP_STORE, self.zero, 4)  # MSG_BROADCAST
             frame.emit(OP_STORE, slot, 7)
             frame.emit(OP_CALL0 + 2, self.program.builtin(f'__qslisp_builtin_{writer}', writer, 2))
-        return Value(self.zero, 'number')
 
     def expression(self, frame, node, environment):
         with frame.at(node.location):
@@ -1293,8 +1333,10 @@ class Compiler:
             return self.engine_call(frame, node, name, args, environment)
         if name in ('quake:set-view', 'quake:set-view-angles!'):
             return self.view_message(frame, node, name, args, environment)
-        if name == 'quake:beam':
-            return self.beam(frame, node, args, environment)
+        if name in ('quake:beam', 'quake:lightning'):
+            return self.beam(frame, node, name, args, environment)
+        if name == 'quake:point-effect':
+            return self.point_effect(frame, node, args, environment)
         if name == 'quake:dprint-number':
             if len(args) != 1:
                 raise CompileError(node.location, 'quake:dprint-number requires one number')
@@ -1307,6 +1349,8 @@ class Compiler:
             frame.emit(OP_STORE, 1, 4)
             frame.emit(OP_CALL0 + 1, printer)
             return Value(self.zero, 'number')
+        if name == 'quake:update-stat':
+            return self.update_stat(frame, node, args, environment)
         if name == 'quake:set-serverflags!':
             if len(args) != 1:
                 raise CompileError(node.location, 'quake:set-serverflags! requires one number')

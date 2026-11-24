@@ -452,6 +452,18 @@ not check it. The map light tool gives switchable lights styles from 32.
 `(quake:serverflags)` reads and `(quake:set-serverflags! number)` writes the
 stock global that survives level changes and, as in id's progs, saved games.
 The stock HUD draws its low four bits as episode sigils.
+`(quake:sprint client "message")` prints a literal to one client's console.
+`(quake:update-stat stat number)` sets a scoreboard stat for every client:
+11 total secrets, 12 total monsters, 13 found secrets, or 14 killed monsters.
+It also stores the matching stock global, which Quake resends to joining
+clients and, like `serverflags`, writes to saved games.
+`(quake:lightning entity start end)` draws a stock lightning bolt the way
+`quake:beam` draws the tether beam. `(quake:point-effect name position)` sends
+a stock temp entity: `spike`, `gunshot`, `explosion`, `tar-explosion`,
+`lava-splash`, or `teleport`. `quake:trace-end-x` and `quake:trace-end-y`
+complete the last trace's endpoint. `(quake:move-to-goal distance)` and
+`(quake:change-yaw)` call the stock monster steering builtins on `self`, using
+its `goalentity`, `ideal_yaw`, and `yaw_speed` fields.
 
 ## Pair arena
 
