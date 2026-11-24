@@ -152,7 +152,7 @@ leave four slots and the rocket and cell pools. Proposed layout:
 | 1 | 1 | Shotgun | shells |
 | 2 | 2 | Linker | none |
 | 3 | 4 | Pulse carbine | nails |
-| 4 | 8 | Tether | none |
+| 4 | 8 | Free (tether moves to Mouse2) | — |
 | 5 | 16 | Continuation beacon | one beacon |
 | 6 | 32 | Tail-call ricochet | rockets |
 | 7 | 64 | Mark-and-sweep | cells |
@@ -162,6 +162,34 @@ leave four slots and the rocket and cell pools. Proposed layout:
 Key `1` now selects the shotgun shown in HUD position 2. Remap impulses to
 the layout above and draw each icon's number to match its key.
 [Progression](examples/progression.scm)
+
+### Mouse2 tether
+
+Make the tether always ready on Mouse2 instead of a weapon slot. Stock
+clients send only the attack and jump button bits (`cl_input.c`), so Mouse2
+sends impulses through a `+` alias, whose `-` half runs on release:
+
+```
+alias +tether "impulse 30"
+alias -tether "impulse 31"
+bind mouse2 +tether
+```
+
+Impulses are one per move and can be overwritten or dropped, so press
+attaches, release or jump lets go (jump is a held bit and cannot be lost),
+and a press while attached re-fires at a new anchor. Ship the binding in the
+mod's `autoexec.cfg`; stock Quake runs it and writes `config.cfg` in the
+`-game` directory, leaving the player's normal bindings alone.
+
+Keep attachment to authored anchors: stock traces report the entity, not the
+texture, and free grappling would bypass lifts, gantries, and puzzles. Add
+anchorable brush entities so whole girders and rails work, snap to the
+nearest anchor within an aim cone when the trace misses, and mark anchor
+surfaces with a procedural texture. Mouse2 does nothing on the bike. Leave
+slot 4 empty rather than invent a weapon, and skip per-weapon alt-fire: the
+planned weapons each work with one button. Test a fast click, a dropped
+release, jump release mid-swing, and two co-op players tethering.
+[Uplink tools](examples/uplink-tools.scm)
 
 ### Linker
 
