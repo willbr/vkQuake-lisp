@@ -2295,3 +2295,508 @@
 "light" "300"
 "origin" "3456 1660 918"
 }
+{
+"classname" "light"
+"light" "350"
+"origin" "-896 -256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-896 0 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-896 256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-640 -256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-640 0 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-640 256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-384 -256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-384 0 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-384 256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-672 -512 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-800 -928 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-800 -736 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-544 -928 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-544 -736 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-128 -640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-128 -384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-128 -128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-128 128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-128 384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "-128 640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "128 -640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "128 -384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "128 -128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "128 128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "128 384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "128 640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "384 -640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "384 -384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "384 -128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "384 128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "384 384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "384 640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "640 -640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "640 -384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "640 -128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "640 128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "640 384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "640 640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "896 -640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "896 -384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "896 -128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "896 128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "896 384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "896 640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1152 -640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1152 -384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1152 -128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1152 128 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1152 384 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1152 640 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1408 0 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1664 -128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1664 128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1920 -128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "1920 128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2112 -160 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2112 0 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2112 160 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2240 160 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2432 -128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2432 128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2688 -128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2688 128 160"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2880 -160 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2880 0 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "2880 160 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3008 -160 96"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 -256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 0 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 -256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 0 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 256 200"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3264 0 712"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 0 712"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 -384 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 -128 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 128 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 384 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 -384 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 -128 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 128 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 384 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 -384 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 -128 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 128 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 384 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 520 896"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 654 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 906 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 1158 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3200 1410 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 654 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 906 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 1158 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 1410 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 654 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 906 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 1158 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3712 1410 968"
+}
+{
+"classname" "light"
+"light" "350"
+"origin" "3456 1664 928"
+}

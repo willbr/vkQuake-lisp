@@ -79,6 +79,7 @@ def course():
     gate = box((2544, -64, 0), (2560, 64, 128), 'lambda_door')
     yield entity('winter_gate', brushes=[gate], targetname='rune-gate')
     yield entity('winter_exit', brushes=[box((2640, -96, 0), (2800, 96, 128), TRIM)])
+    yield from lab.light_grid(regions())
     for x, y, z in ((-800, 0, 200), (-300, 0, 260), (250, 0, 260), (800, 0, 260), (256, 650, 200),
                     (1280, 0, 100), (1700, 300, 300), (2100, 0, 320), (2048, -320, 100), (2700, 0, 150)):
         yield entity('light', (x, y, z), light=330)

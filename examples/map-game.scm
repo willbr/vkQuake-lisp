@@ -75,7 +75,11 @@
     (damage player (quake:world) (quake:field player health))))
 (define (info_player_start) 0)
 (define (info_player_coop) 0)
-(define (light) 0)
+; As in id's progs, only switchable lights stay; the rest are baked and
+; would only use up edicts.
+(define (light)
+  (when (string=? (quake:field (quake:self) targetname) "")
+    (quake:remove (quake:self))))
 
 (define (qslisp_target)
   (let ((plate (quake:self)))

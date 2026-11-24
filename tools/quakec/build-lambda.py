@@ -85,6 +85,22 @@ def regions():
     return rooms
 
 
+def light_grid(rooms, spacing=256, strength=350):
+    """Fill each room with lights over its walkable floor. Tall rooms over a pit
+    are walked 256 units above their floor. Lights cost no edicts: unswitchable
+    ones remove themselves when they spawn."""
+    for (x, y, z), (xx, yy, zz) in rooms:
+        walk = z + 256 if zz - z > 500 else z
+        height = min(zz - walk - 32, 200)
+        if height < 48:
+            continue
+        nx, ny = max(1, round((xx - x) / spacing)), max(1, round((yy - y) / spacing))
+        for i in range(nx):
+            for j in range(ny):
+                yield entity('light', (x + (i + 0.5) * (xx - x) / nx, y + (j + 0.5) * (yy - y) / ny, walk + height),
+                             light=strength)
+
+
 def sign(texture, x, y, z, facing_axis, facing, width=128, height=48):
     low, high = [x, y, z], [x, y, z + height]
     across = 1 - facing_axis
@@ -244,6 +260,7 @@ def course():
     exit_zone = box((3392, 1640, UPPER), (3520, 1780, UPPER + 128), TRIM)
     yield entity('lambda_exit', brushes=[exit_zone], message='winter')
     yield entity('light', (3456, 1660, UPPER + 150), light=300)
+    yield from light_grid(regions())
 
 
 def main():
