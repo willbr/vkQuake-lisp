@@ -23,7 +23,7 @@ returns `500500` without growing the VM call stack.
 
 The compiler also supports `cons`, `car`, `cdr`, and `pair?` with a bounded
 mark/sweep heap implemented in stock bytecode. See [the pair example](examples/pairs.scm)
-and the [heap documentation and measurements](qslisp/README.md#pair-heap-and-collection).
+and the [heap documentation and measurements](qslisp/README.md#pair-arena).
 
 The [map boot example](qslisp/README.md#boot-a-map-in-stock-quake) compiles to
 `progs.dat` and runs in the original DOS Quake engine. It supports walking and

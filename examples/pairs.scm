@@ -3,8 +3,8 @@
   (let ((p (cons 7 9)))
     (+ (car p) (cdr p))))
 
-; With --heap-pairs 8 this allocates far more pairs than the pool can hold,
-; collecting discarded cells while keeping p alive across every tail call.
+; Pairs live in a fixed arena that is released when the engine entry returns.
+; This entry needs 65 cells: with --heap-pairs 8 it reports an exhausted heap.
 (define (churn n p)
   (if (= n 0)
       (+ (car p) (cdr p))
@@ -12,5 +12,5 @@
         (cons n n)
         (churn (- n 1) p))))
 
-(define (gc-test)
+(define (churn-test)
   (churn 64 (cons 7 9)))

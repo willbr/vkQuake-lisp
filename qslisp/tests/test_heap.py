@@ -1,4 +1,4 @@
-"""Pair/GC acceptance tests, with tiny heaps to force collection frequently."""
+"""Pair arena acceptance tests, with tiny pools to reach their limits."""
 import json
 import re
 import struct
@@ -8,14 +8,13 @@ import unittest
 
 from qslisp.compiler import Compiler, compile_source
 from qslisp.reader import CompileError, read
-from qslisp.measure_heap import probes
+from qslisp.measure_heap import probe
 from qslisp.tests.test_compiler import CompilerCase, ROOT, STOCK
 
 
 class HeapTests(CompilerCase):
     def program(self, source, filename='case.scm', **options):
         options.setdefault('heap_pairs', 8)
-        options.setdefault('root_slots', 32)
         return super().program(source, filename, **options)
 
     def test_pair_acceptance_example(self):
@@ -45,7 +44,7 @@ class HeapTests(CompilerCase):
                (if (cdr (cdr p)) 2 200))))
         ''', 19, heap_pairs=3)
 
-    def test_pending_arguments_survive_collection_in_a_later_argument(self):
+    def test_values_stay_live_across_calls_that_allocate(self):
         self.value('''
         (define (id x) x)
         (define (make-right)
@@ -56,71 +55,56 @@ class HeapTests(CompilerCase):
           (let ((p (cons (id (cons 7 9)) (make-right))))
             (+ (car (car p)) (cdr (car p))
                (car (cdr p)) (cdr (cdr p)))))
-        ''', 23, heap_pairs=3)
+        ''', 23, heap_pairs=5)
 
-    def test_parallel_let_initializers_are_shadow_roots(self):
-        self.value('''
-        (define (test)
-          (let ((a (cons 7 9))
-                (b (begin (cons 0 0) (cons 0 0) (cons 3 4))))
-            (+ (car a) (cdr a) (car b) (cdr b))))
-        ''', 23, heap_pairs=2)
-
-    def test_shadowed_binding_is_kept_for_an_outer_continuation(self):
-        self.value('''
-        (define (test)
-          (let ((p (cons 7 9)))
-            (+ (let ((p (cons 3 4)))
-                 (cons 0 0)
-                 (cons 0 0)
-                 (car p))
-               (car p))))
-        ''', 10, heap_pairs=3)
-
-    def test_gc_reclaims_discarded_body_values(self):
-        self.value('''
-        (define (test)
-          (cons 1 2)
-          (cons 3 4)
-          (let ((p (cons 7 9))) (+ (car p) (cdr p))))
-        ''', 16, heap_pairs=1)
-
-    def test_tail_loop_collects_without_retaining_old_temporary_slots(self):
-        result = self.value((ROOT / 'examples/pairs.scm').read_text(), 16, 'gc-test',
-                            heap_pairs=2, root_slots=2)
-        self.assertLess(int(re.search(r'instructions: (\d+)', result.stdout)[1]), 100000)
-
-    def test_roots_survive_recursive_vm_frame_save_restore(self):
+    def test_cells_survive_recursive_vm_frame_save_restore(self):
         self.value('''
         (define (deep n)
           (let ((p (cons n 1)))
-            (cons 0 0)
-            (cons 0 0)
             (if (= n 0) (car p) (+ (deep (- n 1)) (car p)))))
         (define (test) (deep 5))
-        ''', 15, heap_pairs=8, root_slots=16)
+        ''', 15, heap_pairs=6)
 
-    def test_collector_traces_shared_children_in_both_pair_fields(self):
-        self.value('''
-        (define (churn n p)
+    def test_nested_entries_release_their_cells_and_keep_the_callers(self):
+        source = '''
+        (define (scratch)
+          (cons 1 2)
+          (cons 3 4))
+        (define (repeat n live)
           (if (= n 0)
-              (+ (car (car p)) (cdr (cdr p)))
-              (begin (cons 0 0) (churn (- n 1) p))))
+              (+ (car live) (cdr live))
+              (begin
+                (quake:call-callback (quake:self) use (quake:self))
+                (repeat (- n 1) live))))
         (define (test)
-          (let ((child (cons 7 9)))
-            (churn 20 (cons child child))))
-        ''', 16, heap_pairs=3)
+          (quake:set-callback! (quake:self) use scratch)
+          (repeat 20 (cons 7 9)))
+        '''
+        self.value(source, 16, seed_self=True, heap_pairs=3)
+        result = self.execute(source, seed_self=True, heap_pairs=2)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('pair heap exhausted (2 cells)', result.stderr)
 
-    def test_gc_uses_an_iterative_work_list_for_a_deep_graph(self):
-        self.value('''
-        (define (build n tail)
-          (if (= n 0) tail (build (- n 1) (cons n tail))))
-        (define (churn n p)
-          (if (= n 0) (car p) (begin (cons 0 0) (churn (- n 1) p))))
-        (define (test) (churn 2 (build 64 #f)))
-        ''', 1, heap_pairs=65)
+    def test_entry_wrapper_releases_the_arena(self):
+        compiler = Compiler(read((ROOT / 'examples/pairs.scm').read_text()), '<input>', heap_pairs=65)
+        compiler.compile()
+        image, name = probe(compiler, 'churn-test')
+        STOCK.validate(image)
+        path = self.work / 'arena-probe.dat'
+        path.write_bytes(image)
+        result = subprocess.run([str(ROOT / 'tools/quakec/run-stock.sh'), str(path), name],
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(float(re.search(r'^return: (.+)$', result.stdout, re.M)[1]), 0)
 
-    def test_pair_heap_exhaustion_reports_location_when_every_cell_is_live(self):
+    def test_one_entry_cannot_allocate_more_than_the_pool(self):
+        source = (ROOT / 'examples/pairs.scm').read_text()
+        self.value(source, 16, 'churn-test', heap_pairs=65)
+        result = self.execute(source, 'churn-test', heap_pairs=64)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('pair heap exhausted (64 cells)', result.stderr)
+
+    def test_pair_heap_exhaustion_reports_location(self):
         result = self.execute('''(define (build n tail)
   (if (= n 0) tail (build (- n 1) (cons n tail))))
 (define (test) (build 3 #f))''', heap_pairs=2)
@@ -129,50 +113,18 @@ class HeapTests(CompilerCase):
         self.assertIn('pair heap exhausted (2 cells)', result.stderr)
         self.assertNotIn('runaway loop', result.stdout)
 
-    def test_shadow_root_capacity_fails_explicitly(self):
-        result = self.execute('''
-        (define (test)
-          (let ((a (cons 1 2)) (b (cons 3 4)) (c (cons 5 6)))
-            (+ (car a) (car b) (car c))))
-        ''', heap_pairs=4, root_slots=1)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('shadow root stack exhausted (1 values)', result.stderr)
-
-    def test_default_pool_exhaustion_finishes_collection_within_watchdog(self):
-        result = self.execute('''
+    def test_default_pool_fills_within_watchdog_then_fails_explicitly(self):
+        source = '''
         (define (build n tail)
-          (if (= n 0) tail (build (- n 1) (cons n tail))))
-        (define (test) (build 257 #f))
-        ''', heap_pairs=256, root_slots=256)
+          (if (= n 0) (car tail) (build (- n 1) (cons n tail))))
+        (define (fill) (build 512 #f))
+        (define (test) (build 513 #f))
+        '''
+        self.value(source, 1, 'fill', heap_pairs=512)
+        result = self.execute(source, heap_pairs=512)
         self.assertEqual(result.returncode, 2)
-        self.assertIn('pair heap exhausted (256 cells)', result.stderr)
+        self.assertIn('pair heap exhausted (512 cells)', result.stderr)
         self.assertNotIn('runaway loop', result.stdout)
-
-    def test_repeated_collection_does_not_bypass_original_watchdog(self):
-        result = self.execute('(define (test) (begin (cons 1 2) (test)))',
-                              heap_pairs=1, root_slots=1)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('runaway loop error', result.stdout)
-        self.assertNotIn('stack overflow', result.stdout)
-        self.assertNotIn('heap exhausted', result.stderr)
-
-    def test_numeric_unknowns_do_not_consume_shadow_root_slots(self):
-        self.value('''
-        (define (combine a b c d e f g h)
-          (let ((p (cons a h))) (+ (car p) (cdr p))))
-        (define (test) (combine 1 2 3 4 5 6 7 8))
-        ''', 9, heap_pairs=1, root_slots=1)
-
-    def test_ordinary_call_root_pop_does_not_discard_a_returned_pair(self):
-        self.value('''
-        (define (make x) (cons x x))
-        (define (read-two a b) (+ (car a) (cdr b)))
-        (define (make-garbage)
-          (cons 0 0)
-          (cons 0 0)
-          (make 9))
-        (define (test) (read-two (make 7) (make-garbage)))
-        ''', 16, heap_pairs=2)
 
     def test_type_errors_are_not_numeric_handle_coercions(self):
         for primitive in ('car', 'cdr'):
@@ -195,12 +147,12 @@ class HeapTests(CompilerCase):
             with self.subTest(source=source):
                 with self.assertRaisesRegex(CompileError, re.escape(message)):
                     compile_source(source, 'pair-error.scm')
-        for options in ({'heap_pairs': 0}, {'root_slots': -1}, {'heap_pairs': True}):
+        for options in ({'heap_pairs': 0}, {'heap_pairs': -1}, {'heap_pairs': True}):
             with self.subTest(options=options):
-                with self.assertRaisesRegex(CompileError, 'positive integers'):
+                with self.assertRaisesRegex(CompileError, 'positive integer'):
                     compile_source('(define (test) 1)', **options)
         with self.assertRaisesRegex(CompileError, 'stock global storage'):
-            compile_source('(define (test) (cons 1 2))', heap_pairs=4000)
+            compile_source('(define (test) (cons 1 2))', heap_pairs=6000)
 
     def test_unused_heaps_are_not_emitted(self):
         for source in ('(define (test) 49)', '(define (test) (pair? 0))',
@@ -225,33 +177,14 @@ class HeapTests(CompilerCase):
     def test_cli_pool_configuration_and_report(self):
         path = self.work / 'pairs.dat'
         result = subprocess.run([sys.executable, '-m', 'qslisp', 'examples/pairs.scm', '-o', str(path),
-                                 '--heap-pairs', '8', '--root-slots', '32', '--report'],
+                                 '--heap-pairs', '8', '--report'],
                                 cwd=ROOT, capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout[result.stdout.index('{'):])
         self.assertEqual(report['pair_capacity'], 8)
-        self.assertEqual(report['pair_storage_slots'], 72)
-        self.assertEqual(report['root_capacity'], 32)
+        self.assertEqual(report['pair_storage_slots'], 48)
         self.assertGreater(report['heap_runtime_statements'], 0)
         STOCK.validate(path.read_bytes())
-
-    def test_collection_counter_and_balanced_roots_observed_in_vm(self):
-        compiler = Compiler(read((ROOT / 'examples/pairs.scm').read_text()), '<input>',
-                            heap_pairs=8, root_slots=32)
-        compiler.compile()
-        image, names = probes(compiler, 'gc-test')
-        STOCK.validate(image)
-        path = self.work / 'gc-probes.dat'
-        path.write_bytes(image)
-        for label, name in names.items():
-            result = subprocess.run([str(ROOT / 'tools/quakec/run-stock.sh'), str(path), name],
-                                    capture_output=True, text=True, timeout=10)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            count = float(re.search(r'^return: (.+)$', result.stdout, re.M)[1])
-            if label == 'collections':
-                self.assertGreater(count, 0)
-            else:
-                self.assertEqual(count, 0)
 
 
 if __name__ == '__main__':

@@ -351,9 +351,9 @@ The [Signal Room verification](../../qslisp/README.md#play-and-verify-the-signal
 also drives a local client through walking, jumping, firing, and resetting and
 samples the original engine's instruction counters.
 
-The [pair heap prototype](../../qslisp/README.md#pair-heap-and-collection) uses
-fixed global storage, checked accessor trees, compiler-managed shadow roots,
-and iterative mark/sweep collection. It is compiled into ordinary bytecode,
+The [pair arena](../../qslisp/README.md#pair-arena) uses fixed global storage,
+checked accessor trees, and bump allocation released at the end of each engine
+entry. It is compiled into ordinary bytecode,
 with repeatable size and instruction measurements. Escaping closures and other
 heap types must extend this runtime. Do not introduce a C-managed heap or depend
 on engine string-buffer, allocation, or reflection extensions. Macros can run

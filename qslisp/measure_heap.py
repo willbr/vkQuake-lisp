@@ -1,4 +1,4 @@
-"""Measure the generated heap on the original interpreter, without game data."""
+"""Measure the generated pair arena on the original interpreter, without game data."""
 import argparse
 import json
 from pathlib import Path
@@ -12,26 +12,22 @@ from .reader import read
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def probes(compiler, entry):
-    """Add VM-only inspection thunks, each running entry on a fresh process.
+def probe(compiler, entry):
+    """Add a VM-only thunk that runs entry and returns the arena's allocation pointer.
 
-    Native host code remains unchanged. The thunks read the compiler runtime's
-    existing counters using ordinary stock bytecode after the entry returns.
+    Native host code remains unchanged. The thunk reads the runtime's existing
+    counter using ordinary stock bytecode after the entry returns.
     """
-    names = {}
-    for label, slot in (('collections', compiler.heap.collections),
-                        ('root_depth', compiler.heap.root_sp)):
-        name = '__qslisp_benchmark_' + label
-        index = compiler.program.function(name, '<heap-benchmark>', 0)
-        frame = Frame(compiler.program, index, compiler.program.location, 0, 1)
-        frame.emit(OP_CALL0, compiler.program.names[entry])
-        result = frame.allocate()
-        frame.emit(OP_STORE_V, compiler.zero, result)
-        frame.emit(OP_STORE, slot, result)
-        frame.emit(OP_RETURN, result)
-        frame.finish()
-        names[label] = name
-    return compiler.program.encode(), names
+    name = '__qslisp_benchmark_cells_in_use'
+    index = compiler.program.function(name, '<heap-benchmark>', 0)
+    frame = Frame(compiler.program, index, compiler.program.location, 0, 1)
+    frame.emit(OP_CALL0, compiler.program.names[entry])
+    result = frame.allocate()
+    frame.emit(OP_STORE_V, compiler.zero, result)
+    frame.emit(OP_STORE, compiler.heap.next, result)
+    frame.emit(OP_RETURN, result)
+    frame.finish()
+    return compiler.program.encode(), name
 
 
 def execute(path, entry):
@@ -47,20 +43,19 @@ def measure(directory):
     directory.mkdir(parents=True, exist_ok=True)
     source = (ROOT / 'examples/pairs.scm').read_text()
     reports = []
-    for pairs, roots in ((8, 32), (64, 32), (256, 32), (256, 256)):
-        compiler = Compiler(read(source, 'examples/pairs.scm'), 'examples/pairs.scm',
-                            heap_pairs=pairs, root_slots=roots)
+    for pairs in (128, 512, 1024):
+        compiler = Compiler(read(source, 'examples/pairs.scm'), 'examples/pairs.scm', heap_pairs=pairs)
         data = compiler.compile()
-        path = directory / f'pairs-{pairs}-roots-{roots}.dat'
+        path = directory / f'pairs-{pairs}.dat'
         path.write_bytes(data)
         report = {**compiler.statistics(), 'file_bytes': len(data),
-                  'acceptance': execute(path, 'test'), 'churn': execute(path, 'gc-test')}
-        image, names = probes(compiler, 'gc-test')
-        probe_path = directory / f'probe-{pairs}-roots-{roots}.dat'
+                  'acceptance': execute(path, 'test'), 'churn': execute(path, 'churn-test')}
+        image, name = probe(compiler, 'churn-test')
+        probe_path = directory / f'probe-{pairs}.dat'
         probe_path.write_bytes(image)
-        report['collections'] = int(execute(probe_path, names['collections'])['return'])
-        report['roots_after_return'] = int(execute(probe_path, names['root_depth'])['return'])
-        if report['acceptance']['return'] != 16 or report['churn']['return'] != 16 or report['roots_after_return']:
+        report['cells_in_use_after_return'] = int(execute(probe_path, name)['return'])
+        if (report['acceptance']['return'] != 16 or report['churn']['return'] != 16
+                or report['cells_in_use_after_return']):
             raise RuntimeError(f'incorrect heap result: {report}')
         reports.append(report)
     return reports

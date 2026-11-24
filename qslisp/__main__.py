@@ -14,14 +14,14 @@ def main():
     parser = argparse.ArgumentParser(description='Compile a small Scheme-style Lisp to stock Quake v6 bytecode.')
     parser.add_argument('source', type=Path)
     parser.add_argument('-o', '--output', type=Path, required=True)
-    parser.add_argument('--heap-pairs', type=int, default=256, help='fixed pair capacity (default: 256)')
-    parser.add_argument('--root-slots', type=int, default=256, help='shadow root capacity (default: 256)')
+    parser.add_argument('--heap-pairs', type=int, default=512,
+                        help='pair cells available to one engine entry (default: 512)')
     parser.add_argument('--report', action='store_true', help='print storage and bytecode statistics as JSON')
     parser.add_argument('--symbols', action='store_true', help='write a matching .sym source map alongside the bytecode')
     args = parser.parse_args()
     try:
         compiler = Compiler(load_forms(args.source.read_text(encoding='utf-8'), str(args.source)), str(args.source),
-                            heap_pairs=args.heap_pairs, root_slots=args.root_slots)
+                            heap_pairs=args.heap_pairs)
         data = compiler.compile()
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(data)

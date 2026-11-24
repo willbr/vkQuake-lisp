@@ -1,6 +1,5 @@
 """Lexical resolution and direct emission for a small, dynamically tagged core."""
 from dataclasses import dataclass
-from contextlib import contextmanager
 
 from .bytecode import (Program, Frame, Local, TAGS, advance, OP_MUL, OP_DIV, OP_ADD, OP_SUB,
                        OP_EQ, OP_LE, OP_GE, OP_LT, OP_GT, OP_STORE, OP_STORE_V,
@@ -137,11 +136,11 @@ def binding_name(node):
 
 
 class Compiler:
-    def __init__(self, forms, filename, *, heap_pairs=256, root_slots=256):
+    def __init__(self, forms, filename, *, heap_pairs=512):
         forms = Macros().program(forms)
         location = forms[0].location if forms else Location(filename, 1, 1)
-        if any(type(n) is not int or n < 1 for n in (heap_pairs, root_slots)):
-            raise CompileError(location, 'heap-pairs and root-slots must be positive integers')
+        if type(heap_pairs) is not int or heap_pairs < 1:
+            raise CompileError(location, 'heap-pairs must be a positive integer')
         self.program = Program(location)
         self.functions = {}
         self.constants = {}
@@ -171,10 +170,9 @@ class Compiler:
         self.closure_mailbox = (self.program.define('__qslisp_captured_values', 3, [0, 0, 0])
                                 if 'closure' in features else None)
         kinds = tuple(kind for kind in ('vector', 'closure', 'record') if kind in features)
-        self.heap = (PairHeap(self.program, heap_pairs, root_slots, deep_equal='equal' in features,
+        self.heap = (PairHeap(self.program, heap_pairs, deep_equal='equal' in features,
                               append='append' in features, boxed_kinds=kinds)
                      if 'pair' in features or kinds else None)
-        self.pending = []
 
     def heap_features(self, node, *, native=False):
         if not isinstance(node.value, tuple) or not node.value:
@@ -305,7 +303,13 @@ class Compiler:
                 wrapper.emit(OP_STORE, self.zero, advance(value, 1))
                 wrapper.emit(OP_STORE, self.zero, advance(value, 2))
                 args.append(Value(value, 'number'))
+            # Nothing allocated during an engine entry is reachable after it.
+            if self.heap:
+                arena = wrapper.allocate(1)
+                wrapper.emit(OP_STORE, self.heap.next, arena)
             result = self.call(wrapper, function, args)
+            if self.heap:
+                wrapper.emit(OP_STORE, arena, self.heap.next)
             wrapper.emit(OP_RETURN, result.slot)
             wrapper.finish()
         for function in self.lambdas:
@@ -317,10 +321,8 @@ class Compiler:
 
     def frame_environment(self, frame, parameters, captures):
         environment = captures.copy()
-        arguments = {name: Value(Local(i * 3)) for i, name in enumerate(parameters)}
-        with self.keep(arguments.values()):
-            for name, argument in arguments.items():
-                environment[name] = self.bind_local(frame, name, argument, frame.location, environment)
+        for i, name in enumerate(parameters):
+            environment[name] = self.bind_local(frame, name, Value(Local(i * 3)), frame.location)
         return environment
 
     def compile_lambda(self, function):
@@ -344,30 +346,12 @@ class Compiler:
             'statements': len(self.program.statements),
             'instruction_bytes': len(self.program.statements) * 8,
             'pair_capacity': self.heap.capacity if self.heap else 0,
-            'pair_storage_slots': 9 * self.heap.capacity if self.heap else 0,
-            'root_capacity': self.heap.root_capacity if self.heap else 0,
-            'root_storage_slots': 3 * self.heap.root_capacity if self.heap else 0,
+            'pair_storage_slots': 6 * self.heap.capacity if self.heap else 0,
             'heap_runtime_statements': self.heap.generated_statements if self.heap else 0,
         }
 
-    @contextmanager
-    def keep(self, values):
-        self.pending.append(values)
-        try:
-            yield
-        finally:
-            self.pending.pop()
-
     def values(self, frame, nodes, environment):
-        values = []
-        with self.keep(values):
-            for node in nodes:
-                values.append(self.expression(frame, node, environment))
-        return values
-
-    def roots(self, environment, arguments):
-        return [*environment.values(), *arguments,
-                *(value for context in self.pending for value in context)]
+        return [self.expression(frame, node, environment) for node in nodes]
 
     def compile_dispatch(self):
         # The sole parameter is a three-word request so the CLI cannot mistake
@@ -417,22 +401,21 @@ class Compiler:
         if len(args) < 2 or not isinstance(args[0].value, tuple):
             raise CompileError(node.location, 'let requires a binding list and body')
         bindings = {}
-        with self.keep(bindings.values()):
-            for binding in args[0].value:
-                pair = binding.value
-                if not isinstance(pair, tuple) or len(pair) != 2:
-                    raise CompileError(binding.location, 'let binding requires (name expression)')
-                label = binding_name(pair[0])
-                if label in bindings:
-                    raise CompileError(pair[0].location, f'duplicate let binding {label}')
-                value = self.expression(frame, pair[1], environment)
-                bindings[label] = self.bind_local(frame, label, value, binding.location, environment)
+        for binding in args[0].value:
+            pair = binding.value
+            if not isinstance(pair, tuple) or len(pair) != 2:
+                raise CompileError(binding.location, 'let binding requires (name expression)')
+            label = binding_name(pair[0])
+            if label in bindings:
+                raise CompileError(pair[0].location, f'duplicate let binding {label}')
+            value = self.expression(frame, pair[1], environment)
+            bindings[label] = self.bind_local(frame, label, value, binding.location)
         return environment | bindings
 
-    def bind_local(self, frame, name, value, location, environment):
+    def bind_local(self, frame, name, value, location):
         if name not in self.mutable_names:
             return value
-        pair = self.make_pair(frame, value, self.empty_list(), location, environment)
+        pair = self.make_pair(frame, value, self.empty_list(), location)
         return Value(pair.slot, 'pair', boxed=True)
 
     def recursive_environment(self, frame, node, args, environment):
@@ -450,7 +433,7 @@ class Compiler:
             if label in names:
                 raise CompileError(name.location, f'duplicate letrec binding {label}')
             names.add(label)
-            box = self.make_pair(frame, uninitialized, self.empty_list(), name.location, scope)
+            box = self.make_pair(frame, uninitialized, self.empty_list(), name.location)
             scope[label] = Value(box.slot, 'pair', boxed=True)
             entries.append((box.slot, initializer))
         for box, initializer in entries:
@@ -586,20 +569,17 @@ class Compiler:
             frame.emit(OP_CALL0 + 1, self.program.error_function)
             frame.patch(skip, 2, len(frame.code))
 
-    def call(self, frame, function, args, environment=None):
-        return self.invoke(frame, function.request, args, environment)
+    def call(self, frame, function, args):
+        return self.invoke(frame, function.request, args)
 
-    def invoke(self, frame, request, args, environment):
+    def invoke(self, frame, request, args):
         # Stage arguments only after evaluating ALL of them. Nested calls also
         # use the shared argument/return registers and must not clobber siblings.
-        base = self.heap.pin(frame, self.roots(environment or {}, args)) if self.heap else None
         self.publish(frame, args)
         frame.emit(OP_STORE_V, request, 4)
         frame.emit(OP_CALL0 + 1, self.dispatch_reference)
         result = Value(frame.allocate())
         frame.emit(OP_STORE_V, 1, result.slot)
-        if self.heap:
-            self.heap.unpin(frame, base)
         return result
 
     def named_procedure(self, function):
@@ -628,8 +608,8 @@ class Compiler:
             return procedure
         chain = self.empty_list()
         for value in reversed(captures.values()):
-            chain = self.make_pair(frame, value, chain, node.location, environment)
-        storage = self.make_pair(frame, procedure, chain, node.location, environment)
+            chain = self.make_pair(frame, value, chain, node.location)
+        storage = self.make_pair(frame, procedure, chain, node.location)
         return self.retag(frame, storage, 'closure')
 
     def call_indirect(self, frame, node, args, environment, *, tail=False):
@@ -639,8 +619,7 @@ class Compiler:
         target = node.value[0]
         callable_value = self.expression(frame, target, environment)
         procedure, captures = self.resolve_procedure(frame, callable_value, target)
-        with self.keep((callable_value, captures)):
-            values = self.values(frame, args, environment)
+        values = self.values(frame, args, environment)
 
         arity = frame.allocate(1)
         frame.emit(OP_EQ, advance(procedure.slot, 2), self.program.constant(len(args) + 2), arity)
@@ -660,7 +639,7 @@ class Compiler:
             self.publish(frame, values)
             frame.emit(OP_RETURN, request)
             return None
-        return self.invoke(frame, request, values, environment)
+        return self.invoke(frame, request, values)
 
     def closure_parts(self, frame, value, location):
         pair = self.retag(frame, value, 'pair')
@@ -702,30 +681,25 @@ class Compiler:
     def empty_list(self):
         return Value(self.program.tagged_literal('__qslisp_null', 0, 'null'), 'null')
 
-    def make_list(self, frame, items, location, environment):
+    def make_list(self, frame, items, location):
         result = self.empty_list()
-        with self.keep(items):
-            for item in reversed(items):
-                result = self.make_pair(frame, item, result, location, environment)
+        for item in reversed(items):
+            result = self.make_pair(frame, item, result, location)
         return result
 
-    def make_pair(self, frame, head, tail, location, environment):
+    def make_pair(self, frame, head, tail, location):
         message = self.program.message(f'{location}: pair heap exhausted ({self.heap.capacity} cells)\n')
-        base = self.heap.pin(frame, self.roots(environment, (head, tail)))
         result = self.heap.call(frame, 'cons', [head.slot, tail.slot, message])
-        self.heap.unpin(frame, base)
         return Value(result, 'pair')
 
-    def append_list(self, frame, prefix, tail, location, environment, diagnostic):
+    def append_list(self, frame, prefix, tail, location, diagnostic):
         if prefix.kind == 'null':
             return tail
         if prefix.kind not in ('unknown', 'pair'):
             raise CompileError(location, diagnostic)
         bad_list = self.program.message(f'{location}: {diagnostic}\n')
         no_space = self.program.message(f'{location}: pair heap exhausted ({self.heap.capacity} cells)\n')
-        base = self.heap.pin(frame, self.roots(environment, (prefix, tail)))
         result = self.heap.call(frame, 'append', [prefix.slot, tail.slot, bad_list, no_space])
-        self.heap.unpin(frame, base)
         return Value(result, 'unknown' if prefix.kind == 'unknown' else 'pair')
 
     def build_list(self, frame, name, args, environment):
@@ -738,15 +712,14 @@ class Compiler:
         inputs = [node.value[1] if copy and name == BUILD else node for node, copy in zip(prefixes, copies)]
         items = self.values(frame, (*inputs, tail), environment)
         result = items.pop()
-        with self.keep(items):
-            for node, copy in reversed(tuple(zip(prefixes, copies))):
-                value = items.pop()
-                if copy:
-                    diagnostic = ('unquote-splicing expects a proper list' if name == BUILD
-                                  else 'append expects proper lists before its final argument')
-                    result = self.append_list(frame, value, result, node.location, environment, diagnostic)
-                else:
-                    result = self.make_pair(frame, value, result, node.location, environment)
+        for node, copy in reversed(tuple(zip(prefixes, copies))):
+            value = items.pop()
+            if copy:
+                diagnostic = ('unquote-splicing expects a proper list' if name == BUILD
+                              else 'append expects proper lists before its final argument')
+                result = self.append_list(frame, value, result, node.location, diagnostic)
+            else:
+                result = self.make_pair(frame, value, result, node.location)
         return result
 
     def quoted(self, frame, datum, environment):
@@ -755,9 +728,7 @@ class Compiler:
             head, tail_datum = split_dotted(datum)
             tail = self.empty_list() if tail_datum is None else self.quoted(frame, tail_datum, environment)
             for item in reversed(head):
-                with self.keep((tail,)):
-                    first = self.quoted(frame, item, environment)
-                tail = self.make_pair(frame, first, tail, item.location, environment)
+                tail = self.make_pair(frame, self.quoted(frame, item, environment), tail, item.location)
             return tail
         if isinstance(value, str):
             if value == '.':
@@ -828,8 +799,8 @@ class Compiler:
             items = self.values(frame, args[1:], environment)
             for (field, kind), value in zip(record.fields, items):
                 self.check_field_type(frame, value, kind, field, record)
-            fields = self.make_list(frame, items, record.location, environment)
-            pair = self.make_pair(frame, self.symbol_literal(record.name), fields, record.location, environment)
+            fields = self.make_list(frame, items, record.location)
+            pair = self.make_pair(frame, self.symbol_literal(record.name), fields, record.location)
             return self.retag(frame, pair, 'record')
         value = self.expression(frame, args[1], environment)
         correct = self.record_type(frame, value, record.name, record.location)
@@ -915,15 +886,15 @@ class Compiler:
         frame.emit(OP_STORE, value.slot, result.slot)
         return result
 
-    def box_vector(self, frame, raw, location, environment):
+    def box_vector(self, frame, raw, location):
         coordinates = []
         for i in range(3):
             scalar = self.tagged(frame, 'number')
             frame.emit(OP_STORE, advance(raw, i), scalar.slot)
             coordinates.append(scalar)
         x, y, z = coordinates
-        tail = self.make_pair(frame, y, z, location, environment)
-        storage = self.make_pair(frame, x, tail, location, environment)
+        tail = self.make_pair(frame, y, z, location)
+        storage = self.make_pair(frame, x, tail, location)
         return self.retag(frame, storage, 'vector')
 
     def vector(self, frame, node, environment):
@@ -961,7 +932,7 @@ class Compiler:
         if kind == 3:
             result = frame.allocate()
             frame.emit(OP_LOAD_V, entity, field, result)
-            return result if vector else self.box_vector(frame, result, node.location, environment)
+            return result if vector else self.box_vector(frame, result, node.location)
         tag, opcode = FIELD_READS[kind]
         result = self.tagged(frame, tag)
         frame.emit(opcode, entity, field, result.slot)
@@ -1015,15 +986,11 @@ class Compiler:
         saved_self, saved_other = frame.allocate(1), frame.allocate(1)
         frame.emit(OP_STORE, self_slot, saved_self)
         frame.emit(OP_STORE, other_slot, saved_other)
-        # A named callback can allocate on the shared Scheme heap.
-        base = self.heap.pin(frame, self.roots(environment, ())) if self.heap else None
         frame.emit(OP_STORE, entity, self_slot)
         frame.emit(OP_STORE, other, other_slot)
         frame.emit(OP_CALL0, reference)
         frame.emit(OP_STORE, saved_self, self_slot)
         frame.emit(OP_STORE, saved_other, other_slot)
-        if self.heap:
-            self.heap.unpin(frame, base)
         frame.patch(missing, 2, len(frame.code))
         return Value(self.zero, 'number')
 
@@ -1052,8 +1019,6 @@ class Compiler:
             else:
                 slot = self.engine_string(name, arg, kind)
             operands.append(slot)
-        # The stock step mover may run touch callbacks before it returns.
-        base = self.heap.pin(frame, self.roots(environment, ())) if self.heap and name == 'quake:walkmove' else None
         for i, (slot, kind) in enumerate(zip(operands, kinds)):
             frame.emit(OP_STORE_V if kind == 'vector' else OP_STORE, slot, 4 + 3 * i)
         builtin = (self.program.error_function if number == 10 else
@@ -1069,8 +1034,6 @@ class Compiler:
         if name in NUMERIC_RESULTS:
             result = self.tagged(frame, 'number')
             frame.emit(OP_STORE, 1, result.slot)
-            if base is not None:
-                self.heap.unpin(frame, base)
             return result
         return Value(self.zero, 'number')
 
@@ -1120,11 +1083,7 @@ class Compiler:
         return Value(self.zero, 'number')
 
     def expression(self, frame, node, environment):
-        # An inner let may shadow a binding still needed by the enclosing
-        # expression's continuation. Keep those outer environments as well as
-        # already evaluated arguments; scanning only the innermost scope loses
-        # such pairs during collection.
-        with self.keep(environment.values()), frame.at(node.location):
+        with frame.at(node.location):
             return self.expression_body(frame, node, environment)
 
     def expression_body(self, frame, node, environment):
@@ -1182,7 +1141,7 @@ class Compiler:
             return self.build_list(frame, name, args, environment)
         if name == 'list':
             items = self.values(frame, args, environment)
-            return self.make_list(frame, items, node.location, environment)
+            return self.make_list(frame, items, node.location)
         if name == 'list?' or name in VALUE_PREDICATES:
             if len(args) != 1:
                 raise CompileError(node.location, f'{name} requires 1 argument')
@@ -1261,7 +1220,7 @@ class Compiler:
         if name == 'quake:vector':
             if len(args) != 3:
                 raise CompileError(node.location, 'quake:vector requires three coordinates')
-            return self.box_vector(frame, self.vector(frame, node, environment), node.location, environment)
+            return self.box_vector(frame, self.vector(frame, node, environment), node.location)
         if name in VECTOR_COMPONENTS:
             if len(args) != 1:
                 raise CompileError(node.location, f'{name} requires one vector')
@@ -1313,7 +1272,7 @@ class Compiler:
                 message = self.program.message(f'{node.location}: {name} requires an allocated pair\n')
                 slot = self.heap.call(frame, name, [values[0].slot, message])
                 return Value(slot)
-            return self.make_pair(frame, *values, node.location, environment)
+            return self.make_pair(frame, *values, node.location)
         if name in ARITHMETIC or name in COMPARISONS or name in BITWISE:
             if name in (COMPARISONS.keys() | BITWISE.keys()) and len(args) != 2:
                 raise CompileError(node.location, f'{name} requires exactly two arguments in this release')
@@ -1345,7 +1304,7 @@ class Compiler:
         if name not in self.functions:
             raise CompileError(form[0].location, f'undefined function {name}')
         function, values = self.arguments(frame, node, name, args, environment)
-        result = self.call(frame, function, values, environment)
+        result = self.call(frame, function, values)
         if name in self.constructors:
             return self.field_value(result.slot, self.constructors[name].name)
         if name in self.getters:
@@ -1353,6 +1312,5 @@ class Compiler:
         return result
 
 
-def compile_source(source, filename='<input>', *, heap_pairs=256, root_slots=256):
-    return Compiler(load_forms(source, filename), filename,
-                    heap_pairs=heap_pairs, root_slots=root_slots).compile()
+def compile_source(source, filename='<input>', *, heap_pairs=512):
+    return Compiler(load_forms(source, filename), filename, heap_pairs=heap_pairs).compile()

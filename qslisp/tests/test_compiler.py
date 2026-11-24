@@ -93,7 +93,7 @@ class CompilerTests(CompilerCase):
                 (reading-value (car (packet-readings b)))
                 -1)))
         """
-        self.value(source, 7, heap_pairs=9)
+        self.value(source, 7)
         with self.assertRaisesRegex(CompileError, r'reading.value expects number, got boolean'):
             compile_source('(define-record reading (value number)) (define (test) (make-reading #f))')
         with self.assertRaisesRegex(CompileError, r'packet.first expects reading, got other'):
@@ -380,7 +380,7 @@ class CompilerTests(CompilerCase):
                      (eq? 0 -0.0) (not (eq? #f 0))
                      (null? ()) (eq? '() (list)) (not (not '())))
                 49 0)))
-        ''', 49, heap_pairs=8)
+        ''', 49)
 
     def test_quasiquote_expands_only_active_unquotes_and_preserves_macro_bindings(self):
         self.value('''
@@ -429,7 +429,7 @@ class CompilerTests(CompilerCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('unquote-splicing expects a proper list', result.stderr)
 
-    def test_append_shares_the_final_argument_and_copies_across_collection(self):
+    def test_append_shares_the_final_argument_and_copies_the_rest(self):
         self.value('''
         (define (test)
           (let* ((prefix (list (list 41) 7 8)) (suffix (list 1)))
@@ -443,7 +443,7 @@ class CompilerTests(CompilerCase):
                        (= (car (cdr (cdr prefix))) 8))
                   (+ (car (car joined)) (car (cdr joined)) (car suffix))
                   0))))
-        ''', 49, heap_pairs=8)
+        ''', 49)
         self.value('''
         (define (test)
           (if (equal? (append '(1) '(2 3) 4) '(1 2 3 . 4)) 49 0))
@@ -461,7 +461,7 @@ class CompilerTests(CompilerCase):
             (if (and (equal? a b) (not (equal? b c))) 49 0)))
         ''', 49)
 
-    def test_vector_values_pass_through_calls_and_survive_collection(self):
+    def test_vector_values_pass_through_calls(self):
         self.value('''
         (define (identity x) x)
         (define (test)
@@ -473,7 +473,7 @@ class CompilerTests(CompilerCase):
                 (+ (quake:vector-x vector) (quake:vector-y (car bag))
                    (quake:vector-z (identity vector)))
                 0)))
-        ''', 49, heap_pairs=4, root_slots=64)
+        ''', 49)
 
     def test_equal_compares_vector_components(self):
         self.value('''
@@ -526,7 +526,7 @@ class CompilerTests(CompilerCase):
                 0)))
         ''', 49, filename=str(ROOT / 'examples/list-test.scm'))
 
-    def test_escaping_closures_share_mutable_bindings_through_collection(self):
+    def test_escaping_closures_share_mutable_bindings(self):
         self.value('''
         (define (counter n)
           (cons (lambda () (set! n (+ n 1)))
@@ -538,7 +538,7 @@ class CompilerTests(CompilerCase):
             (cons 7 8) (cons 9 10) (cons 11 12)
             (step)
             (if (and (procedure? step) (not (equal? step peek))) (+ (peek) 7) 0)))
-        ''', 49, heap_pairs=8, root_slots=64)
+        ''', 49)
 
     def test_named_let_can_capture_and_preserves_initializer_scope(self):
         self.value('''
@@ -546,7 +546,7 @@ class CompilerTests(CompilerCase):
           (let ((loop 49))
             (let loop ((n 300) (result loop))
               (if (= n 0) result (loop (- n 1) result)))))
-        ''', 49, heap_pairs=8)
+        ''', 49)
         result = self.execute('(define (test) (letrec ((x x)) x))')
         self.assertEqual(result.returncode, 2)
         self.assertIn('binding used before initialization', result.stderr)
@@ -557,7 +557,7 @@ class CompilerTests(CompilerCase):
         (define (test)
           (let* ((n 1) (copy n))
             (+ (sum n (begin (set! n 6) 7) copy) (* n 6) 4)))
-        ''', 49, heap_pairs=4)
+        ''', 49)
 
     def test_macros_rename_their_locals_without_capturing_arguments(self):
         self.value('''
@@ -608,7 +608,7 @@ class CompilerTests(CompilerCase):
             (if (and (quake:entity=? (quake:field player owner-ref) player)
                      (quake:entity=? (quake:other) world))
                 (+ (car live) (quake:field player count)) 0)))
-        ''', heap_pairs=2, root_slots=64)
+        ''', heap_pairs=3)
         data = bytearray(path.read_bytes())
         header = STOCK.validate(data)
         struct.pack_into('<i', data, header[12] + 28 * 4, header[14] * 4)
