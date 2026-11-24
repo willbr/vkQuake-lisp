@@ -8,7 +8,7 @@ from .bytecode import (Program, Frame, Local, TAGS, advance, OP_MUL, OP_DIV, OP_
                        OP_STOREP_S, OP_EQ_ENT, OP_EQ_STR, OP_BITAND, OP_BITOR,
                        OP_LOAD_S, OP_LOAD_ENT, OP_LOAD_FNC, OP_STOREP_ENT, OP_STOREP_FNC,
                        emit_shallow_equality)
-from .reader import CompileError, Location, StringLiteral, split_dotted
+from .reader import CompileError, Location, Node, StringLiteral, split_dotted
 from .heap import PairHeap
 from .macros import Macros
 from .modules import load_forms
@@ -74,6 +74,14 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
 VALUE_PREDICATES = {'pair?': 'pair', 'null?': 'null', 'symbol?': 'symbol', 'string?': 'string',
                     'quake:vector?': 'vector', 'quake:entity?': 'entity', 'procedure?': 'procedure'}
 VECTOR_COMPONENTS = {'quake:vector-x': 0, 'quake:vector-y': 1, 'quake:vector-z': 2}
+# Primitives that can be passed as procedure values, with the arity they take
+# there. Variadic arithmetic is binary as a value.
+PRIMITIVE_ARITY = {
+    **dict.fromkeys((*ARITHMETIC, *COMPARISONS, *BITWISE, 'cons', 'eq?', 'equal?', 'string=?',
+                     'quake:entity=?'), 2),
+    **dict.fromkeys(('not', 'car', 'cdr', 'list?', 'quake:world?', *VALUE_PREDICATES, *VECTOR_COMPONENTS), 1),
+    'quake:vector': 3,
+}
 FIELD_TYPES = {1: 'string', 2: 'numeric', 3: 'vector', 4: 'entity', 6: 'function'}
 CUSTOM_FIELDS = {'number': 2, 'entity': 4, 'string': 1}
 FIELD_READS = {1: ('string', OP_LOAD_S), 2: ('number', OP_LOAD_F), 4: ('entity', OP_LOAD_ENT)}
@@ -150,6 +158,9 @@ class Compiler:
         self.constructors = {f'make-{name}': record for name, record in self.records.items()}
         self.getters = {f'{name}-{field}': kind for name, record in self.records.items() for field, kind in record.fields}
         self.lambdas = []
+        self.primitive_procedures = {}
+        self.indirect_targets = set()  # Every function that exists as a procedure value.
+        self.callbacks = {}            # Entity function field -> entries stored in it.
         self.zero = self.program.constant(0)
         self.one = self.program.constant(1)
         for form in forms:
@@ -157,7 +168,8 @@ class Compiler:
         if not self.functions:
             raise CompileError(location, 'expected at least one function definition')
         bodies = [node for function in self.functions.values() for node in function.body]
-        features = set().union(*(self.heap_features(node) for node in bodies))
+        features = set().union(*(self.heap_features(node, bound=frozenset(function.parameters))
+                                 for function in self.functions.values() for node in function.body))
         self.mutable_names = {name for node in bodies for name in expression_names(node, mutations=True)}
         self.closure_mailbox = (self.program.define('__qslisp_captured_values', 3, [0, 0, 0])
                                 if 'closure' in features else None)
@@ -166,13 +178,18 @@ class Compiler:
                               append='append' in features, boxed_kinds=kinds)
                      if 'pair' in features or kinds else None)
 
-    def heap_features(self, node, *, native=False):
+    def heap_features(self, node, *, native=False, bound=frozenset()):
+        # bound holds names known to be local here. Missing one only costs an
+        # unused heap; the reverse would omit a heap the program needs.
         if not isinstance(node.value, tuple) or not node.value:
-            return {'vector'} if native else set()
+            result = {'vector'} if native else set()
+            if node.value in PRIMITIVE_ARITY and node.value not in bound:
+                result |= self.heap_features(self.primitive_body(node.value, node.location))
+            return result
         form = node.value
         name = form[0].value if isinstance(form[0].value, str) else None
         if name == 'match':
-            return self.heap_features(self.match.expand(form[1:], node.location), native=native)
+            return self.heap_features(self.match.expand(form[1:], node.location), native=native, bound=bound)
         if name == '#match-branch':
             children = (*(entry.value[1] for entry in form[1].value), *form[2:])
             return set().union(*(self.heap_features(child) for child in children)) | ({'vector'} if native else set())
@@ -185,7 +202,10 @@ class Compiler:
         if name in ('let', 'let*') and len(form) >= 3 and isinstance(form[1].value, tuple):
             initializers = [binding.value[1] for binding in form[1].value
                             if isinstance(binding.value, tuple) and len(binding.value) == 2]
-            result = set().union(*(self.heap_features(n) for n in (*initializers, *form[2:])))
+            inner = bound | {binding.value[0].value for binding in form[1].value
+                             if isinstance(binding.value, tuple) and binding.value}
+            result = set().union(*(self.heap_features(n, bound=bound) for n in initializers),
+                                 *(self.heap_features(n, bound=inner) for n in form[2:]))
             return result | ({'vector'} if native else set())
 
         kinds = ENGINE_CALLS[name][1] if name in ENGINE_CALLS else ()
@@ -193,10 +213,10 @@ class Compiler:
             kinds = ('vector',)
         if name == 'quake:set-field!' and len(form) == 4 and self.vector_field(form[2]):
             kinds = ('entity', 'field', 'vector')
-        result = set().union(*(self.heap_features(arg, native=i < len(kinds) and kinds[i] == 'vector')
+        result = set().union(*(self.heap_features(arg, native=i < len(kinds) and kinds[i] == 'vector', bound=bound)
                                for i, arg in enumerate(form[1:])))
         if name is None:
-            result.update(self.heap_features(form[0]))
+            result.update(self.heap_features(form[0], bound=bound))
         raw_source = name == 'quake:vector' or (name == 'quake:field' and len(form) == 3 and self.vector_field(form[2]))
         if native != raw_source:
             result.add('vector')
@@ -308,6 +328,7 @@ class Compiler:
             self.compile_lambda(function)
         if self.heap:
             self.heap.compile()
+        self.check_budget()
         return self.program.encode()
 
     def frame_environment(self, frame, parameters, captures):
@@ -331,8 +352,64 @@ class Compiler:
         self.tail_sequence(frame, function.body, scope, function)
         frame.finish()
 
+    def worst_chain(self, weight):
+        """The costliest stack of active frames under any native entry.
+
+        Returns (cost, function names, names of functions that recurse).
+        Recursion is counted once: its real depth depends on the data.
+        """
+        frames, done, active, recursive = self.program.frames, {}, [], set()
+
+        def targets(edges):
+            for edge in edges:
+                if edge == 'indirect':
+                    yield from self.indirect_targets
+                elif isinstance(edge, tuple):
+                    yield from self.callbacks.get(edge[1], ())
+                else:
+                    yield edge
+
+        def visit(index):
+            if index in done:
+                return done[index]
+            if index in active:
+                recursive.add(index)
+                return 0, ()
+            active.append(index)
+            words, calls, tails = frames[index]
+            below = max((visit(target) for target in targets(calls)), default=(0, ()), key=lambda item: item[0])
+            best = weight(words) + below[0], (index, *below[1])
+            for target in targets(tails):
+                replaced = visit(target)
+                if replaced[0] > best[0]:
+                    best = replaced
+            active.pop()
+            done[index] = best
+            return best
+
+        cost, chain = max((visit(function.public) for function in self.functions.values()),
+                          key=lambda item: item[0])
+        names = self.program.function_names
+        return cost, [names[i] for i in chain], sorted(names[i] for i in recursive)
+
+    def check_budget(self):
+        # Stock Quake shares 2,048 saved-local words and 31 frames among all
+        # active calls of one engine entry.
+        for limit, unit, weight in ((2048, 'saved-local slots', lambda words: words), (31, 'frames', lambda words: 1)):
+            cost, chain, _ = self.worst_chain(weight)
+            if cost > limit:
+                raise CompileError(self.program.location,
+                                   f'call chain needs {cost:,} {unit}, stock Quake allows {limit:,}: ' + ' > '.join(chain))
+
     def statistics(self):
+        slots, slot_chain, recursive = self.worst_chain(lambda words: words)
+        depth, depth_chain, _ = self.worst_chain(lambda words: 1)
         return {
+            'worst_local_slots': slots,
+            'worst_local_chain': slot_chain,
+            'worst_call_depth': depth,
+            'worst_depth_chain': depth_chain,
+            'recursive_functions': recursive,
             'global_slots': len(self.program.globals),
             'statements': len(self.program.statements),
             'instruction_bytes': len(self.program.statements) * 8,
@@ -503,6 +580,7 @@ class Compiler:
                     again = frame.emit(OP_GOTO)
                     frame.patch(again, 1, 0)
                 else:
+                    frame.tails.add(target.private)
                     self.stage(frame, values)
                     frame.emit(OP_RETURN, target.request)
                 return
@@ -547,6 +625,7 @@ class Compiler:
             frame.patch(skip, 2, len(frame.code))
 
     def call(self, frame, function, args):
+        frame.calls.add(function.private)
         return self.invoke(frame, function.reference, args)
 
     def stage(self, frame, args):
@@ -580,8 +659,24 @@ class Compiler:
         return self.procedure_value(function.private, len(function.parameters))
 
     def procedure_value(self, index, arity):
+        self.indirect_targets.add(index)
         slot = self.program.tagged_literal(f'__qslisp_procedure_{index}', index, 'procedure', arity + 2)
         return Value(slot, 'procedure')
+
+    def primitive_body(self, name, location):
+        parameters = tuple(Node(f'#primitive-{i}', location) for i in range(PRIMITIVE_ARITY[name]))
+        return Node((Node(name, location), *parameters), location)
+
+    def primitive_procedure(self, name, location):
+        # (fold + 0 items) passes (lambda (a b) (+ a b)), compiled once per primitive.
+        if name not in self.primitive_procedures:
+            body = self.primitive_body(name, location)
+            parameters = tuple(parameter.value for parameter in body.value[1:])
+            index = self.program.function(f'__qslisp_primitive_{len(self.primitive_procedures)}',
+                                          location.filename, len(parameters))
+            self.lambdas.append(LambdaBody(index, parameters, {}, (body,), location))
+            self.primitive_procedures[name] = self.procedure_value(index, len(parameters))
+        return self.primitive_procedures[name]
 
     def make_lambda(self, frame, node, args, environment):
         if len(args) < 2 or not isinstance(args[0].value, tuple):
@@ -623,6 +718,7 @@ class Compiler:
 
         if self.closure_mailbox is not None:
             frame.emit(OP_STORE_V, captures.slot, self.closure_mailbox)
+        (frame.tails if tail else frame.calls).add('indirect')
         if not tail:
             return self.invoke(frame, procedure.slot, values)
         request = frame.allocate()
@@ -964,6 +1060,7 @@ class Compiler:
                 if function is None or function.parameters:
                     raise CompileError(target.location, 'expected an unshadowed, zero-argument callback name')
                 reference = self.program.names[label]
+                self.callbacks.setdefault(args[1].value, set()).add(function.public)
             address = frame.allocate(1)
             frame.emit(OP_ADDRESS, entity, field, address)
             frame.emit(OP_STOREP_FNC, reference, address)
@@ -979,6 +1076,7 @@ class Compiler:
         frame.emit(OP_STORE, other_slot, saved_other)
         frame.emit(OP_STORE, entity, self_slot)
         frame.emit(OP_STORE, other, other_slot)
+        frame.calls.add(('callback', args[1].value))
         frame.emit(OP_CALL0, reference)
         frame.emit(OP_STORE, saved_self, self_slot)
         frame.emit(OP_STORE, saved_other, other_slot)
@@ -1010,6 +1108,8 @@ class Compiler:
             else:
                 slot = self.engine_string(name, arg, kind)
             operands.append(slot)
+        if name == 'quake:walkmove':
+            frame.calls.add(('callback', 'touch'))  # The stock step mover runs touch callbacks.
         for i, (slot, kind) in enumerate(zip(operands, kinds)):
             frame.emit(OP_STORE_V if kind == 'vector' else OP_STORE, slot, 4 + 3 * i)
         builtin = (self.program.error_function if number == 10 else
@@ -1095,6 +1195,10 @@ class Compiler:
             if form not in environment:
                 if form in self.functions:
                     return self.named_procedure(self.functions[form])
+                if form in PRIMITIVE_ARITY:
+                    return self.primitive_procedure(form, node.location)
+                if form in PRIMITIVES or form in SYNTAX:
+                    raise CompileError(node.location, f'{form} cannot be used as a value')
                 raise CompileError(node.location, f'unbound variable {form}')
             return self.local_value(frame, environment[form], node.location)
         name, args = self.application(node, environment)

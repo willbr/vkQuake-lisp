@@ -43,6 +43,8 @@ class Program:
         self.statements = [(0, 0, 0, 0)]
         self.source_ranges = []
         self.functions = [(0,) * 15]
+        self.function_names = ['']
+        self.frames = {}  # Function index -> (local words, calls, tail requests).
         self.names = {}
         self.kinds = {}
         self.field_kinds = {}
@@ -153,6 +155,7 @@ class Program:
     def function(self, name, filename, arity):
         index = len(self.functions)
         self.functions.append((0, 0, 0, 0, self.string(name), self.string(filename), arity, *([0] * 8)))
+        self.function_names.append(name)
         return index
 
     def encode(self):
@@ -187,6 +190,10 @@ class Frame:
             raise CompileError(location, 'invalid VM parameter layout')
         self.words = self.peak = sum(self.parameter_sizes)
         self.code = []
+        # What this frame can have beneath it on the VM stacks: function
+        # indices, 'indirect', or ('callback', field). A tail request replaces
+        # this frame instead of nesting under it.
+        self.calls, self.tails = set(), set()
         self.source = location
         self.locations = []
 
@@ -233,6 +240,7 @@ class Frame:
         old = self.program.functions[self.index]
         sizes = list(self.parameter_sizes) + [0] * (8 - self.arity)
         self.program.functions[self.index] = (first, start, self.peak, 0, old[4], old[5], self.arity, *sizes)
+        self.program.frames[self.index] = (self.peak, self.calls, self.tails)
         for offset, location in enumerate(self.locations):
             ranges = self.program.source_ranges
             if ranges and ranges[-1][2:] == (self.index, location):

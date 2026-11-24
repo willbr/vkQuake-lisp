@@ -2,7 +2,8 @@
 import struct
 import unittest
 
-from qslisp.compiler import compile_source
+from qslisp.compiler import Compiler, compile_source
+from qslisp.reader import CompileError, read
 from qslisp.tests.test_compiler import CompilerCase, STOCK
 
 
@@ -87,6 +88,51 @@ class FrameTests(CompilerCase):
               (step (- n 1) (if (> n 5) (+ acc n) (- acc 1)))))
         (define (test) (step 10 0))
         ''', 6 + 7 + 8 + 9 + 10 - 5)
+
+    def test_report_names_the_worst_call_chain(self):
+        compiler = Compiler(read('''
+        (define (leaf x) (+ x 1))
+        (define (middle x) (+ 1 (leaf x)))
+        (define (test) (+ 1 (middle 1)))
+        (define (loop n) (if (= n 0) 0 (+ 1 (loop (- n 1)))))
+        '''), '<input>')
+        compiler.compile()
+        report = compiler.statistics()
+        self.assertEqual(report['worst_depth_chain'],
+                         ['test', '__qslisp_fn_test', '__qslisp_fn_middle', '__qslisp_fn_leaf'])
+        self.assertEqual(report['worst_call_depth'], 4)
+        self.assertEqual(report['recursive_functions'], ['__qslisp_fn_loop'])
+        frames = compiler.program.frames
+        names = compiler.program.function_names
+        self.assertEqual(report['worst_local_slots'],
+                         sum(frames[names.index(name)][0] for name in report['worst_local_chain']))
+
+    def test_nested_frames_beyond_the_saved_locals_stack_fail_the_build(self):
+        large = '(+ ' + ' '.join(['1'] * 400) + ')'
+        with self.assertRaisesRegex(CompileError, r'call chain needs [\d,]+ saved-local slots.*outer > .*inner'):
+            compile_source(f'(define (inner) {large}) (define (outer) (+ (inner) {large}))')
+        # A tail call replaces the caller's frame instead of nesting under it.
+        self.value(f'(define (inner) {large}) (define (test) {large} (inner))', 400)
+
+    def test_call_chains_deeper_than_the_native_stack_fail_the_build(self):
+        chain = ' '.join(f'(define (f{i}) (+ 1 (f{i + 1})))' for i in range(31))
+        with self.assertRaisesRegex(CompileError, 'call chain needs 33 frames'):
+            compile_source(f'{chain} (define (f31) 0)')
+        chain = ' '.join(f'(define (f{i}) (+ 1 (f{i + 1})))' for i in range(29))
+        self.value(f'{chain} (define (f29) 0) (define (test) (f0))', 29)
+
+    def test_chains_follow_procedure_values_and_entity_callbacks(self):
+        large = '(+ ' + ' '.join(['1'] * 400) + ')'
+        for source in (
+            f'(define (apply-it f) (+ (f) {large})) (define (test) (apply-it (lambda () {large})))',
+            f'''(define (used) {large})
+                (define (test)
+                  (quake:set-callback! (quake:self) use used)
+                  (+ {large} (begin (quake:call-callback (quake:self) use (quake:self)) 0)))''',
+        ):
+            with self.subTest(source=source[:40]):
+                with self.assertRaisesRegex(CompileError, 'call chain needs'):
+                    compile_source(source)
 
 
 if __name__ == '__main__':

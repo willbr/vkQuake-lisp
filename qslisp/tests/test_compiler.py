@@ -174,6 +174,26 @@ class CompilerTests(CompilerCase):
         with self.assertRaisesRegex(CompileError, 'unbound variable x'):
             compile_source('(define (test) (let ((x 1) (y x)) y))')
 
+    def test_primitives_are_procedure_values(self):
+        self.value('''
+        (import "qslisp/list.scm")
+        (define (apply2 f a b) (f a b))
+        (define (test)
+          (+ (fold + 0 (list 1 2 3 4))
+             (* 100 (apply2 - 9 4))
+             (* 1000 (car (map car (list (cons 7 8) (cons 9 10)))))
+             (if (and (procedure? <) ((if #t < >) 1 2) (eq? cons cons)
+                      (equal? (map not (list #f 1)) (list #t #f)))
+                 10000 0)
+             (let ((+ *)) (+ 0 5))))
+        ''', 17510)
+        compiler_free = compile_source('(define (apply2 f) (f 40 2)) (define (test) (apply2 +))')
+        self.assertNotIn(b'__qslisp_rt_cons', compiler_free)
+        for name in ('quake:dprint', 'if', 'quake:field'):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(CompileError, 'cannot be used as a value'):
+                    compile_source(f'(define (id x) x) (define (test) (id {name}))')
+
     def test_nested_calls_do_not_clobber_argument_or_return_registers(self):
         self.value('''
         (define (square x) (* x x))

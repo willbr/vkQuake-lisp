@@ -50,7 +50,8 @@ class PairHeap:
         return Frame(self.program, index, self.program.location, len(widths), widths)
 
     def call(self, frame, name, arguments):
-        _, reference, widths = self.functions[name]
+        index, reference, widths = self.functions[name]
+        frame.calls.add(index)
         for i, (argument, width) in enumerate(zip(arguments, widths)):
             frame.emit(OP_STORE_V if width == 3 else OP_STORE, argument, 4 + i * 3)
         frame.emit(OP_CALL0 + len(widths), reference)

@@ -44,6 +44,11 @@ header; executing the result also needs the built interpreter CLI.
   check argument counts and support constant-stack tail calls. `procedure?`
   checks the value kind. Import the [list library](list.scm) for `map` and
   left-to-right `fold`, whose combiner receives the accumulator and item.
+  Arithmetic, comparisons, `not`, `cons`, `car`, `cdr`, the equality and type
+  predicates, and the vector constructor and accessors are procedure values
+  too: `(fold + 0 items)`. As values, `+`, `-`, `*`, and `/` take two
+  arguments. Forms that need a literal or a field name, such as
+  `quake:dprint` and `quake:field`, cannot be passed.
 - Anonymous functions capture lexical bindings and can outlive their caller.
   `set!` changes a lexical binding and returns the assigned value. Closures
   that capture the same mutable binding share it. `letrec` introduces mutually
@@ -126,6 +131,44 @@ instruction watchdog. Syntax keywords,
 primitive function names, `__qslisp*` global names, and stock ABI global/field names
 are reserved for function definitions. Stock function hooks such as `StartFrame`
 can be defined with zero arguments and are wired to their ABI slots.
+
+## Stock VM budgets
+
+Stock Quake gives each engine entry 100,000 instructions, 31 active frames,
+and 2,048 saved-local slots shared by those frames. An entry is one call from
+the engine: `StartFrame`, a `think` or `touch`, a player hook. Measured on the
+original interpreter with the default 512-cell pool:
+
+| Operation | Instructions |
+| --- | ---: |
+| Native entry into a function that returns | 8 |
+| Ordinary call and return | 11 |
+| Self tail call, per iteration of a counting loop | 15 |
+| Tail call to another function, per step of `even?`/`odd?` | 19 |
+| `car` or `cdr` | 31 |
+| `cons` | 64 |
+| Create a closure with one captured value | 131 |
+| Call that closure | 146 |
+| `map` with a closure, per list element | about 430 |
+
+Pair access costs grow with the logarithm of `--heap-pairs`. As a rule of
+thumb, one entry can afford about a thousand pair operations or two hundred
+mapped elements. Non-tail recursion reaches a depth of about 29.
+
+The compiler follows every call, tail request, procedure value, and entity
+callback to find the costliest stack of frames an entry can build. A chain
+that needs more than 2,048 saved-local slots or 31 frames fails the build and
+names the functions. Recursive functions are counted once, because their depth
+depends on the data. `--report` prints the worst chains and their sizes:
+
+```sh
+python3 -m qslisp examples/map-game.scm -o build/map-game.dat --report
+```
+
+`worst_local_slots` and `worst_call_depth` are the totals,
+`worst_local_chain` and `worst_depth_chain` name the functions, and
+`recursive_functions` lists what the totals count only once. The instruction
+budget is not checked statically.
 
 ## Boot a map in stock Quake
 
@@ -571,7 +614,9 @@ values nothing reads again: the temporaries of a discarded body expression, a
 condition once it has been branched on, and the other arm of an `if`, `cond`,
 or `match`. Operands of one expression and `let` bindings keep their own slots. The emitter diagnoses frames
 over 2,048 words, total storage over 32,768 words, and out-of-range branches.
-Nested frame totals, call depth, and instruction budgets remain runtime limits.
+It also rejects [call chains](#stock-vm-budgets) whose nested frames exceed the
+saved-locals stack or the call depth. Recursion depth and instruction budgets
+remain runtime limits.
 
 Source layout:
 
