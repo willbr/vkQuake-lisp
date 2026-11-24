@@ -280,14 +280,16 @@ Its signs and Lisp Machine panels are drawn in [lambda_art.py](lambda_art.py).
 [`build-lambda.py`](build-lambda.py) regenerates [the map](../../examples/lambda.map).
 The AI Winter uses `--set winter` and [`build-winter.py`](build-winter.py).
 
-The status bar art is generated, not committed:
+The status bar art and font are generated, not committed:
 
 ```sh
 python3 tools/quakec/build-gfx.py "$HOME/Games/Quake-gog/app/id1/pak0.pak" build/mod
 ```
 
 It writes `gfx.wad` and `gfx/conback.lmp` into the mod directory. The launcher
-runs it for every staged game.
+runs it for every staged game. [`build-uplink-assets.py`](build-uplink-assets.py)
+builds every model recipe, including each weapon's view model and its
+`g_*` pickup; a recipe's optional `flags` sets the stock MDL flags.
 
 ## VM listings and fixtures
 

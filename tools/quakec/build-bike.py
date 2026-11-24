@@ -104,7 +104,7 @@ class Model:
     def write_poses(self, output, named_poses, palette):
         output.write_bytes(self.encode_poses(named_poses, palette))
 
-    def encode_poses(self, named_poses, palette, animations=None, skins=()):
+    def encode_poses(self, named_poses, palette, animations=None, skins=(), flags=0):
         if not named_poses or not self.vertices or not 1 <= len(palette) <= 8:
             raise ValueError('stock alias model requires geometry, poses, and up to eight palette colors')
         # Extra skins recolor the same materials. Stock MDL skins share one layout.
@@ -129,7 +129,7 @@ class Model:
         singles = [name for name, _ in named_poses if name not in grouped]
         data = bytearray(struct.pack('<4si3f3ff3f8if', b'IDPO', 6, *scales, *origin,
                                      radius, 0., 0., 22., len(skins), 32, 32, len(self.vertices),
-                                     len(self.triangles), len(clips)+len(singles), 0, 0, 1.))
+                                     len(self.triangles), len(clips)+len(singles), 0, flags, 1.))
         for skin in skins:
             data += struct.pack('<i', 0)
             data += bytes(skin[min(x // 4, len(skin) - 1)] for _ in range(32) for x in range(32))

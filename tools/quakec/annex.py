@@ -163,8 +163,8 @@ def verify_annex(output, lines):
     require(supplies['player_health'] == 100 and supplies['rounds'] == 4 and
             supplies['pulse_ammo'] == 6 and supplies['checkpoint'] > 0,
             'health, ammo, weapon, or checkpoint pickup did not take effect')
-    require(states['pulse']['weapon'] == 'progs/v_nail.mdl' and states['pulse']['display_ammo'] == 6 and
-            states['switched']['weapon'] == 'progs/v_shot.mdl' and
+    require(states['pulse']['weapon'] == 'progs/v_pulse.mdl' and states['pulse']['display_ammo'] == 6 and
+            states['switched']['weapon'] == 'progs/v_lshot.mdl' and
             states['switched']['pulse_ammo'] == 5 and states['switched']['display_ammo'] == 4,
             'switching or firing the pulse weapon did not update separate ammo pools and HUD')
     require(states['checked']['player_health'] == 100 and states['checked']['player_origin'][0] == 158 and
@@ -317,7 +317,7 @@ def verify_bike(states, lines, output):
             math.hypot(*wall_out['bike_velocity']) > 80,
             'holding Left with the bike against the bank wall did not steer it clear')
     require(not park['riding'] and not park['bike_rider'] and not park['bike_camera'] and park['bike_solid'] == 2 and
-            park['player_model'] == 'progs/player.mdl' and park['weapon'] == 'progs/v_shot.mdl' and
+            park['player_model'] == 'progs/player.mdl' and park['weapon'] == 'progs/v_lshot.mdl' and
             math.dist(park['player_origin'], park['bike_origin']) >= 48,
             'dismount did not restore a parked bike and the player weapon')
     require(loaded['riding'] == slide['riding'] and loaded['bike_rider'] == 1 and loaded['bike_camera'] > 1 and

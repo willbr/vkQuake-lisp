@@ -1,0 +1,36 @@
+{
+  "name": "Ricochet bolt",
+  "palette": [
+    251,
+    254
+  ],
+  "flags": 64,
+  "parts": {
+    "shaft": {
+      "low": [
+        -8,
+        -1,
+        -1
+      ],
+      "high": [
+        8,
+        1,
+        1
+      ],
+      "material": 0
+    },
+    "tip": {
+      "low": [
+        8,
+        -1,
+        -1
+      ],
+      "high": [
+        11,
+        1,
+        1
+      ],
+      "material": 1
+    }
+  }
+}

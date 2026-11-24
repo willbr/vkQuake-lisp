@@ -63,8 +63,8 @@ def prepare(output, maps, *, program_source='examples/map-boot.scm', map_sources
         subprocess.run([sys.executable, 'tools/quakec/build-sentry.py', output / 'progs/sentry.mdl'],
                        cwd=ROOT, check=True)
         subprocess.run([sys.executable, 'tools/quakec/build-bike.py', output], cwd=ROOT, check=True)
-    if any(name in maps for name in ('uplink', 'lambda', 'winter')):
-        subprocess.run([sys.executable, 'tools/quakec/build-uplink-assets.py', output], cwd=ROOT, check=True)
+    # Every map precaches the generated weapon models.
+    subprocess.run([sys.executable, 'tools/quakec/build-uplink-assets.py', output], cwd=ROOT, check=True)
 
 
 def write_chained_cfg(mod, name, text, limit=4096):

@@ -103,7 +103,7 @@ def verify_challenge(output, lines):
     states = {name: save_state(output / f'{name}.sav') for name in SAVES}
     spawn = states['spawned']
     walked = states['walked']
-    require(spawn['rounds'] == 3 and spawn['weapon'] == 'progs/v_shot.mdl' and spawn['targets'] == 1,
+    require(spawn['rounds'] == 3 and spawn['weapon'] == 'progs/v_lshot.mdl' and spawn['targets'] == 1,
             'player did not start with a weapon, three shells, and a target')
     for name in ('spawned', 'missed', 'locksave', 'lockload', 'reset'):
         state = states[name]

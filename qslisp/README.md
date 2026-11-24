@@ -542,6 +542,19 @@ ammo icons, an operator's helmet for the face, keycards, lambda sigils,
 thermometer armor icons, and the continuation beacon in place of the quad. The
 software renderer draws these pictures opaque, so icons sit on a panel color
 rather than palette index 255. It also writes a generated console background.
+
+The console and menu font is an original 5×7 design in
+[`lisp_font.py`](../tools/quakec/lisp_font.py). It replaces the printable
+cells of the stock `CONCHARS` sheet in white with a drop shadow, and their
+highlighted copies in gold; the control characters keep the stock menu
+borders and cursor, except the inventory's small ammo digits. The status bar's
+large numbers are the same glyphs at three times size, red when low.
+
+Every weapon's view and pickup model is generated from a recipe in
+[examples/models](../examples/models), as are the continuation beacon and the
+ricochet bolt. View models sit below eye level like id's, about 35 units long
+and a few wide. Pickups reuse their view model's parts, centered on the floor,
+with the stock MDL flag that spins items; the beacon and bolt set trail flags.
 Nothing from id's PAKs is committed. The Lambda Lab verifier takes a stock
 screenshot and compares the inventory slots and face with the generated art.
 

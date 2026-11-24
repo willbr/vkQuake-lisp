@@ -135,7 +135,9 @@ def build(recipe, output):
     model, poses = model_from_recipe(recipe)
     output.parent.mkdir(parents=True, exist_ok=True)
     animations = recipe_animations(recipe, dict(poses))
-    output.write_bytes(model.encode_poses(poses, recipe['palette'], animations, recipe.get('skins', ())))
+    # Stock MDL flags: 8 spins a pickup, and the low bits leave client-side trails.
+    output.write_bytes(model.encode_poses(poses, recipe['palette'], animations, recipe.get('skins', ()),
+                                          recipe.get('flags', 0)))
 
 
 def preview_palette(path):

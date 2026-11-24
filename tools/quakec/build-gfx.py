@@ -10,6 +10,7 @@ import argparse
 from pathlib import Path
 import struct
 
+import lisp_font
 from texture_editor import TextureRecipe, generate_pixels
 from uplink_art import LETTERS
 
@@ -254,9 +255,65 @@ def replacements():
         out[f'SB_SIGIL{index + 1}'.encode()] = sigil(index)
     for level in range(3):
         out[f'SB_ARMOR{level + 1}'.encode()] = thermometer(level)
+    out.update(numbers())
     out[b'SB_QUAD'] = beacon()
     for frame in range(1, 6):
         out[f'SBA{frame}_QUAD'.encode()] = beacon(frame)
+    return out
+
+
+FONT_INK, FONT_GOLD, FONT_SHADOW = 15, 242, 2
+
+
+def glyph_cells(char, scale=1):
+    """Ink and drop-shadow pixel positions for one font glyph."""
+    ink = {(x * scale + i, y * scale + j)
+           for y, row in enumerate(lisp_font.rows(char)) for x, on in enumerate(row) if on
+           for i in range(scale) for j in range(scale)}
+    return ink, {(x + 1, y + 1) for x, y in ink} - ink
+
+
+def conchars(stock):
+    """Replace the printable ASCII cells of the 16x16 grid of 8x8 characters,
+    and their highlighted copies 128 higher. Index 0 is transparent. The control
+    characters keep the stock menu borders, arrows, and cursor; only the
+    inventory's ammo digits among them are redrawn."""
+    pixels = bytearray(stock)
+    # Characters 18-27 are the inventory's small ammo digits.
+    cells = [(code, chr(code)) for code in range(32, 127)] + [(18 + d, str(d)) for d in range(10)]
+    for code, char in cells:
+        ink, shadow = glyph_cells(char)
+        for base, color in ((code, FONT_INK if code >= 32 else FONT_GOLD), (code + 128, FONT_GOLD)):
+            left, top = base % 16 * 8, base // 16 * 8
+            for y in range(8):
+                pixels[(top + y) * 128 + left:(top + y) * 128 + left + 8] = bytes(8)
+            for cells, value in ((shadow, FONT_SHADOW), (ink, color)):
+                for x, y in cells:
+                    pixels[(top + y) * 128 + left + 1 + x] = value
+    return bytes(pixels)
+
+
+def big_glyph(char, width, ink):
+    """Status bar numbers: the font's glyph at three times size. Drawn with
+    Draw_TransPic, so index 255 is transparent here."""
+    picture = Picture(width, 24, 255)
+    left = (width - 16) // 2
+    cells, shadow = glyph_cells(char, 3)
+    for x, y in shadow:
+        picture.put(left + x, 1 + y, 0)
+    for x, y in cells:
+        picture.put(left + x, 1 + y, ink)
+    return picture
+
+
+def numbers():
+    out = {}
+    for prefix, ink in (('NUM', 12), ('ANUM', 251)):
+        for digit in '0123456789':
+            out[f'{prefix}_{digit}'.encode()] = big_glyph(digit, 24, ink)
+        out[f'{prefix}_MINUS'.encode()] = big_glyph('-', 24, ink)
+    out[b'NUM_COLON'] = big_glyph(':', 16, 12)
+    out[b'NUM_SLASH'] = big_glyph('/', 16, 12)
     return out
 
 
@@ -276,7 +333,11 @@ def build(pak, output):
         raise ValueError(f'gfx.wad lacks {sorted(missing)}')
     merged = []
     for name, kind, payload in lumps:
-        if name in generated:
+        if name == b'CONCHARS':
+            if len(payload) != 128 * 128:
+                raise ValueError('CONCHARS is not a 128x128 character sheet')
+            payload = conchars(payload)
+        elif name in generated:
             original = struct.unpack_from('<ii', payload)
             picture = generated[name]
             if kind != QPIC or original != (picture.width, picture.height):

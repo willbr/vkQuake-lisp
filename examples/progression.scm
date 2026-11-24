@@ -18,8 +18,8 @@
   (quake:set-callback! (quake:self) touch collect-shells))
 
 (define (qslisp_pulse)
-  (quake:precache-model "progs/g_nail.mdl")
-  (set-pickup-model (quake:self) "progs/g_nail.mdl")
+  (quake:precache-model "progs/g_pulse.mdl")
+  (set-pickup-model (quake:self) "progs/g_pulse.mdl")
   (quake:set-callback! (quake:self) touch collect-pulse))
 
 (define (active-player? other)
