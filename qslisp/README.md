@@ -508,20 +508,19 @@ Self tail calls evaluate all new arguments first, copy them through the VM's
 argument registers, update the parameters, and jump to the body's start. The
 two-stage copy preserves swaps and permutations such as `(loop n b a)`.
 
-Other tail calls publish up to eight tagged arguments in a fixed 24-word global
-mailbox and return a private request. The bytecode trampoline then calls the new
-target **after the requesting body's frame has returned**. It continues until
-a normal value is returned. A pure tail-call chain uses one public wrapper,
-one dispatcher, and at most one function-body frame, independent of chain length.
-No heap, additional builtin, or VM opcode is needed.
+Other tail calls copy their tagged arguments straight into the VM's parameter
+registers and return a private request. The caller's call site then calls the
+requested function **after the requesting body's frame has returned**, and
+repeats until a normal value comes back. A pure tail-call chain uses one public
+wrapper and at most one function-body frame, independent of chain length. No
+heap, additional builtin, or VM opcode is needed.
 
-Ordinary calls also enter the trampoline so their tail-calling callees resolve
-to normal values before the caller continues. Each ordinary call therefore uses
-a dispatcher frame plus a body frame. This adds instruction overhead and can
-exhaust stock call depth sooner than a direct non-tail call. Pending arguments
-are published only after all nested calls finish, and the dispatch target is a
-VM local that is saved/restored on reentry, so nested ordinary calls can safely
-reuse the mailbox. Unused argument cells are cleared when publishing.
+An ordinary call is one stock `CALL` and one VM frame, followed by a two
+instruction check for a request. Nothing runs between a callee staging its
+tail arguments and the call site reading them, and arguments are staged only
+after all nested calls finish, so nested calls can share the registers. Stock
+Quake allows 32 active frames: non-tail recursion reaches a depth of about 29
+from a native entry.
 
 Tail calls do not bypass the watchdog. Long or infinite tail loops still fail
 at the stock instruction budget; they do not gain another budget per iteration.
@@ -546,7 +545,7 @@ engine-managed storage and can be passed through Scheme functions and pairs.
 
 Internal function-body names start with `__qslisp_fn_` and accept these tagged values.
 Public names are native entry wrappers: each CLI argument is a scalar float,
-converted to a Scheme number before calling through the trampoline. Calls between
+converted to a Scheme number before calling the body. Calls between
 Scheme functions preserve boolean tags. The
 CLI prints the return payload; boolean results consequently display as `0`/`1`
 and pair results display an opaque index. Numeric CLI arguments cannot be used
@@ -556,13 +555,13 @@ not `#f`.
 
 Code values hold a raw function reference, and their third word holds the
 arity plus two. A closure stores that code value and the captured values in
-the heap. The trampoline stages captures before entering the function body.
+the heap. The call site stages captures before entering the function body.
 Mutable bindings use shared cells. Other normal values have a zero third word. Private tail requests use
-`[raw-function-reference, 0, 1]` instead. The dispatcher consumes this marker
-before any return to a Scheme caller or native entry wrapper. Request records
-are control data, not Scheme values, and internal entries are not a public CLI
-or native ABI. The dispatcher stages all eight native argument areas and uses
-stock `CALL8`; the callee copies its own declared number and widths of parameters.
+`[raw-function-reference, 0, 1]` instead. Every call site consumes this marker
+before its result reaches a Scheme caller or native entry wrapper. Request
+records are control data, not Scheme values, and internal entries are not a
+public CLI or native ABI. The callee copies its own declared number and widths
+of parameters from the registers.
 
 Instructions are first emitted into a small per-function IR containing local
 slot references. Constants are allocated separately, and locals are relocated
@@ -594,7 +593,7 @@ Acceptance tests validate each generated image and execute it using the original
 interpreter. They cover float32 arithmetic, Scheme truth semantics, lexical
 bindings, nested and eight-argument calls, recursion, source diagnostics, and
 stock compatibility. Tail-call tests exercise deep self/mutual loops, parallel
-argument updates, varying arities, nested trampolines, large local frames,
+argument updates, varying arities, nested tail requests, large local frames,
 non-tail continuations, and the unchanged instruction watchdog. They require
 no purchased game data. Heap tests fill small pools exactly, keep values live
 across allocating calls and recursive frames, check exhaustion, and observe

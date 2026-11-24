@@ -149,7 +149,6 @@ class Compiler:
         self.match = Match(self.records, self.derived_forms.fresh)
         self.constructors = {f'make-{name}': record for name, record in self.records.items()}
         self.getters = {f'{name}-{field}': kind for name, record in self.records.items() for field, kind in record.fields}
-        self.uses_procedures = False
         self.lambdas = []
         self.zero = self.program.constant(0)
         self.one = self.program.constant(1)
@@ -157,13 +156,6 @@ class Compiler:
             self.declare(form)
         if not self.functions:
             raise CompileError(location, 'expected at least one function definition')
-        # A bytecode trampoline drains tail requests without retaining the
-        # requesting function's frame. The mailbox is published only after all
-        # arguments have been evaluated; nested ordinary calls may reuse it.
-        self.mailbox = [self.program.define(f'__qslisp_argument_{i}', 3, [0, 0, 0])
-                        for i in range(8)]
-        self.dispatch = self.program.function('__qslisp_dispatch', filename, 1)
-        self.dispatch_reference = self.program.define('__qslisp_dispatch', 6, [self.dispatch])
         bodies = [node for function in self.functions.values() for node in function.body]
         features = set().union(*(self.heap_features(node) for node in bodies))
         self.mutable_names = {name for node in bodies for name in expression_names(node, mutations=True)}
@@ -269,8 +261,8 @@ class Compiler:
         if name in self.program.names and parameters:
             raise CompileError(form[1].location, 'stock engine entry functions require zero arguments')
         public = self.program.function(name, node.location.filename, len(parameters))
-        # Keep body symbols separate from dispatcher/request/error symbols,
-        # even when a user function is named dispatch, error, or request_leaf.
+        # Keep body symbols separate from request/error symbols,
+        # even when a user function is named error or request_leaf.
         private_name = '__qslisp_fn_' + name
         private = self.program.function(private_name, node.location.filename, len(parameters))
         if name in self.program.names:
@@ -314,7 +306,6 @@ class Compiler:
             wrapper.finish()
         for function in self.lambdas:
             self.compile_lambda(function)
-        self.compile_dispatch()
         if self.heap:
             self.heap.compile()
         return self.program.encode()
@@ -352,29 +343,6 @@ class Compiler:
 
     def values(self, frame, nodes, environment):
         return [self.expression(frame, node, environment) for node in nodes]
-
-    def compile_dispatch(self):
-        # The sole parameter is a three-word request so the CLI cannot mistake
-        # its raw function reference for an ordinary numeric argument. The VM
-        # saves the target local during nested trampoline invocations.
-        frame = Frame(self.program, self.dispatch, self.program.location, 1, 3)
-        loop = len(frame.code)
-        for i, source in enumerate(self.mailbox):
-            frame.emit(OP_STORE_V, source, 4 + i * 3)
-        # Stock calls copy the callee's declared parameter widths, independently
-        # of the CALL opcode's argument count. All internal functions take <=8.
-        frame.emit(OP_CALL0 + 8, Local(0))
-        pending_slot = 3  # OFS_RETURN + 2: request flag or callable arity.
-        if self.uses_procedures:
-            pending_slot = frame.allocate(1)
-            frame.emit(OP_EQ, 3, self.one, pending_slot)
-        pending = frame.emit(OP_IF, pending_slot)
-        frame.emit(OP_RETURN, 1)
-        frame.patch(pending, 2, len(frame.code))
-        frame.emit(OP_STORE, 1, Local(0))  # New raw target from request payload.
-        again = frame.emit(OP_GOTO)
-        frame.patch(again, 1, loop)
-        frame.finish()
 
     def sequence(self, frame, nodes, environment):
         result = None
@@ -526,7 +494,7 @@ class Compiler:
                     again = frame.emit(OP_GOTO)
                     frame.patch(again, 1, 0)
                 else:
-                    self.publish(frame, values)
+                    self.stage(frame, values)
                     frame.emit(OP_RETURN, target.request)
                 return
         result = self.expression(frame, node, environment)
@@ -570,14 +538,31 @@ class Compiler:
             frame.patch(skip, 2, len(frame.code))
 
     def call(self, frame, function, args):
-        return self.invoke(frame, function.request, args)
+        return self.invoke(frame, function.reference, args)
 
-    def invoke(self, frame, request, args):
-        # Stage arguments only after evaluating ALL of them. Nested calls also
-        # use the shared argument/return registers and must not clobber siblings.
-        self.publish(frame, args)
-        frame.emit(OP_STORE_V, request, 4)
-        frame.emit(OP_CALL0 + 1, self.dispatch_reference)
+    def stage(self, frame, args):
+        # Arguments go straight into the VM's parameter registers, and only
+        # after ALL of them are evaluated: nested calls use the same registers.
+        for i, value in enumerate(args):
+            frame.emit(OP_STORE_V, value.slot, 4 + i * 3)
+
+    def invoke(self, frame, target, args):
+        self.stage(frame, args)
+        frame.emit(OP_CALL0 + len(args), target)
+        # A callee in tail position returns a request instead of a value, with
+        # its arguments already staged. Call the requested function from here,
+        # after that callee's frame is gone, until a normal value comes back.
+        # Only a request has float32 one in its third word.
+        loop = len(frame.code)
+        pending = frame.allocate(1)
+        frame.emit(OP_EQ, 3, self.one, pending)
+        done = frame.emit(OP_IFNOT, pending)
+        requested = frame.allocate(1)
+        frame.emit(OP_STORE, 1, requested)
+        frame.emit(OP_CALL0, requested)
+        again = frame.emit(OP_GOTO)
+        frame.patch(again, 1, loop)
+        frame.patch(done, 2, len(frame.code))
         result = Value(frame.allocate())
         frame.emit(OP_STORE_V, 1, result.slot)
         return result
@@ -586,7 +571,6 @@ class Compiler:
         return self.procedure_value(function.private, len(function.parameters))
 
     def procedure_value(self, index, arity):
-        self.uses_procedures = True
         slot = self.program.tagged_literal(f'__qslisp_procedure_{index}', index, 'procedure', arity + 2)
         return Value(slot, 'procedure')
 
@@ -615,7 +599,6 @@ class Compiler:
     def call_indirect(self, frame, node, args, environment, *, tail=False):
         if len(args) > 8:
             raise CompileError(node.location, 'stock VM supports at most eight arguments')
-        self.uses_procedures = True
         target = node.value[0]
         callable_value = self.expression(frame, target, environment)
         procedure, captures = self.resolve_procedure(frame, callable_value, target)
@@ -629,17 +612,17 @@ class Compiler:
         frame.emit(OP_CALL0 + 1, self.program.error_function)
         frame.patch(valid, 2, len(frame.code))
 
+        if self.closure_mailbox is not None:
+            frame.emit(OP_STORE_V, captures.slot, self.closure_mailbox)
+        if not tail:
+            return self.invoke(frame, procedure.slot, values)
         request = frame.allocate()
         frame.emit(OP_STORE, procedure.slot, request)
         frame.emit(OP_STORE, self.zero, advance(request, 1))
         frame.emit(OP_STORE, self.one, advance(request, 2))
-        if self.closure_mailbox is not None:
-            frame.emit(OP_STORE_V, captures.slot, self.closure_mailbox)
-        if tail:
-            self.publish(frame, values)
-            frame.emit(OP_RETURN, request)
-            return None
-        return self.invoke(frame, request, values)
+        self.stage(frame, values)
+        frame.emit(OP_RETURN, request)
+        return None
 
     def closure_parts(self, frame, value, location):
         pair = self.retag(frame, value, 'pair')
@@ -673,10 +656,6 @@ class Compiler:
         frame.emit(OP_STORE_V, empty.slot, captures)
         frame.patch(done, 1, len(frame.code))
         return Value(code, 'procedure'), Value(captures)
-
-    def publish(self, frame, args):
-        for i, destination in enumerate(self.mailbox):
-            frame.emit(OP_STORE_V, args[i].slot if i < len(args) else self.zero, destination)
 
     def empty_list(self):
         return Value(self.program.tagged_literal('__qslisp_null', 0, 'null'), 'null')

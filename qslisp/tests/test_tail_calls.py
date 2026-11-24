@@ -94,7 +94,7 @@ class TailCallTests(CompilerCase):
                      .split(b'\0')[0] for i in range(count)]
             self.assertEqual(len(names), len(set(names)))
 
-    def test_nested_trampolines_do_not_clobber_mailbox_or_target(self):
+    def test_nested_tail_requests_do_not_clobber_arguments_or_target(self):
         self.value('''
         (define (id x) x)
         (define (forward x) (id x))
@@ -152,6 +152,17 @@ class TailCallTests(CompilerCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertIn('stack overflow', result.stdout)
                 self.assertNotIn('runaway loop error', result.stdout)
+
+    def test_ordinary_calls_use_one_native_frame_each(self):
+        source = '''
+        (define (count n) (if (= n 0) 0 (+ 1 (count (- n 1)))))
+        (define (test) (count 28))
+        (define (too-deep) (count 40))
+        '''
+        self.value(source, 28)
+        result = self.execute(source, 'too-deep')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('stack overflow', result.stdout + result.stderr)
 
     def test_infinite_tail_loops_still_hit_stock_watchdog(self):
         for source in (

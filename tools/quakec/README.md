@@ -359,6 +359,6 @@ heap types must extend this runtime. Do not introduce a C-managed heap or depend
 on engine string-buffer, allocation, or reflection extensions. Macros can run
 in the host compiler.
 The compiler emits self tail calls as loops and other named tail calls through
-a bytecode trampoline, while preserving the stock frame and watchdog limits.
+requests resolved at the call site, while preserving the stock frame and watchdog limits.
 Full Scheme conformance, closures, global values, and stock save/load integration
 remain future work. Heap capacities are configurable and subject to stock limits.
