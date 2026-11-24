@@ -1,0 +1,62 @@
+{
+  "name": "winter_ice",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1302,
+  "colors": [
+    223,
+    222,
+    221,
+    220,
+    219,
+    218,
+    217,
+    216,
+    215,
+    214,
+    213,
+    212
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 72
+      }
+    },
+    {
+      "kind": "cellular",
+      "amount": 40,
+      "blend": "add",
+      "params": {
+        "columns": 3,
+        "rows": 3,
+        "jitter": 90,
+        "seed_offset": 0
+      }
+    },
+    {
+      "kind": "bands",
+      "amount": 20,
+      "blend": "add",
+      "params": {
+        "across": 3,
+        "down": 5,
+        "width": 10,
+        "phase": 0
+      }
+    },
+    {
+      "kind": "emboss",
+      "amount": 18,
+      "blend": "mix",
+      "params": {
+        "distance": 1,
+        "angle": 30
+      }
+    }
+  ]
+}

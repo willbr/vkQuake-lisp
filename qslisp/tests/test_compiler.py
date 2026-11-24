@@ -340,6 +340,13 @@ class CompilerTests(CompilerCase):
         self.assertEqual(saved, {b'serverflags', b'total_secrets', b'total_monsters',
                                  b'found_secrets', b'killed_monsters'})
 
+    def test_spawn_parms_read_and_write_stock_globals(self):
+        self.value('(define (test) (quake:set-parm! 3 41) (+ 1 (quake:parm 3)))', 42)
+        for call in ('(quake:parm 0)', '(quake:parm 17)', '(quake:parm 2.5)', '(quake:set-parm! 1)'):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(CompileError, 'spawn parm from 1 to 16'):
+                    compile_source(f'(define (test) {call})', 'parms.scm')
+
     def test_source_printer_broadcasts_each_line_of_its_file(self):
         with tempfile.TemporaryDirectory() as directory:
             source = pathlib.Path(directory) / 'printer.scm'

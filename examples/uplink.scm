@@ -16,6 +16,10 @@
 (define-field uplink-active)
 (define-field uplink-hints)
 (define-field hint-code)
+(define-field buddy-task entity)
+(define-field buddy-dwim)
+(define-field buddy-spot string)
+(define-field probe-relay)
 
 (define-record uplink-log (flags number) (operator entity))
 (define-saved-record read-uplink-log write-uplink-log make-uplink-log
@@ -27,7 +31,17 @@
 (define (uplink-record! flag player)
   (let* ((owner (uplink-named "mission-journal")) (log (read-uplink-log owner)))
     (when (= (quake:bit-and (uplink-log-flags log) flag) 0)
-      (write-uplink-log owner (make-uplink-log (quake:bit-or (uplink-log-flags log) flag) player)))))
+      (write-uplink-log owner (make-uplink-log (quake:bit-or (uplink-log-flags log) flag) player))
+      ; Stock HUD keycards and sigils show progress: switchgear, the probe, extraction.
+      (cond ((= flag 4) (give-players (quake:world) 131072))
+            ((= flag 64) (give-players (quake:world) 262144))
+            ((= flag 32) (quake:set-serverflags! (quake:bit-or (quake:serverflags) 1)))))))
+
+(define (give-players cursor item)
+  (let ((player (quake:find cursor classname "qslisp_player")))
+    (when (not (quake:world? player))
+      (quake:set-field! player items (quake:bit-or (quake:field player items) item))
+      (give-players player item))))
 
 (define buddy-follow 0)
 (define buddy-wait 1)
@@ -101,7 +115,8 @@
         ((= code 4) (quake:centerprint player "Follow the bypass west to the valve."))
         ((= code 8) (quake:centerprint player "Use the valve to station the buddy.\nThen use the pump breaker to the east."))
         ((= code 16) (quake:centerprint player "Grab the pulse carbine.\nClear the sentry and hit the relay."))
-        ((= code 32) (quake:centerprint player "Ride through both north gantry relays.\nThe tether gallery is optional."))))))
+        ((= code 32) (quake:centerprint player "Ride through both north gantry relays.\nThe tether gallery is optional."))
+        ((= code 64) (quake:centerprint player "The probe is deadlocked: each relay waits for the other.\nRelease one at its station, or aim and press Q for the buddy."))))))
 
 (define (uplink-use-buddy)
   (let ((buddy (quake:self)) (player (quake:other)))
@@ -232,15 +247,76 @@
            (if (and (string=? (quake:field goal targetname) "switch-cover")
                     (quake:world? (uplink-named "switch-guard")))
                (uplink-buddy-order actor player buddy-follow)
-               (begin
+               (let ((task (quake:field actor buddy-task)))
                  (when (not (uplink-close? actor player 950 90))
                    (uplink-buddy-arrive actor player (uplink-near-waypoint player (quake:world) (quake:world))))
                  (uplink-buddy-step actor goal 38)
-                 (uplink-buddy-shoot actor)))))))
+                 (uplink-buddy-shoot actor)
+                 (when (and (not (quake:world? task)) (uplink-close? actor goal 56 72))
+                   (quake:set-field! actor buddy-task (quake:world))
+                   (quake:dprint "uplink: buddy used a station\n")
+                   (quake:call-callback task use player)
+                   (uplink-buddy-order actor player buddy-follow))))))))
     (uplink-buddy-animation actor x y)))
+
+;; "Buddy, use that": aim at a station with a buddy spot and press Q.
+;; Interlisp's DWIM corrected what you typed into what it thought you meant;
+;; every fourth order, the buddy does the same with the station you chose.
+(define (station-spot station)
+  (if (string=? (quake:field station buddy-spot) "") (quake:world) (uplink-named (quake:field station buddy-spot))))
+
+(define (uplink-far-station player eye cursor best best-dot)
+  (let ((station (quake:find cursor classname "uplink_station")))
+    (if (quake:world? station)
+        best
+        (let ((spot (station-spot station)))
+          (if (quake:world? spot)
+              (uplink-far-station player eye station best best-dot)
+              (let* ((dx (- (quake:field spot origin_x) (quake:vector-x eye)))
+                     (dy (- (quake:field spot origin_y) (quake:vector-y eye)))
+                     (distance (quake:vector-length (quake:vector dx dy 0)))
+                     (dot (/ (+ (* dx (quake:forward-x)) (* dy (quake:forward-y))) (if (> distance 1) distance 1))))
+                (if (and (> dot best-dot) (< distance 1500))
+                    (uplink-far-station player eye station station dot)
+                    (uplink-far-station player eye station best best-dot))))))))
+
+(define (uplink-nearest-station aimed cursor best best-distance)
+  (let ((station (quake:find cursor classname "uplink_station")))
+    (if (quake:world? station)
+        best
+        (let ((spot (station-spot station)))
+          (if (or (quake:world? spot) (quake:entity=? station aimed))
+              (uplink-nearest-station aimed station best best-distance)
+              (let ((distance (sentry-distance-squared spot (station-spot aimed))))
+                (if (< distance best-distance)
+                    (uplink-nearest-station aimed station station distance)
+                    (uplink-nearest-station aimed station best best-distance))))))))
+
+(define (uplink-buddy-task player buddy)
+  (quake:make-vectors (quake:vector 0 (quake:field player v_angle_y) 0))
+  (let ((aimed (uplink-far-station player (player-eye player) (quake:world) (quake:world) 0.99)))
+    (if (quake:world? aimed)
+        (quake:centerprint player "Aim at a station with a buddy spot, then press Q.")
+        (let* ((count (+ 1 (quake:field buddy buddy-dwim)))
+               (other (uplink-nearest-station aimed (quake:world) (quake:world) 99999999))
+               (dwim (and (= count 4) (not (quake:world? other))))
+               (station (if dwim other aimed)))
+          (quake:set-field! buddy buddy-dwim (if (= count 4) 0 count))
+          (uplink-buddy-order buddy player buddy-assist)
+          (quake:set-field! buddy buddy-goal (station-spot station))
+          (quake:set-field! buddy buddy-task station)
+          (if dwim
+              (begin
+                (quake:centerprint player "Buddy: Do What I Mean.\nHeading for the station I think you meant.")
+                (quake:dprint "uplink: buddy did what it thought you meant\n"))
+              (quake:centerprint player "Buddy heading to that station."))))))
 
 (define (uplink-buddy-commands player)
   (let ((command (quake:field player impulse)))
+    (when (= command 20)
+      (quake:set-field! player impulse 0)
+      (let ((buddy (uplink-teammate)))
+        (when (not (quake:world? buddy)) (uplink-buddy-task player buddy))))
     (when (and (>= command 21) (<= command 23))
       (quake:set-field! player impulse 0)
       (let ((buddy (uplink-teammate)))
@@ -418,14 +494,20 @@
                  (uplink-buddy-order buddy player buddy-assist)
                  (quake:set-field! buddy buddy-goal (uplink-named "switch-cover")))
                (quake:centerprint player "Clear the sentry. Buddy moving to cover."))))
+        ((> (quake:field station probe-relay) 0) (uplink-release-relay station player))
         ((string=? name "roof-extract")
-         (if (= (quake:bit-and (uplink-log-flags (read-uplink-log (uplink-named "mission-journal"))) 31) 31)
-             (begin
-               (uplink-record! 32 player)
-               (quake:set-field! station uplink-active 1)
-               (quake:centerprint player "Uplink restored. Relay Annex complete.")
-               (quake:dprint "uplink: mission complete\n"))
-             (quake:centerprint player "Both gantry relays must be online.")))
+         (cond
+           ((= (quake:field station uplink-active) 1)
+            (quake:dprint "uplink: leaving for the Lambda Lab\n")
+            (quake:change-level "lambda"))
+           ((= (quake:bit-and (uplink-log-flags (read-uplink-log (uplink-named "mission-journal"))) 95) 95)
+            (uplink-record! 32 player)
+            (quake:set-field! station uplink-active 1)
+            (quake:centerprint player "Uplink restored. Relay Annex complete.\nPress E again to leave for the Lambda Lab.")
+            (quake:dprint "uplink: mission complete\n"))
+           ((= (quake:bit-and (uplink-log-flags (read-uplink-log (uplink-named "mission-journal"))) 31) 31)
+            (quake:centerprint player "The probe is deadlocked. Release one of its relays."))
+           (else (quake:centerprint player "Both gantry relays must be online."))))
         (else
          (uplink-unlock station)
          (uplink-record! 1 player)
@@ -497,3 +579,21 @@
                   (quake:centerprint player "Bike returned to the service bay.")
                   (quake:dprint "uplink: bike recalled\n"))
                 (quake:centerprint player "Clear the return area first.")))))))
+
+;; Remote Agent: Deep Space 1's Lisp was debugged live from 100 million miles.
+;; The probe's two relays each wait for the other's acknowledgement. Release
+;; either one at its station, or send the buddy, so it fires first; the other
+;; then acknowledges and the probe answers.
+(define (uplink-release-relay station player)
+  (let ((journal (uplink-log-flags (read-uplink-log (uplink-named "mission-journal")))))
+    (cond
+      ((not (= (quake:bit-and journal 31) 31)) (quake:centerprint player "The probe relays have no power yet."))
+      ((> (quake:bit-and journal 64) 0) (quake:centerprint player "The probe is already answering."))
+      (else
+       (quake:set-field! station uplink-active 1)
+       (quake:set-field! station effects 4)
+       (uplink-record! 64 player)
+       (quake:sound player 2 "misc/medkey.wav" 1 1)
+       (quake:bprint "Relay released. It fires first; its partner acknowledges. The probe answers.\n")
+       (quake:centerprint player "Deadlock broken. Remote Agent restored.\nUse the extraction panel.")
+       (quake:dprint "uplink: probe online\n")))))

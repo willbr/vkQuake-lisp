@@ -278,6 +278,16 @@ and [WAD2](../../examples/textures/lambda.wad); rebuild them with
 `--set lambda`. Every WAD in `examples/textures` is embedded in map builds.
 Its signs and Lisp Machine panels are drawn in [lambda_art.py](lambda_art.py).
 [`build-lambda.py`](build-lambda.py) regenerates [the map](../../examples/lambda.map).
+The AI Winter uses `--set winter` and [`build-winter.py`](build-winter.py).
+
+The status bar art is generated, not committed:
+
+```sh
+python3 tools/quakec/build-gfx.py "$HOME/Games/Quake-gog/app/id1/pak0.pak" build/mod
+```
+
+It writes `gfx.wad` and `gfx/conback.lmp` into the mod directory. The launcher
+runs it for every staged game.
 
 ## VM listings and fixtures
 

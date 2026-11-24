@@ -3,7 +3,8 @@ import math
 import re
 
 from challenge import read_edicts, require
-from uplink import Client, edit, named, number, origin, player, wait
+import hud
+from uplink import Client, edit, named, number, origin, player, serverflags, wait
 
 EYE = 22
 
@@ -91,7 +92,8 @@ def entries(path, classname):
 
 def verify(dosbox, output, env, base, mod):
     client = Client(dosbox, output, env, base, mod, level='lambda')
-    boot = client.run('boot', None, [*wait(80), 'save start'])
+    boot = client.run('boot', None, [*wait(80), 'save start', 'screenshot'])
+    hud.verify_status_bar(mod / 'quake00.pcx')
     require('lambda: floyd found a cycle' in boot and 'lambda: tail door open' not in boot,
             'the drones did not detect the initial cycle or the tail door opened early')
     require(number(named(client.save('start'), 'c5'), 'lambda-head') == 1, 'the head cell was not spawned')
@@ -239,4 +241,15 @@ def verify(dosbox, output, env, base, mod):
     quine = client.run('quine', 'atquine', ['impulse 10', *wait(4)])
     require('(define-source-printer print-quine "quine.scm")' in quine and 'lambda: quine printed' in quine,
             'the quine sign did not print its own source')
+    # Leave for the AI Winter. The loadout crosses the level change in spawn parms.
+    # Stock changelevel appends to the command buffer, behind this script, so the
+    # script issues the same command once the exit has requested it.
+    client.place('armory', 'atexit', 3456, 1600, 793, 90)
+    leave = client.run('exit', 'atexit', ['+forward', *wait(20), '-forward', 'changelevel winter',
+                                          *wait(40), 'save winter'])
+    arrived = player(client.save('winter'))
+    require('lambda: exit' in leave and 'SpawnServer: winter' in leave
+            and int(number(arrived, 'items')) & (2 | 16 | 32 | 64) == 2 | 16 | 32 | 64
+            and number(arrived, 'ammo_cells') == 8 and serverflags(client.save('winter')) & 2,
+            'the exit did not carry the loadout into the AI Winter')
     return output / 'boot.log'

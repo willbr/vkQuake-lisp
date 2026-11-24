@@ -1,0 +1,75 @@
+{
+  "name": "winter_wall",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1303,
+  "colors": [
+    44,
+    43,
+    42,
+    41,
+    40,
+    39,
+    38,
+    37,
+    36,
+    35,
+    34,
+    33
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 55
+      }
+    },
+    {
+      "kind": "fractal",
+      "amount": 26,
+      "blend": "add",
+      "params": {
+        "columns": 5,
+        "rows": 3,
+        "octaves": 4,
+        "gain": 50,
+        "seed_offset": 0
+      }
+    },
+    {
+      "kind": "grid",
+      "amount": 28,
+      "blend": "multiply",
+      "params": {
+        "columns": 2,
+        "rows": 4,
+        "gap": 10,
+        "stagger": 50
+      }
+    },
+    {
+      "kind": "fractal",
+      "amount": 22,
+      "blend": "max",
+      "params": {
+        "columns": 8,
+        "rows": 2,
+        "octaves": 2,
+        "gain": 40,
+        "seed_offset": 9
+      }
+    },
+    {
+      "kind": "emboss",
+      "amount": 24,
+      "blend": "mix",
+      "params": {
+        "distance": 1,
+        "angle": 60
+      }
+    }
+  ]
+}

@@ -375,6 +375,17 @@ second press re-fires at a new anchor. Within 10 degrees of the aim, the
 tether snaps to the best-aligned anchor with a clear line. Brush entities of
 class `uplink_anchor_rail` take the tether wherever the aim hits them.
 
+On the roof, the probe is deadlocked: each of its two relays waits for the
+other's acknowledgement, after Deep Space 1's Remote Agent, whose Lisp was
+debugged live from 100 million miles. Release either relay at its station,
+or aim at one and press **Q** (`buddy_use`, impulse 20) to send the buddy.
+Every fourth order the buddy does what Interlisp's DWIM did and picks the
+station it thinks you meant, the nearest other one, and says so. The probe
+answers, and extraction then completes; use the panel again to leave for the
+Lambda Lab. Switchgear and the probe each hand out a stock keycard, and
+extraction sets the first sigil. Two of the seven Lisp primitives, `car` and
+`cdr`, wait by the carbine and past the tether swing.
+
 Use `developer 1` and `gameplay_trace` (impulse 24) for up to 12 seconds of
 console samples. The trace records bike steering, ground contact, speed,
 grip, and camera position, plus the buddy's goal and reason code. Buddy
@@ -443,6 +454,40 @@ stock angle transmission: `MSG_WriteAngle` truncates to whole degrees before
 the byte conversion, so a sent angle can be over two degrees short. The linker
 snaps to a pad or conduit within three degrees of the aim.
 
+### AI Winter
+
+```sh
+python3 tools/quakec/test-map-boot.py --play --map winter /path/to/dosbox /path/to/quake
+python3 tools/quakec/test-map-boot.py --verify --map winter /path/to/dosbox /path/to/quake
+```
+
+The Lambda Lab's exit leads to [the AI Winter](../examples/winter.scm), an
+abandoned lab. Stock Quake has no per-entity friction, so ice volumes give
+back most of the speed ground friction takes each frame. Warmth uses the stock
+armor gauge: heaters fill it, the cold drains it, and the three armor icons
+show it green, yellow, or red. At zero the cold costs health. Ceiling fans and
+a radar dish are non-solid brush models spinning with `avelocity`; brush models
+turn about their entity origin and stock `qbsp` has no origin brushes, so they
+are authored around world (0, 0) and moved into place when they spawn.
+
+### Seven primitives
+
+McCarthy's `eval` needs only `quote`, `atom`, `eq`, `car`, `cdr`, `cons`, and
+`cond`. Each is a rune: `car` and `cdr` in Uplink, `quote`, `cons`, and `cond`
+in the Lambda Lab, and `atom` and `eq` in the AI Winter. They are
+`serverflags` bits 4–10, above the four the stock HUD draws as sigils, so they
+survive level changes and saves. The Winter's last gate opens when all seven
+are set. Its exit prints `(define eval (lambda …))` with the primitives in the
+order you found them. That order is base-8 digits on the player, carried with
+the rest of the loadout in the spawn parms. Finishing Uplink, the Lambda Lab,
+and the Winter set the first three sigils.
+
+Brush entities think on `ltime`. Stock Quake runs a pusher's think only when
+`nextthink` is ahead of `ltime` before the move, so a save taken as they meet
+stalls that timer after loading. Periodic jobs therefore run on point
+entities: the cells draw the pad beams and the Winter's cold controller checks
+the rune gate.
+
 ### Greenspun benchmark
 
 [`dog.scm`](../examples/dog.scm) ports id's `dog.qc` to one Lisp state
@@ -467,6 +512,28 @@ Lisp function also gets a public wrapper, and values carry type tags that
 calls and field reads check. Neither count includes shared code: `dog.qc`
 calls `ai.qc` and `fight.qc`, and the Lisp dog uses the sentry's sight, damage,
 and facing helpers.
+
+### Status bar art
+
+Stock clients draw the status bar from `gfx.wad`, and `W_LoadWadFile` runs
+after `-game` sets the search path, so a mod's `gfx.wad` replaces the art.
+[`build-gfx.py`](../tools/quakec/build-gfx.py) reads the player's own copy from
+`pak0.pak` at launch, keeps every lump the client expects, and generates the
+rest: the status and inventory bars from a procedural recipe, the seven weapon
+slots numbered for their keys (normal, selected, and five pickup flashes), the
+ammo icons, an operator's helmet for the face, keycards, lambda sigils,
+thermometer armor icons, and the continuation beacon in place of the quad. The
+software renderer draws these pictures opaque, so icons sit on a panel color
+rather than palette index 255. It also writes a generated console background.
+Nothing from id's PAKs is committed. The Lambda Lab verifier takes a stock
+screenshot and compares the inventory slots and face with the generated art.
+
+| Stock indicator | Use |
+| --- | --- |
+| Keys | Uplink's switchgear and probe keycards |
+| Sigils | Uplink, Lambda Lab, and AI Winter finished |
+| Armor | AI Winter warmth |
+| Quad | Continuation beacon out; the client tints the view blue |
 
 ### Two-player co-op
 
@@ -551,6 +618,12 @@ read from a field; only literals have their length checked at compile time.
 11 total secrets, 12 total monsters, 13 found secrets, or 14 killed monsters.
 It also stores the matching stock global, which Quake resends to joining
 clients and, like `serverflags`, writes to saved games.
+`(quake:parm n)` and `(quake:set-parm! n number)` read and write the stock
+spawn parms `parm1`–`parm16`, and `(quake:set-spawn-parms client)` reloads one
+client's parms into them. The [persistence library](persistence.scm)'s
+`carry!` and `carried` move a list of up to 15 numbers through them; the game
+carries the player's weapons, health, ammo, tether, and rune order between
+levels that way, since entity fields do not survive a level change.
 `(quake:lightning entity start end)` draws a stock lightning bolt the way
 `quake:beam` draws the tether beam. `(quake:point-effect name position)` sends
 a stock temp entity: `spike`, `gunshot`, `explosion`, `tar-explosion`,

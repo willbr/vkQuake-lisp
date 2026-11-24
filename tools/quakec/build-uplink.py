@@ -249,6 +249,9 @@ def course():
     yield marker('qslisp_ammo', 3152, -3316, SWITCHGEAR)
     yield marker('qslisp_pulse', -3200, -3750, SWITCHGEAR)
     yield marker('uplink_tether_supply', 3600, 2850, GANTRIES)
+    # Two of the seven Lisp primitives: one by the carbine, one past the tether swing.
+    yield marker('lambda_rune', -3000, -3750, SWITCHGEAR, rune=128, message='car')
+    yield marker('lambda_rune', -1600, 3150, GANTRIES - 192, rune=256, message='cdr')
     yield hint(-3750, -2110, SERVICE, 1)
     yield hint(-3744, -2070, FREIGHT, 2, width=220)
     yield hint(3356, -1366, FLOOD, 4, width=240)
@@ -283,6 +286,11 @@ def course():
     yield marker('uplink_recall', 3530, -1500, FREIGHT, targetname='freight-service')
     yield marker('uplink_recall', 3580, -2180, GANTRIES, targetname='gantry-service')
     yield station('roof-extract', 3890, 3700, ROOF)
+    # The deadlocked probe: two relays, each with a spot where the buddy can stand.
+    for name, y, spot_y in (('probe-a', 3560, 3620), ('probe-b', 3880, 3820)):
+        yield station(name, 3400, y, ROOF, **{'probe-relay': 1, 'buddy-spot': f'{name}-spot'})
+        yield marker('uplink_waypoint', 3400, spot_y, ROOF, targetname=f'{name}-spot')
+    yield hint(3000, 3720, ROOF, 64, width=120, length=280)
     # Overlap light along the ride lines and keep side rooms and controls visible.
     for x, y, z in (
         # Service yard and the two downhill passes.

@@ -52,6 +52,7 @@ ENGINE_CALLS = {
     'quake:cvar': (45, ('string',)),
     'quake:particle': (48, ('vector', 'vector', 'number', 'number')),
     'quake:change-level': (70, ('level',)),
+    'quake:set-spawn-parms': (78, ('entity',)),
     'quake:centerprint': (73, ('entity', 'text')),
 }
 ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'entity'),
@@ -79,7 +80,7 @@ PRIMITIVES = (ARITHMETIC.keys() | COMPARISONS.keys() | BITWISE.keys() |
     'quake:vector-x', 'quake:vector-y', 'quake:vector-z',
     'quake:set-callback!', 'quake:call-callback', 'quake:set-view', 'quake:set-view-angles!', 'quake:beam',
     'quake:lightning', 'quake:point-effect',
-    'quake:dprint-number', 'quake:set-serverflags!', 'quake:update-stat',
+    'quake:dprint-number', 'quake:set-serverflags!', 'quake:update-stat', 'quake:parm', 'quake:set-parm!',
 }
 # Stock temp entities that take one position. The client loads their models and sounds.
 POINT_EFFECTS = {name: number for name, number in (
@@ -1354,6 +1355,22 @@ class Compiler:
             return Value(self.zero, 'number')
         if name == 'quake:update-stat':
             return self.update_stat(frame, node, args, environment)
+        if name in ('quake:parm', 'quake:set-parm!'):
+            setter = name == 'quake:set-parm!'
+            index = args[0].value if args else None
+            if (len(args) != (2 if setter else 1) or type(index) not in (int, float)
+                    or index != int(index) or not 1 <= index <= 16):
+                raise CompileError(node.location, f'{name} requires a literal spawn parm from 1 to 16'
+                                   + (' and a number' if setter else ''))
+            slot = self.program.names[f'parm{int(index)}']
+            if setter:
+                value = self.expression(frame, args[1], environment)
+                self.number(frame, value, args[1])
+                frame.emit(OP_STORE, value.slot, slot)
+                return value
+            result = self.tagged(frame, 'number')
+            frame.emit(OP_STORE, slot, result.slot)
+            return result
         if name == 'quake:set-serverflags!':
             if len(args) != 1:
                 raise CompileError(node.location, 'quake:set-serverflags! requires one number')

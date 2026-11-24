@@ -1,0 +1,59 @@
+{
+  "name": "winter_snow",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1301,
+  "colors": [
+    15,
+    14,
+    13,
+    12,
+    11,
+    10,
+    9,
+    8,
+    7,
+    6,
+    5,
+    4
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 80
+      }
+    },
+    {
+      "kind": "fractal",
+      "amount": 30,
+      "blend": "add",
+      "params": {
+        "columns": 4,
+        "rows": 4,
+        "octaves": 5,
+        "gain": 55,
+        "seed_offset": 0
+      }
+    },
+    {
+      "kind": "white",
+      "amount": 12,
+      "blend": "add",
+      "params": {
+        "seed_offset": 7
+      }
+    },
+    {
+      "kind": "blur",
+      "amount": 30,
+      "blend": "mix",
+      "params": {
+        "radius": 1
+      }
+    }
+  ]
+}

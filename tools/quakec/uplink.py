@@ -21,6 +21,7 @@ TOUR_STOPS = (
     ((3840, -2960, 1280, 0), (3700, -3100, 1280, 0)),
     ((3250, 3850, 2560, 180), (-2150, 3590, 2560, 180)),
     ((-3800, 3720, 2560, 0), (-3696, 3830, 2560, 0)),
+    ((3400, 3520, 3840, 90), (3300, 3520, 3840, 90)),
     ((3890, 3622, 3840, 90), (3790, 3715, 3840, 90)),
 )
 
@@ -36,6 +37,12 @@ def level_measurements(bsp):
     vis, light, models = lengths[4], lengths[8], lengths[14] // 64
     require(0 < models < 256 and vis > 0 and light > 0, 'uplink BSP requires models, visibility, and lighting')
     return {**source, 'brush_models': models, 'vis_bytes': vis, 'light_bytes': light}
+
+
+def serverflags(path):
+    """The globals block precedes the edicts; stock saves flag serverflags there."""
+    block = re.search(r'^\{\s*\n(.*?)^\}', path.read_text(encoding='cp437'), re.M | re.S)[1]
+    return int(float(dict(re.findall(r'^"([^"]*)"\s+"([^"]*)"', block, re.M)).get('serverflags', 0)))
 
 
 def wait(frames):
@@ -248,6 +255,9 @@ def verify(dosbox, output, env, base, mod):
             'cargo lift did not reach switchgear')
     client.place('switch', 'atpulse', -3200, -3750, 1305, 0)
     client.run('pulse-pickup', 'atpulse', ['impulse 21', 'wait', 'impulse 3', *wait(4), 'save armed'])
+    client.place('armed', 'atcar', -3030, -3750, 1305, 0)
+    client.run('car-rune', 'atcar', ['+forward', *wait(6), '-forward', 'save carrune'])
+    require(serverflags(client.save('carrune')) & 128, 'the car primitive was not collected')
     client.place('armed', 'atlong', 2600, -3290, 1305, 0)
     approach = client.run('switchgear-approach', 'atlong', [*wait(35), 'save approach'])
     require('qslisp: guard alerted' not in approach and number(player(client.save('approach')), 'health') == 100,
@@ -263,6 +273,8 @@ def verify(dosbox, output, env, base, mod):
     require('uplink: pulse resolved' in pulse and 'uplink: switchgear online' in pulse and
             number(named(client.save('powered'), 'mission-journal'), 'uplink-saved-flags') == 7,
             'pulse did not energize the switchgear relay')
+    require(int(number(player(client.save('powered')), 'items')) & 131072,
+            'switchgear did not hand out the first keycard')
 
     client.place('powered', 'atpick', 3600, 2850, 2585, 90)
     client.run('tether-pickup', 'atpick', [*wait(5), 'save tether'])
@@ -311,6 +323,9 @@ def verify(dosbox, output, env, base, mod):
                'impulse 31', *wait(28), '-forward', *wait(14), 'save farside'])
     fx, _, fz = origin(client.save('farside'))
     require(fx < -1300 and fz >= 2392, 'late release did not reach the far landing ramp')
+    client.place('tether', 'atcdr', -1630, 3150, 2393, 0)
+    client.run('cdr-rune', 'atcdr', ['+forward', *wait(6), '-forward', 'save cdrrune'])
+    require(serverflags(client.save('cdrrune')) & 256, 'the cdr primitive was not collected')
 
     client.place('powered', 'atrecall', 3580, -2262, 2585, 90)
     recall = client.run('bike-recovery', 'atrecall', ['impulse 10', *wait(4), 'save recalled'])
@@ -331,10 +346,42 @@ def verify(dosbox, output, env, base, mod):
     client.run('roof-ride', 'rooflane', ['+attack', *wait(357), '-attack', '+jump',
                *wait(30), '-jump', 'impulse 10', *wait(12), 'save endride'])
     client.place('endride', 'atextrac', 3890, 3622, 3865, 90)
-    extract = client.run('extraction', 'atextrac', ['impulse 10', *wait(6), 'save finish'])
+    blocked = client.run('deadlocked', 'atextrac', ['impulse 10', *wait(6), 'save deadlock'])
+    require('uplink: mission complete' not in blocked and
+            number(named(client.save('deadlock'), 'mission-journal'), 'uplink-saved-flags') == 31,
+            'extraction ignored the deadlocked probe')
+    # Remote Agent: send the buddy to a relay. Every fourth order, DWIM picks the other one.
+    buddy_spot = {'origin': '3300 3720 3840', 'oldorigin': '3300 3720 3840', 'buddy-state': '0',
+                  'buddy-leader': '1'}
+    yaw = math.degrees(math.atan2(3620 - 3720, 3400 - 3600))
+    edit(client.save('endride'), client.save('probedw'), [
+        ('classname', 'uplink_buddy', {**buddy_spot, 'buddy-dwim': '3'})])
+    client.place('probedw', 'atprobed', 3600, 3720, 3865, yaw)
+    dwim = client.run('probe-dwim', 'atprobed', ['impulse 20', *wait(70), 'save dwimmed'])
+    require('uplink: buddy did what it thought you meant' in dwim and 'uplink: probe online' in dwim
+            and number(named(client.save('dwimmed'), 'probe-b'), 'uplink-active') == 1
+            and number(named(client.save('dwimmed'), 'probe-a'), 'uplink-active') == 0,
+            'the DWIM buddy did not choose and release the other relay')
+    edit(client.save('endride'), client.save('probebd'), [('classname', 'uplink_buddy', buddy_spot)])
+    client.place('probebd', 'atprobe', 3600, 3720, 3865, yaw)
+    probe = client.run('probe-buddy', 'atprobe', ['impulse 20', *wait(70), 'save probed'])
+    probed = client.save('probed')
+    require('uplink: buddy used a station' in probe and 'uplink: probe online' in probe
+            and number(named(probed, 'probe-a'), 'uplink-active') == 1
+            and number(named(probed, 'mission-journal'), 'uplink-saved-flags') == 95
+            and int(number(player(probed), 'items')) & 262144,
+            'the buddy did not release the aimed relay and break the deadlock')
+    client.place('probed', 'atextrac', 3890, 3622, 3865, 90)
+    # Stock changelevel appends to the command buffer behind this script; issue
+    # the same command once the panel has requested it.
+    extract = client.run('extraction', 'atextrac', ['impulse 10', *wait(6), 'save finish',
+                                                    'impulse 10', *wait(2), 'changelevel lambda', *wait(40)])
     require('uplink: mission complete' in extract and
-            number(named(client.save('finish'), 'mission-journal'), 'uplink-saved-flags') == 63,
+            number(named(client.save('finish'), 'mission-journal'), 'uplink-saved-flags') == 127
+            and serverflags(client.save('finish')) & 1,
             'the restored mission journal did not permit roof extraction')
+    require('uplink: leaving for the Lambda Lab' in extract and 'SpawnServer: lambda' in extract,
+            'a second use at extraction did not leave for the Lambda Lab')
     snapshots = [read_edicts(path) for path in output.glob('*.sav')]
     measurements['max_saved_edicts'] = max(map(len, snapshots))
     measurements['max_saved_model_index'] = int(max(number(entry, 'modelindex')
@@ -372,7 +419,7 @@ def coop_maps(output):
                         document.add_entity({
                             'classname': 'uplink_tour_stop', 'origin': coordinates((x, y, z + 25)),
                             'angle': str(yaw), 'tour-command': str(command),
-                            'tour-player': str(player_slot), 'tour-roof': str(int(command == 56)),
+                            'tour-player': str(player_slot), 'tour-roof': str(int(command >= 56)),
                             'tour-bike': str({54: 1, 55: 2}.get(command, 0)),
                         })
             source.write_text(document.text, encoding='ascii')
@@ -465,6 +512,7 @@ def verify_coop_tour(dosbox, output, env, host, guest):
         (drive, drive),
         (['impulse 10', *wait(101)], wait(101)),
         (['impulse 10', *wait(10)], wait(10)),
+        (['impulse 10', *wait(10)], wait(10)),
     ]
     rounds = [(['impulse 21', *wait(12), 'impulse 10', *wait(12)],
                [*wait(12), 'impulse 10', *wait(12)])]
@@ -473,8 +521,9 @@ def verify_coop_tour(dosbox, output, env, host, guest):
         rounds.extend(((move, move), actions))
     log, _ = run_coop(dosbox, output, env, host, guest, 'uptour', *rounds)
     reached = {tuple(map(int, line.split()[1:])) for line in log.splitlines() if line.startswith('tour ')}
-    require(reached == {(command, slot) for command in range(50, 57) for slot in (1, 2)},
+    require(reached == {(command, slot) for command in range(50, 58) for slot in (1, 2)},
             f'co-op tour missed waypoints or the roof lift: {sorted(reached)}')
-    require(log.count('uplink: gantry relay online') == 2 and 'uplink: mission complete' in log,
+    require(log.count('uplink: gantry relay online') == 2 and 'uplink: probe online' in log
+            and 'uplink: mission complete' in log,
             'co-op tour did not complete the shared journal and extraction')
     return output / 'boot.log'

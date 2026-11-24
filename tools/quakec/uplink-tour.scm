@@ -52,7 +52,7 @@
   (let ((player (quake:find cursor classname "qslisp_player")))
     (when (not (quake:world? player))
       (let ((command (quake:field player impulse)) (slot (quake:field player colormap)))
-        (when (and (active-player? player) (>= command 50) (<= command 56))
+        (when (and (active-player? player) (>= command 50) (<= command 57))
           (quake:set-field! player impulse 0)
           (let ((stop (uplink-tour-stop (quake:world) command slot)))
             (when (not (quake:world? stop)) (uplink-tour-move player stop command slot)))))

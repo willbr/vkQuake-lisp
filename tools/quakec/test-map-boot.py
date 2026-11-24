@@ -11,6 +11,7 @@ import time
 
 import annex
 import challenge
+import ai_winter
 import coop
 import lambda_lab
 import uplink
@@ -92,6 +93,8 @@ def stage(quake_dir, output, base):
         shutil.copyfile(quake_dir / name, base / name)
     shutil.copyfile(output / 'progs.dat', mod / 'progs.dat')
     shutil.copyfile(output / 'autoexec.cfg', mod / 'autoexec.cfg')
+    # The status bar art is generated from the player's own gfx.wad, never committed.
+    subprocess.run([sys.executable, 'tools/quakec/build-gfx.py', base / 'id1/pak0.pak', mod], cwd=ROOT, check=True)
     for name in ('maps', 'progs', 'sound'):
         if (output / name).is_dir():
             shutil.copytree(output / name, mod / name)
@@ -108,8 +111,9 @@ def engine_env(play):
 
 
 def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protected_cycles=None):
-    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',), 'uplink': ('uplink',),
-            'lambda': ('lambda',)}[level]
+    # Each verified map also builds the next one, so level changes can be checked.
+    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',), 'uplink': ('uplink', 'lambda'),
+            'lambda': ('lambda', 'winter'), 'winter': ('winter',)}[level]
     prepare(output, maps)
     env = engine_env(play)
     console = output / 'qconsole.log'
@@ -120,6 +124,8 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protecte
             return uplink.verify(dosbox, output, env, base, mod)
         if verify and level == 'lambda':
             return lambda_lab.verify(dosbox, output, env, base, mod)
+        if verify and level == 'winter':
+            return ai_winter.verify(dosbox, output, env, base, mod)
 
         engine_flags = '-noudp -noipx -condebug -game lispboot'
         if play:
@@ -210,14 +216,14 @@ def main():
     mode.add_argument('--verify-server', action='store_true', help='run the uplink freight lift driver on a dedicated server')
     parser.add_argument('--watch', action='store_true', help='show the 3D rider window during --verify-server')
     parser.add_argument('--protected-cycles', type=int, help='set DOSBox Staging protected-mode cycles for --play')
-    parser.add_argument('--map', choices=('start', 'signal', 'annex', 'uplink', 'lambda'),
+    parser.add_argument('--map', choices=('start', 'signal', 'annex', 'uplink', 'lambda', 'winter'),
                         help='map to load (default: start, or signal with --verify)')
     parser.add_argument('dosbox', help='DOSBox Staging executable')
     parser.add_argument('quake_dir', type=Path, help='registered DOS Quake directory containing quake.exe and id1')
     args = parser.parse_args()
     level = args.map or ('uplink' if args.verify_server else 'signal' if args.verify else 'start')
     if args.verify and level == 'start':
-        parser.error('--verify requires signal, annex, uplink, or lambda')
+        parser.error('--verify requires signal, annex, uplink, lambda, or winter')
     if args.verify_coop and args.map not in (None, 'uplink'):
         parser.error('--verify-coop runs the campaign by default or the uplink with --map uplink')
     if args.verify_server and level != 'uplink':
@@ -250,6 +256,8 @@ def main():
         print(f'Two stock Quake clients reached extraction and tested independent tethers. Logs: {console.parent}')
     elif args.verify_coop:
         print(f'Two stock Quake clients completed Signal Room and reached Relay Annex. Logs: {console.parent}')
+    elif args.verify and level == 'winter':
+        print(f'Stock Quake finished the AI Winter with all seven primitives. Logs: {console.parent}')
     elif args.verify and level == 'lambda':
         print(f'Stock Quake solved every Lambda Lab room and verified the saves. Logs: {console.parent}')
     elif args.verify and level == 'uplink':

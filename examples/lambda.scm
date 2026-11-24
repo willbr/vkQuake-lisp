@@ -1,5 +1,5 @@
 ; The Lambda Lab: Lisp lore puzzles built from stock entities.
-(import "quine.scm" "dog.scm")
+(import "quine.scm" "dog.scm" "winter.scm")
 
 (define-field cell-next string)
 (define-field cell-cdr entity)
@@ -143,9 +143,16 @@
   (if (> bit 1024) total
       (rune-count flags (* bit 2) (if (= (quake:bit-and flags bit) bit) (+ total 1) total))))
 
+(define (rune-index bit index)
+  (if (<= bit 16) index (rune-index (/ bit 2) (+ index 1))))
+
 (define (take-rune)
   (let ((player (lambda-other)) (rune (quake:self)))
     (when player
+      (when (= (quake:bit-and (quake:serverflags) (quake:field rune rune)) 0)
+        ; Remember the order for the ending; the parms carry it between levels.
+        (quake:set-field! player rune-order
+          (+ (* 8 (quake:field player rune-order)) (rune-index (quake:field rune rune) 1))))
       (quake:set-serverflags! (quake:bit-or (quake:serverflags) (quake:field rune rune)))
       (quake:sound player 2 "misc/runekey.wav" 1 1)
       (quake:sprint player "Primitive collected: ")
@@ -204,9 +211,10 @@
 ; Every cell names its cdr in the map. The head resolves them all once the
 ; level has spawned, then a save keeps the entity references.
 (define (lambda_cell)
-  (when (> (quake:field (quake:self) lambda-head) 0)
-    (quake:set-callback! (quake:self) think resolve-cells)
-    (quake:set-field! (quake:self) nextthink (+ (quake:time) 0.2))))
+  (if (> (quake:field (quake:self) lambda-head) 0)
+      (quake:set-callback! (quake:self) think resolve-cells)
+      (quake:set-callback! (quake:self) think cell-think))
+  (quake:set-field! (quake:self) nextthink (+ (quake:time) 0.2)))
 
 (define (resolve-cell cursor)
   (let ((cell (quake:find cursor classname "lambda_cell")))
@@ -217,14 +225,13 @@
 
 (define (resolve-cells)
   (resolve-cell (quake:world))
-  (lambda-list-check #f))
+  (lambda-list-check #f)
+  (quake:set-callback! (quake:self) think cell-think)
+  (cell-think))
 
 (define (lambda_pad)
-  (let ((pad (quake:self)))
-    (lambda-brush pad)
-    (quake:set-callback! pad touch use-pad)
-    (quake:set-callback! pad think pad-think)
-    (quake:set-field! pad nextthink (+ (quake:field pad ltime) 0.3))))
+  (lambda-brush (quake:self))
+  (quake:set-callback! (quake:self) touch use-pad))
 
 (define (pad-cell pad) (find-linked pad))
 
@@ -233,13 +240,25 @@
                 (* 0.5 (+ (quake:field pad absmin_y) (quake:field pad absmax_y)))
                 (quake:field pad absmax_z)))
 
-(define (pad-think)
-  (let* ((pad (quake:self)) (cell (pad-cell pad)) (next (quake:field cell cell-cdr)))
-    (quake:set-field! pad nextthink (+ (quake:field pad ltime) 0.25))
-    (quake:set-field! cell cell-pad pad)
+; Cells are point entities, whose thinks run on level time; they draw the
+; pointer beams. A pad's brush model would think on ltime, which a save can stall.
+(define (cell-pad-of cell cursor)
+  (let ((pad (quake:find cursor classname "lambda_pad")))
+    (cond ((quake:world? pad) pad)
+          ((quake:entity=? (pad-cell pad) cell) pad)
+          (else (cell-pad-of cell pad)))))
+
+(define (cell-think)
+  (let* ((cell (quake:self)) (next (quake:field cell cell-cdr)))
+    (quake:set-field! cell nextthink (+ (quake:time) 0.25))
+    (when (quake:world? (quake:field cell cell-pad))
+      (quake:set-field! cell cell-pad (cell-pad-of cell (quake:world))))
     (when (not (quake:world? next))
-      (let ((target (quake:field next cell-pad)))
-        (when (not (quake:world? target))
+      (let ((pad (quake:field cell cell-pad))
+            (target (if (quake:world? (quake:field next cell-pad))
+                        (cell-pad-of next (quake:world))
+                        (quake:field next cell-pad))))
+        (when (and (not (quake:world? pad)) (not (quake:world? target)))
           (quake:beam pad (pad-top pad) (pad-top target)))))))
 
 (define (use-pad)
@@ -721,6 +740,7 @@
 (define (leave-lab)
   (let ((player (lambda-other)))
     (when player
+      (quake:set-serverflags! (quake:bit-or (quake:serverflags) 2))
       (quake:centerprint player "Leaving the Lambda Lab.")
       (quake:dprint "lambda: exit\n")
       (quake:change-level "winter"))))
