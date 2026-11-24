@@ -1,7 +1,7 @@
 """Read source files and their top-level imports into one program."""
 from pathlib import Path
 
-from .reader import CompileError, StringLiteral, read
+from .reader import CompileError, Node, StringLiteral, read
 
 
 def load_forms(source, filename):
@@ -11,6 +11,9 @@ def load_forms(source, filename):
     def visit(contents, name):
         for node in read(contents, name):
             form = node.value
+            if isinstance(form, tuple) and form and form[0].value == 'define-source-printer':
+                yield source_printer(node, name)
+                continue
             if not isinstance(form, tuple) or not form or form[0].value != 'import':
                 yield node
                 continue
@@ -34,3 +37,26 @@ def load_forms(source, filename):
                 loaded.add(path)
 
     return list(visit(source, filename))
+
+
+def source_printer(node, name):
+    """Expand (define-source-printer printer "file.scm") into a function that
+    broadcasts each line of that file with stock bprint. The text is read at
+    compile time; stock QuakeC has no string concatenation to build it later."""
+    form = node.value
+    if (len(form) != 3 or not isinstance(form[1].value, str)
+            or not isinstance(form[2].value, StringLiteral) or not form[2].value.text):
+        raise CompileError(node.location, 'define-source-printer requires a name and a source path')
+    path = (Path(name).parent / form[2].value.text).resolve()
+    try:
+        lines = path.read_text(encoding='utf-8').splitlines()
+    except (OSError, UnicodeError) as error:
+        raise CompileError(form[2].location, f'cannot read {path}: {error}') from error
+    location = node.location
+    calls = []
+    for line in lines or ['']:
+        if len(line.encode('utf-8')) > 254:
+            raise CompileError(form[2].location, f'{path.name} has a line over the stock 255-byte print limit')
+        calls.append(Node((Node('quake:bprint', location), Node(StringLiteral(line + '\n'), location)), location))
+    header = Node((form[1],), location)
+    return Node((Node('define', location), header, *calls), location)

@@ -1,0 +1,74 @@
+{
+  "name": "lambda_wall",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1202,
+  "colors": [
+    155,
+    154,
+    153,
+    152,
+    151,
+    150,
+    149,
+    148,
+    147,
+    146,
+    145,
+    144
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 58
+      }
+    },
+    {
+      "kind": "fractal",
+      "amount": 28,
+      "blend": "add",
+      "params": {
+        "columns": 6,
+        "rows": 3,
+        "octaves": 4,
+        "gain": 50,
+        "seed_offset": 0
+      }
+    },
+    {
+      "kind": "bands",
+      "amount": 30,
+      "blend": "multiply",
+      "params": {
+        "across": 0,
+        "down": 4,
+        "width": 80,
+        "phase": 0
+      }
+    },
+    {
+      "kind": "grid",
+      "amount": 22,
+      "blend": "multiply",
+      "params": {
+        "columns": 2,
+        "rows": 4,
+        "gap": 8,
+        "stagger": 50
+      }
+    },
+    {
+      "kind": "emboss",
+      "amount": 26,
+      "blend": "mix",
+      "params": {
+        "distance": 1,
+        "angle": 60
+      }
+    }
+  ]
+}

@@ -135,7 +135,7 @@ def build(recipe, output):
     model, poses = model_from_recipe(recipe)
     output.parent.mkdir(parents=True, exist_ok=True)
     animations = recipe_animations(recipe, dict(poses))
-    output.write_bytes(model.encode_poses(poses, recipe['palette'], animations))
+    output.write_bytes(model.encode_poses(poses, recipe['palette'], animations, recipe.get('skins', ())))
 
 
 def preview_palette(path):

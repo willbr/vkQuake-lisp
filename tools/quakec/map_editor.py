@@ -4,7 +4,7 @@ import argparse
 from dataclasses import dataclass
 import difflib
 import hashlib
-from itertools import combinations
+from itertools import combinations, product
 import json
 import math
 import os
@@ -149,6 +149,39 @@ def box(low, high, texture):
     if x >= xx or y >= yy or z >= zz:
         raise ValueError('box minimum must precede maximum on every axis')
     return prism([(x, y, zz), (xx, y, zz), (xx, yy, zz), (x, yy, zz)], z, texture)
+
+
+def cut(rect, opening):
+    """Subtract an overlapping rectangle, returning the remaining strips."""
+    a, b, c, d = rect
+    x, y, xx, yy = opening
+    x, y, xx, yy = max(a, x), max(b, y), min(c, xx), min(d, yy)
+    if x >= xx or y >= yy:
+        return [rect]
+    return [(p, q, r, s) for p, q, r, s in
+            ((a, b, x, d), (xx, b, c, d), (x, b, xx, y), (x, yy, xx, d)) if p < r and q < s]
+
+
+def seal(regions, texture, thickness=16):
+    """Build the boundary of joined rectilinear volumes as world brushes.
+
+    texture(index, axis, positive) names the surface for each region's face."""
+    for current, (low, high) in enumerate(regions):
+        for axis, positive in product(range(3), (False, True)):
+            a, b = (i for i in range(3) if i != axis)
+            boundary = high[axis] if positive else low[axis]
+            plates = [(low[a], low[b], high[a], high[b])]
+            for other, (lo, hi) in enumerate(regions):
+                reaches = lo[axis] <= boundary < hi[axis] if positive else lo[axis] < boundary <= hi[axis]
+                if current != other and reaches:
+                    opening = lo[a], lo[b], hi[a], hi[b]
+                    plates = [part for rect in plates for part in cut(rect, opening)]
+            for x, y, xx, yy in plates:
+                start, end = [0, 0, 0], [0, 0, 0]
+                start[axis], end[axis] = ((boundary, boundary + thickness) if positive
+                                           else (boundary - thickness, boundary))
+                start[a], start[b], end[a], end[b] = x, y, xx, yy
+                yield box(start, end, texture(current, axis, positive))
 
 
 def ramp(bounds, heights, axis, bottom, texture):

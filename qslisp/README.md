@@ -88,6 +88,10 @@ header; executing the result also needs the built interpreter CLI.
   once and takes the first matching clause. Patterns can bind identifiers,
   ignore values with `_`, test literals or quoted data, and destructure
   `cons`, `list`, or named records. Bindings are local to their clause.
+- `(define-source-printer name "file.scm")` reads that file at compile time
+  and defines a zero-argument function that broadcasts each line with stock
+  `bprint`. Stock QuakeC has no string concatenation, so the text cannot be
+  assembled at run time. Lines must fit the 255-byte print limit.
 - Semicolon line comments and ASCII Scheme-style identifiers are accepted.
 - `cons`, `car`, `cdr`, and `pair?` operate on immutable pairs. Pairs can contain
   any supported value. `()` and `(list)` are empty, and `(list x ...)` builds
@@ -402,6 +406,68 @@ console records each stage and the rider's position and heading on failure.
 Add `--watch` to see the ride in a 3D window. The window stays open at the
 flood deck after the test passes.
 
+### Lambda Lab
+
+```sh
+python3 tools/quakec/test-map-boot.py --play --map lambda /path/to/dosbox /path/to/quake
+python3 tools/quakec/test-map-boot.py --verify --map lambda /path/to/dosbox /path/to/quake
+```
+
+The [Lambda Lab](../examples/lambda.scm) turns Lisp lore into rooms. The entry
+hall holds the linker, continuation beacon, tail-call ricochet, and
+mark-and-sweep. A sign there prints its own source, and an illusory wall hides
+a Lisp Machine shrine whose console power-cycles its lights.
+
+The cons-cell chamber is a list of pillars over a pit. Each pad sends the
+player to the cell named by its cell's `cdr`, and a beam shows every pointer.
+The pointers are entity fields, so stock saves keep a rewired list. Two drones
+run Floyd's tortoise and hare along it. The list starts with a cycle and a
+broken cell. Use the linker on a pad, then on its new target, or on a wall for
+`nil`. The tail door opens when the list from the head is proper, skips the
+broken cell, and ends at the door's cell. The console prints the list after
+each change.
+
+Two `amb` rooms backtrack a wrong door to the choice point and prune it. In the
+lift hall, the stack lift keeps a crate per call and overflows at depth eight;
+the tail-call lift reuses one crate and rises to the arena. Dogs are a Lisp
+port of id's `dog.qc`, and the linker can chain one to the coil. In the arena,
+`eval` and `apply` take turns calling each other, and the one inside the call
+takes no damage. North of the arena, a garbage collector marks conduits from
+its root one node per think, then hides each platform whose node stayed white.
+Link the loose conduits to keep the way across.
+
+Scoreboard counts live on a `lambda_stats` entity, since stock Quake rejects
+world field writes after spawning. Each spawn republishes them. The verifier
+drives every room with a stock client and checks the saves. Its aiming models
+stock angle transmission: `MSG_WriteAngle` truncates to whole degrees before
+the byte conversion, so a sent angle can be over two degrees short. The linker
+snaps to a pad or conduit within three degrees of the aim.
+
+### Greenspun benchmark
+
+[`dog.scm`](../examples/dog.scm) ports id's `dog.qc` to one Lisp state
+machine. QuakeC spends a function on each animation frame; the Lisp dog keeps
+each animation as a frame range and steps through it from a single think.
+[`greenspun.py`](../tools/quakec/greenspun.py) compiles the game and counts
+the dog's functions in each program:
+
+```sh
+python3 tools/quakec/greenspun.py
+```
+
+| | `dog.qc` | `dog.scm` |
+| --- | ---: | ---: |
+| Source lines | 296 | 142 |
+| Functions | 94 | 30 |
+| Statements | 536 | 1,393 |
+| Local slots | 10 | 511 |
+
+The Lisp source is half the size, but its bytecode is 2.6 times larger. Each
+Lisp function also gets a public wrapper, and values carry type tags that
+calls and field reads check. Neither count includes shared code: `dog.qc`
+calls `ai.qc` and `fight.qc`, and the Lisp dog uses the sentry's sight, damage,
+and facing helpers.
+
 ### Two-player co-op
 
 Signal Room and Relay Annex support a stock Quake listen server with two
@@ -478,7 +544,9 @@ not check it. The map light tool gives switchable lights styles from 32.
 `(quake:serverflags)` reads and `(quake:set-serverflags! number)` writes the
 stock global that survives level changes and, as in id's progs, saved games.
 The stock HUD draws its low four bits as episode sigils.
-`(quake:sprint client "message")` prints a literal to one client's console.
+`(quake:sprint client "message")` prints to one client's console. `sprint`,
+`bprint`, and `centerprint` also accept runtime strings, such as a target name
+read from a field; only literals have their length checked at compile time.
 `(quake:update-stat stat number)` sets a scoreboard stat for every client:
 11 total secrets, 12 total monsters, 13 found secrets, or 14 killed monsters.
 It also stores the matching stock global, which Quake resends to joining

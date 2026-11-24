@@ -38,35 +38,7 @@ numbers. An impulse rereads them through `quake:cvar`; the `saved` cvars
 persist in the config. Useful for tuning bike, buddy, and sentry constants
 without rebuilding.
 
-### Greenspun benchmark
-
-Port id's `dog.qc` to Lisp against the PAK's `dog.mdl` and compare statement
-count, globals, and peak locals with `--report` against the FTEQCC build.
-
-### Compile-time quine sign
-
-A host macro embeds the program's source lines as string literals and a sign
-prints them with sequential `bprint` calls, each under 255 bytes. Stock has no
-string concatenation, so a runtime quine would need a piecewise data printer.
-Document it as compile-time. Low priority.
-
 ## Gameplay
-
-### Physical cons cells
-
-Lists the player walks. Each cell is a platform with a `car` pad holding an
-item or switch and a `cdr` pad that teleports or launches the player to the
-cell named by its `cdr` entity field. Pads give arbitrary pointers without
-prebuilt bridge geometry, and stock saves keep the list because it lives in
-edict fields. `quake:beam` from each pad to its target, refreshed every 0.2
-seconds, shows the pointers; keep a list to 6–8 cells. Rewire by using a pad
-and then a destination. `nil` is a pad over a pit.
-
-Puzzles: reverse a list to reach a tail-only door, splice past a broken cell,
-and break a circular list. Floyd's cycle detection runs as two drones, one
-twice as fast; when they meet, the alarm trips. Where only two or three fixed
-choices exist, a `cdr` can instead be a sliding pusher bridge between preset
-docks.
 
 ### Remote Agent finale
 
@@ -76,48 +48,12 @@ field. The player sets their delays at stations, or sends the buddy, so one
 fires first. Uses only state fields, think timers, and `use`.
 [Uplink](examples/uplink.scm)
 
-### Garbage collector monster
-
-A sweeper marks reachable conduits from a powered root, one node per think,
-with white, gray, and black skins on a generated MDL. Incremental tri-color
-marking is the real technique and keeps each entry within the instruction
-budget. The conduit graph uses map-authored `target`/`targetname` links.
-The sweep hides unreachable platforms (non-solid, model name kept in a field)
-rather than removing them, so reset and save keep working. A player outside
-any trigger linked to a marked node takes damage.
-
-### amb rooms
-
-McCarthy's nondeterministic choice as rooms. A wrong door's trigger teleports
-the player back to the choice point and closes that door through a
-map-authored field, pruning the branch for the rest of the run.
-
-### eval and apply bosses
-
-Two generated-MDL bosses built with `define-actor`. Each sets a "calling"
-field on the other and takes damage only while its own field is clear, so the
-player breaks the loop between calls.
-
-### Tail-call lift
-
-Two lifts show call frames as crates. The non-tail lift spawns a crate per
-floor, capped at about 8 for entity and network headroom, and jams when full;
-its sign reads 31 to match the VM. The tail-call lift reuses one crate and
-runs forever. Never recurse for real: a stock VM overflow ends the server.
-
 ### DWIM buddy
 
 Interlisp's Do What I Mean, applied to orders. Occasionally the buddy picks
 the switch nearest the one aimed at, found with a traceline and one
 `quake:find` pass, and announces it by centerprint. Keep it rare or it reads
 as a bug.
-
-### Lisp Machine shrine
-
-A secret room with procedural console and space-cadet keyboard textures. The
-Tom Knight koan appears by centerprint, and the power-cycle switch sets a
-baked light style to `"a"` and back with `quake:lightstyle`.
-[Procedural textures](tools/quakec/README.md#procedural-textures)
 
 ### AI Winter map
 
@@ -133,29 +69,6 @@ Hide `quote`, `atom`, `eq`, `car`, `cdr`, `cons`, and `cond` runes across an
 episode as bits in `serverflags`, which survives level changes and saves.
 Use bits 4 and up: the stock HUD draws the low four as episode sigils. Show
 the count by centerprint. Needs more than one map.
-
-## Weapons
-
-The stock HUD has seven weapon slots (`items` bits 1–64) and four ammo pools.
-The shotgun (bit 1, shells), pulse carbine (bit 4, nails), and tether (bit 8)
-leave four slots and the rocket and cell pools. Proposed layout:
-
-| Key | Bit | Weapon | Ammo |
-| --- | ---: | --- | --- |
-| 1 | 1 | Shotgun | shells |
-| 2 | 2 | Linker | none |
-| 3 | 4 | Pulse carbine | nails |
-| 4 | 8 | Free (tether moves to Mouse2) | — |
-| 5 | 16 | Continuation beacon | one beacon |
-| 6 | 32 | Tail-call ricochet | rockets |
-| 7 | 64 | Mark-and-sweep | cells |
-
-### Linker
-
-Fire at one entity, then another, and store the second in the first's link
-field; a refreshed `quake:beam` shows the pointer. It rewires `cdr` pads in
-the cons-cell puzzles and elsewhere chains a sentry to a relay, an enemy to a
-hazard, or a lift to a switch.
 
 ## HUD
 
@@ -183,11 +96,3 @@ sigil, and armor icons. Menu and console art are loose `gfx/*.lmp` files.
 - Powerup bits tint the view (`view.c`), and the ring also hides the weapon
   model (`r_main.c`). Use them deliberately, such as the quad tint while a
   continuation beacon is out, never as plain status icons.
-
-### Scoreboard and messages
-
-The tab scoreboard shows the worldspawn `message` as the level title and
-fixed `Monsters` and `Secrets` labels; keep their meanings literal (hostiles
-disabled, secrets found). Use centerprint for objectives, `bprint` for shared
-events, and `sprint` for one co-op player. Do not send `viewsize` or
-`crosshair` changes: they persist in the player's config after the mod.

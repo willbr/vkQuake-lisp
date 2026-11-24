@@ -8,11 +8,12 @@ import subprocess
 import tempfile
 
 from quake_assets import encode_miptex, encode_wad, read_wad_textures
-from uplink_art import fixtures
+import lambda_art
+import uplink_art
 
 ROOT = Path(__file__).resolve().parents[2]
 QUTILS = ROOT / 'third_party/quake-tools/qutils'
-UPLINK_WAD = ROOT / 'examples/textures/uplink.wad'
+TEXTURE_WADS = sorted((ROOT / 'examples/textures').glob('*.wad'))
 
 
 def texture(name, pixel):
@@ -60,9 +61,11 @@ def goal_pixel(x, y):
 def write_wad(path, extra_wads=()):
     textures = {b'relay_floor': floor_pixel, b'relay_wall': wall_pixel,
                 b'relay_trim': trim_pixel, b'relay_goal': goal_pixel}
-    textures.update((name.encode('ascii'), pixel) for name, pixel in fixtures())
+    for module in (uplink_art, lambda_art):
+        textures.update((name.encode('ascii'), pixel) for name, pixel in module.fixtures())
     lumps = {name: texture(name, pixel) for name, pixel in textures.items()}
-    lumps.update(read_wad_textures(UPLINK_WAD))
+    for wad in TEXTURE_WADS:
+        lumps.update(read_wad_textures(wad))
     for wad in extra_wads:
         lumps.update(read_wad_textures(wad))
     path.write_bytes(encode_wad(lumps))
@@ -110,7 +113,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path, help='output BSP file')
     source = parser.add_mutually_exclusive_group()
-    source.add_argument('--map', choices=('signal', 'annex', 'uplink'))
+    source.add_argument('--map', choices=('signal', 'annex', 'uplink', 'lambda', 'winter'))
     source.add_argument('--source', type=Path, help='stock .map file to compile')
     parser.add_argument('--wad', type=Path, action='append', default=[],
                         help='include textures from an additional WAD2 (repeatable)')

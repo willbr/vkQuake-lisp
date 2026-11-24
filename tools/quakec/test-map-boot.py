@@ -12,6 +12,7 @@ import time
 import annex
 import challenge
 import coop
+import lambda_lab
 import uplink
 import uplink_server
 
@@ -57,11 +58,11 @@ def prepare(output, maps, *, program_source='examples/map-boot.scm', map_sources
                 subprocess.run([sys.executable, 'tools/quakec/build-signal.py', *map_args,
                                 output / 'maps' / f'{name}.bsp'],
                                cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
-    if 'annex' in maps or 'uplink' in maps:
+    if any(name in maps for name in ('annex', 'uplink', 'lambda', 'winter')):
         subprocess.run([sys.executable, 'tools/quakec/build-sentry.py', output / 'progs/sentry.mdl'],
                        cwd=ROOT, check=True)
         subprocess.run([sys.executable, 'tools/quakec/build-bike.py', output], cwd=ROOT, check=True)
-    if 'uplink' in maps:
+    if any(name in maps for name in ('uplink', 'lambda', 'winter')):
         subprocess.run([sys.executable, 'tools/quakec/build-uplink-assets.py', output], cwd=ROOT, check=True)
 
 
@@ -107,7 +108,8 @@ def engine_env(play):
 
 
 def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protected_cycles=None):
-    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',), 'uplink': ('uplink',)}[level]
+    maps = {'start': (), 'signal': ('signal', 'annex'), 'annex': ('annex',), 'uplink': ('uplink',),
+            'lambda': ('lambda',)}[level]
     prepare(output, maps)
     env = engine_env(play)
     console = output / 'qconsole.log'
@@ -116,6 +118,8 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protecte
         mod = stage(quake_dir, output, base)
         if verify and level == 'uplink':
             return uplink.verify(dosbox, output, env, base, mod)
+        if verify and level == 'lambda':
+            return lambda_lab.verify(dosbox, output, env, base, mod)
 
         engine_flags = '-noudp -noipx -condebug -game lispboot'
         if play:
@@ -206,14 +210,14 @@ def main():
     mode.add_argument('--verify-server', action='store_true', help='run the uplink freight lift driver on a dedicated server')
     parser.add_argument('--watch', action='store_true', help='show the 3D rider window during --verify-server')
     parser.add_argument('--protected-cycles', type=int, help='set DOSBox Staging protected-mode cycles for --play')
-    parser.add_argument('--map', choices=('start', 'signal', 'annex', 'uplink'),
+    parser.add_argument('--map', choices=('start', 'signal', 'annex', 'uplink', 'lambda'),
                         help='map to load (default: start, or signal with --verify)')
     parser.add_argument('dosbox', help='DOSBox Staging executable')
     parser.add_argument('quake_dir', type=Path, help='registered DOS Quake directory containing quake.exe and id1')
     args = parser.parse_args()
     level = args.map or ('uplink' if args.verify_server else 'signal' if args.verify else 'start')
     if args.verify and level == 'start':
-        parser.error('--verify requires signal, annex, or uplink')
+        parser.error('--verify requires signal, annex, uplink, or lambda')
     if args.verify_coop and args.map not in (None, 'uplink'):
         parser.error('--verify-coop runs the campaign by default or the uplink with --map uplink')
     if args.verify_server and level != 'uplink':
@@ -246,6 +250,8 @@ def main():
         print(f'Two stock Quake clients reached extraction and tested independent tethers. Logs: {console.parent}')
     elif args.verify_coop:
         print(f'Two stock Quake clients completed Signal Room and reached Relay Annex. Logs: {console.parent}')
+    elif args.verify and level == 'lambda':
+        print(f'Stock Quake solved every Lambda Lab room and verified the saves. Logs: {console.parent}')
     elif args.verify and level == 'uplink':
         print(f'Stock Quake reached uplink extraction and verified the save chain. Logs: {console.parent}')
     else:

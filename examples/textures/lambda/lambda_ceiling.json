@@ -1,0 +1,53 @@
+{
+  "name": "lambda_ceiling",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1203,
+  "colors": [
+    13,
+    12,
+    11,
+    10,
+    9,
+    8,
+    7,
+    6,
+    5,
+    4,
+    3,
+    2
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 40
+      }
+    },
+    {
+      "kind": "cellular",
+      "amount": 30,
+      "blend": "add",
+      "params": {
+        "columns": 4,
+        "rows": 4,
+        "jitter": 80,
+        "seed_offset": 0
+      }
+    },
+    {
+      "kind": "grid",
+      "amount": 30,
+      "blend": "multiply",
+      "params": {
+        "columns": 4,
+        "rows": 4,
+        "gap": 12,
+        "stagger": 0
+      }
+    }
+  ]
+}

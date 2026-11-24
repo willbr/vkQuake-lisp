@@ -195,6 +195,9 @@ entry, starting at zero. Named `frames` map parts to an offset or an object
 with `offset` and `rotate`. Rotations are XYZ Euler angles in degrees around
 the part's `pivot`, with its center or ring origin as the default.
 `animations` lists ordered `frames` and `fps` for each stock MDL frame group.
+Optional `skins` lists extra palettes of the same length; each becomes another
+stock skin that recolors the same materials, selected with the entity's `skin`
+field. The collector node uses white, gray, and black skins.
 The buddy's groups are idle, walk, and assist in that order.
 [Uplink asset build](build-uplink-assets.py)
 
@@ -269,6 +272,12 @@ editing a recipe to refresh the WAD and BSP.
 python3 tools/quakec/build-uplink-textures.py
 python3 tools/quakec/map_editor.py examples/uplink.map build build/uplink.bsp
 ```
+
+The Lambda Lab's surfaces use the [lambda recipes](../../examples/textures/lambda)
+and [WAD2](../../examples/textures/lambda.wad); rebuild them with
+`--set lambda`. Every WAD in `examples/textures` is embedded in map builds.
+Its signs and Lisp Machine panels are drawn in [lambda_art.py](lambda_art.py).
+[`build-lambda.py`](build-lambda.py) regenerates [the map](../../examples/lambda.map).
 
 ## VM listings and fixtures
 

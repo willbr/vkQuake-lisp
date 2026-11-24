@@ -39,8 +39,8 @@ ENGINE_CALLS = {
     'quake:precache-sound': (19, ('sample',)),
     'quake:precache-model': (20, ('model',)),
     'quake:client-command': (21, ('entity', 'command')),
-    'quake:bprint': (23, ('string',)),
-    'quake:sprint': (24, ('entity', 'string')),
+    'quake:bprint': (23, ('text',)),
+    'quake:sprint': (24, ('entity', 'text')),
     'quake:dprint': (25, ('string',)),
     'quake:walkmove': (32, ('number', 'number')),
     'quake:drop-to-floor': (34, ()),
@@ -52,7 +52,7 @@ ENGINE_CALLS = {
     'quake:cvar': (45, ('string',)),
     'quake:particle': (48, ('vector', 'vector', 'number', 'number')),
     'quake:change-level': (70, ('level',)),
-    'quake:centerprint': (73, ('entity', 'string')),
+    'quake:centerprint': (73, ('entity', 'text')),
 }
 ENGINE_GLOBALS = {'quake:self': ('self', 'entity'), 'quake:other': ('other', 'entity'),
                   'quake:world': ('world', 'entity'),
@@ -1125,6 +1125,9 @@ class Compiler:
                 slot = self.light_style(frame, arg, environment)
             elif kind == 'precache-name' and isinstance(arg.value, StringLiteral):
                 slot = self.engine_string(name, arg, 'model')
+            elif kind == 'text' and not isinstance(arg.value, StringLiteral):
+                # Runtime strings live in the progs string table; only literals have a checkable length.
+                slot = self.string_value(frame, arg, environment)
             elif kind in ('precache-name', 'string-value'):
                 slot = self.string_value(frame, arg, environment)
             else:

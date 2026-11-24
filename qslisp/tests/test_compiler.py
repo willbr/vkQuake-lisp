@@ -1,6 +1,7 @@
 """Compiler acceptance tests execute direct output on the original interpreter."""
 import importlib.util
 import itertools
+import pathlib
 from pathlib import Path
 import re
 import struct
@@ -338,6 +339,25 @@ class CompilerTests(CompilerCase):
         saved = {data[header[10] + name:].split(b'\0', 1)[0] for kind, _, name in definitions if kind & 0x8000}
         self.assertEqual(saved, {b'serverflags', b'total_secrets', b'total_monsters',
                                  b'found_secrets', b'killed_monsters'})
+
+    def test_source_printer_broadcasts_each_line_of_its_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = pathlib.Path(directory) / 'printer.scm'
+            source.write_text('(define-source-printer show "printer.scm")\n(define (test) (show) 7)\n')
+            data = compile_source(source.read_text(), str(source))
+            self.assertIn(b'(define-source-printer show "printer.scm")\n\0', data)
+            self.assertIn(b'(define (test) (show) 7)\n\0', data)
+            path = self.work / 'printer.dat'
+            path.write_bytes(data)
+            result = subprocess.run([str(ROOT / 'tools/quakec/run-stock.sh'), str(path), 'test'],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertIn('builtin #23', result.stderr)
+        with self.assertRaisesRegex(CompileError, 'cannot read'):
+            compile_source('(define-source-printer show "missing.scm")\n(define (test) 1)', 'printer.scm')
+
+    def test_print_builtins_accept_runtime_strings(self):
+        result = self.execute('(define (name) "c5")\n(define (test) (quake:sprint (quake:self) (name)))')
+        self.assertIn('builtin #24', result.stderr)
 
     def test_quake_builtin_literal_diagnostics(self):
         cases = [

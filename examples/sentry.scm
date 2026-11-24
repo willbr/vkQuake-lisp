@@ -45,7 +45,10 @@
      (damage-entity target inflictor amount))))
 
 (define (damage-entity target inflictor amount)
-  (when (and (> (quake:field target takedamage) 0) (> (quake:field target health) 0))
+  (when (> (quake:field target boss-called) 0)
+    (quake:particle (quake:field target origin) (quake:vector 0 0 1) 244 6))
+  (when (and (> (quake:field target takedamage) 0) (> (quake:field target health) 0)
+             (= (quake:field target boss-called) 0))
     (let ((health (- (quake:field target health) amount)))
       (if (> health 0)
           (quake:set-field! target health health)
@@ -69,9 +72,8 @@
               (quake:centerprint target "Sentry got you.\nRelease and press fire to respawn.")
               (quake:dprint "qslisp: player defeated\n"))
             (begin
+              (defeat-monster target inflictor)
               (quake:remove target)
-              (when (player-entity? inflictor)
-                (quake:centerprint inflictor "Sentry disabled."))
               (quake:dprint "qslisp: sentry defeated\n")))))))
 
 (define (update-respawn player)

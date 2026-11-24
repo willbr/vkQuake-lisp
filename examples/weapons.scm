@@ -152,15 +152,50 @@
              (damage hit player (if (pulse-equipped? player) 15 25)))
             ((string=? (quake:field hit classname) "qslisp_target")
              (quake:call-callback hit use player))
-            ((pulse-equipped? player) (uplink-pulse-contact player hit))))))
+            ((pulse-equipped? player) (uplink-pulse-contact player hit))
+            (else (lambda-shot-contact player hit))))))
 
 ; Linker: the first shot picks a source, the second makes it point at the target.
 (define (linkable? entity)
   (or (string=? (quake:field entity classname) "lambda_pad")
+      (string=? (quake:field entity classname) "lambda_conduit")
       (= (quake:bit-and (quake:field entity flags) flag-monster) flag-monster)))
 
+(define (entity-center entity)
+  (quake:vector (* 0.5 (+ (quake:field entity absmin_x) (quake:field entity absmax_x)))
+                (* 0.5 (+ (quake:field entity absmin_y) (quake:field entity absmax_y)))
+                (* 0.5 (+ (quake:field entity absmin_z) (quake:field entity absmax_z)))))
+
+; Within 3 degrees of the aim, take the best-aligned visible entity of a class.
+; Stock clients send view angles in 1.4-degree steps, so distant pads need it.
+(define (assist-target player eye class cursor best best-dot)
+  (let ((candidate (quake:find cursor classname class)))
+    (if (quake:world? candidate)
+        best
+        (let* ((center (entity-center candidate))
+               (dx (- (quake:vector-x center) (quake:vector-x eye)))
+               (dy (- (quake:vector-y center) (quake:vector-y eye)))
+               (dz (- (quake:vector-z center) (quake:vector-z eye)))
+               (distance (quake:vector-length (quake:vector dx dy dz)))
+               (dot (/ (+ (* dx (quake:forward-x)) (* dy (quake:forward-y)) (* dz (quake:forward-z)))
+                       (if (> distance 1) distance 1))))
+          (if (and (> dot best-dot) (< distance 1600)
+                   (quake:entity=? candidate (quake:traceline eye center 0 player)))
+              (assist-target player eye class candidate candidate dot)
+              (assist-target player eye class candidate best best-dot))))))
+
+(define (link-aim player)
+  (let ((hit (aimed-entity player 1600)))
+    (if (linkable? hit)
+        hit
+        (let* ((eye (player-eye player))
+               (pad (assist-target player eye "lambda_pad" (quake:world) (quake:world) 0.9986)))
+          (if (quake:world? pad)
+              (assist-target player eye "lambda_conduit" (quake:world) hit 0.9986)
+              pad)))))
+
 (define (fire-linker player)
-  (let* ((hit (aimed-entity player 900)) (source (quake:field player link-source))
+  (let* ((hit (link-aim player)) (source (quake:field player link-source))
          (point (trace-end)))
     (quake:set-field! player weaponframe 1)
     (quake:sound player 1 "weapons/lock4.wav" 1 1)
@@ -178,14 +213,25 @@
           (link! player source hit)))))
 
 (define (link! player source target)
-  (if (string=? (quake:field target classname) "lambda_coil")
-      (begin
-        (quake:set-field! source link-next target)
-        (quake:centerprint player "Linked to the coil.")
-        (quake:dprint "weapon: hostile linked to coil\n"))
-      (begin
-        (quake:set-field! source link-next (quake:world))
-        (quake:centerprint player "Link cleared."))))
+  (cond
+    ((string=? (quake:field source classname) "lambda_pad")
+     (lambda-relink player source target))
+    ((string=? (quake:field source classname) "lambda_conduit")
+     (if (string=? (quake:field target classname) "lambda_conduit")
+         (begin
+           (quake:set-field! source link-next target)
+           (quake:centerprint player "Conduit linked. The collector can now reach it.")
+           (quake:dprint "weapon: conduit linked\n"))
+         (begin
+           (quake:set-field! source link-next (quake:world))
+           (quake:centerprint player "Conduit link cleared."))))
+    ((string=? (quake:field target classname) "lambda_coil")
+     (quake:set-field! source link-next target)
+     (quake:centerprint player "Linked to the coil.")
+     (quake:dprint "weapon: hostile linked to coil\n"))
+    (else
+     (quake:set-field! source link-next (quake:world))
+     (quake:centerprint player "Link cleared."))))
 
 ; Continuation beacon: throw it, then fire again to return there.
 (define (fire-beacon player)
@@ -300,9 +346,9 @@
       ((>= (quake:field bolt bolt-bounces) 5)
        (quake:point-effect explosion (trace-end))
        (quake:remove bolt))
-      (else (ricochet-bounce bolt vx vy vz)))))
+      (else (ricochet-bounce bolt hit vx vy vz)))))
 
-(define (ricochet-bounce bolt vx vy vz)
+(define (ricochet-bounce bolt hit vx vy vz)
   ; Reflect about the hit plane: v - 2(v.n)n. The bolt stays one entity.
   (let* ((nx (quake:trace-normal-x)) (ny (quake:trace-normal-y)) (nz (quake:trace-normal-z))
          (along (* 2 (+ (* vx nx) (* vy ny) (* vz nz))))
@@ -312,7 +358,9 @@
     (quake:set-field! bolt velocity (quake:vector (- vx (* along nx)) (- vy (* along ny)) (- vz (* along nz))))
     (quake:set-field! bolt bolt-bounces (+ (quake:field bolt bolt-bounces) 1))
     (quake:point-effect gunshot end)
-    (quake:sound bolt 1 "weapons/ric1.wav" 1 1)))
+    (quake:dprint "weapon: ricochet bounced\n")
+    (quake:sound bolt 1 "weapons/ric1.wav" 1 1)
+    (lambda-shot-contact (quake:field bolt owner) hit)))
 
 ; Mark-and-sweep: hold fire to mark up to four targets, release to sweep them.
 (define (marked? player target)

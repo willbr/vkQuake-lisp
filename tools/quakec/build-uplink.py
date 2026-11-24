@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Generate the editable Relay Annex uplink blockout."""
 import argparse
-from itertools import product
 from pathlib import Path
 
-from map_editor import Brush, Face, bank, box, coordinates, quoted, ramp, switchback
+from map_editor import Brush, Face, bank, box, coordinates, quoted, ramp, seal, switchback
 
 TRIM, MARKER = 'relay_trim', 'relay_goal'
 SERVICE, FREIGHT, FLOOD, SUMP, SWITCHGEAR, GANTRIES, ROOF = 0, -1280, -2560, -3840, 1280, 2560, 3840
@@ -37,39 +36,14 @@ def room(x, xx, y, yy, z, ceiling=None):
     return (x, y, z), (xx, yy, z + 224 if ceiling is None else ceiling)
 
 
-def cut(rect, opening):
-    """Subtract an overlapping rectangle, returning the remaining strips."""
-    a, b, c, d = rect
-    x, y, xx, yy = opening
-    x, y, xx, yy = max(a, x), max(b, y), min(c, xx), min(d, yy)
-    if x >= xx or y >= yy:
-        return [rect]
-    return [(p, q, r, s) for p, q, r, s in
-            ((a, b, x, d), (xx, b, c, d), (x, b, xx, y), (x, yy, xx, d)) if p < r and q < s]
-
-
-def seal(regions):
-    """Build the boundary of joined rectilinear volumes as world brushes."""
-    for current, (low, high) in enumerate(regions):
+def seal_course(regions):
+    def texture(index, axis, positive):
+        low = regions[index][0]
         deck = DECK_AT_FLOOR.get(low[2])
         if deck is None:
             deck = DECK_AT_FLOOR[low[2] + LIFT_RECESS]
-        for axis, positive in product(range(3), (False, True)):
-            a, b = (i for i in range(3) if i != axis)
-            boundary = high[axis] if positive else low[axis]
-            plates = [(low[a], low[b], high[a], high[b])]
-            for other, (lo, hi) in enumerate(regions):
-                reaches = lo[axis] <= boundary < hi[axis] if positive else lo[axis] < boundary <= hi[axis]
-                if current != other and reaches:
-                    opening = lo[a], lo[b], hi[a], hi[b]
-                    plates = [part for rect in plates for part in cut(rect, opening)]
-            for x, y, xx, yy in plates:
-                start, end = [0, 0, 0], [0, 0, 0]
-                start[axis], end[axis] = ((boundary, boundary + THICKNESS) if positive
-                                           else (boundary - THICKNESS, boundary))
-                start[a], start[b], end[a], end[b] = x, y, xx, yy
-                texture = f'{deck}_deck' if axis == 2 and not positive else f'{deck}_wall'
-                yield box(start, end, texture)
+        return f'{deck}_deck' if axis == 2 and not positive else f'{deck}_wall'
+    return seal(regions, texture, THICKNESS)
 
 
 def placard(texture, x, y, z, axis, facing, *, width=180, height=42):
@@ -235,7 +209,7 @@ def course():
     # Recess the world floor below the moving brush so their top faces never overlap.
     for _, x, y, low, *_ in LIFT_SPECS:
         regions.append(room(x+2, x+478, y+2, y+478, low-LIFT_RECESS, low))
-    world = list(seal(regions))
+    world = list(seal_course(regions))
     descent = switchback((-3504, -3760, 0), 4576, 512, 928, 1280, 2, 'yard_deck')
     # The switchback pad is built into its room floor. Keep the two sloped runs.
     world.extend((descent[0], descent[-1]))

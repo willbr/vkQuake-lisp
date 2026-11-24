@@ -1,0 +1,59 @@
+{
+  "name": "gc_platform",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1207,
+  "colors": [
+    203,
+    202,
+    201,
+    200,
+    199,
+    198,
+    197,
+    196,
+    195,
+    194,
+    193,
+    192
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 60
+      }
+    },
+    {
+      "kind": "grid",
+      "amount": 40,
+      "blend": "multiply",
+      "params": {
+        "columns": 4,
+        "rows": 4,
+        "gap": 12,
+        "stagger": 50
+      }
+    },
+    {
+      "kind": "white",
+      "amount": 10,
+      "blend": "add",
+      "params": {
+        "seed_offset": 3
+      }
+    },
+    {
+      "kind": "emboss",
+      "amount": 30,
+      "blend": "mix",
+      "params": {
+        "distance": 1,
+        "angle": 120
+      }
+    }
+  ]
+}

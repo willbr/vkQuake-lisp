@@ -1,0 +1,51 @@
+{
+  "name": "lambda_pit",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1204,
+  "colors": [
+    0,
+    1,
+    2,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 20
+      }
+    },
+    {
+      "kind": "fractal",
+      "amount": 45,
+      "blend": "add",
+      "params": {
+        "columns": 3,
+        "rows": 3,
+        "octaves": 5,
+        "gain": 55,
+        "seed_offset": 0
+      }
+    },
+    {
+      "kind": "threshold",
+      "amount": 20,
+      "blend": "mix",
+      "params": {
+        "cutoff": 60
+      }
+    }
+  ]
+}

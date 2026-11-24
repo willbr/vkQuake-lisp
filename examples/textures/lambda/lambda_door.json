@@ -1,0 +1,65 @@
+{
+  "name": "lambda_door",
+  "ramp": "steel",
+  "width": 64,
+  "height": 64,
+  "seed": 1206,
+  "colors": [
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124
+  ],
+  "stages": [
+    {
+      "kind": "solid",
+      "amount": 100,
+      "blend": "mix",
+      "params": {
+        "value": 55
+      }
+    },
+    {
+      "kind": "bands",
+      "amount": 50,
+      "blend": "mix",
+      "params": {
+        "across": 2,
+        "down": -2,
+        "width": 40,
+        "phase": 0
+      }
+    },
+    {
+      "kind": "fractal",
+      "amount": 18,
+      "blend": "add",
+      "params": {
+        "columns": 4,
+        "rows": 4,
+        "octaves": 3,
+        "gain": 40,
+        "seed_offset": 0
+      }
+    },
+    {
+      "kind": "grid",
+      "amount": 25,
+      "blend": "multiply",
+      "params": {
+        "columns": 2,
+        "rows": 2,
+        "gap": 8,
+        "stagger": 0
+      }
+    }
+  ]
+}

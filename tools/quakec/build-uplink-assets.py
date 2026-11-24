@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Author the uplink buddy, launcher, anchor, and beam with stock MDL recipes."""
+"""Author the uplink buddy, launcher, anchor, beam, and collector node with stock MDL recipes."""
 import argparse
 import json
 from pathlib import Path
@@ -11,7 +11,7 @@ RECIPES = Path(__file__).resolve().parents[2] / 'examples/models'
 
 
 def assets(directory):
-    for name in ('upbuddy', 'tether', 'tethanch', 'beam'):
+    for name in ('upbuddy', 'tether', 'tethanch', 'beam', 'gcnode'):
         recipe = json.loads((RECIPES / f'{name}.json').read_text(encoding='utf-8'))
         build(recipe, directory / 'progs' / f'{name}.mdl')
 

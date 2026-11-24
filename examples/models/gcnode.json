@@ -1,0 +1,10 @@
+{
+  "name": "Collector conduit node",
+  "palette": [15, 254, 12],
+  "skins": [[8, 251, 6], [1, 79, 0]],
+  "parts": {
+    "core": {"low": [-8, -8, -8], "high": [8, 8, 8], "material": 0},
+    "ring": {"low": [-12, -12, -2], "high": [12, 12, 2], "material": 2},
+    "lamp": {"low": [-3, -3, 8], "high": [3, 3, 13], "material": 1}
+  }
+}
