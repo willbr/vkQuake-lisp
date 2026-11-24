@@ -226,7 +226,7 @@
       ; A synthetic mouse-look key holds off stock pitch centering on the bike.
       ; The player's own mouse-look key keeps its state.
       (if riding
-          (quake:client-command player "+mlook 256\nalias +bikeback \"+jump 129; impulse 4\"\nalias -bikeback \"-jump 129; impulse 5\"\nbind UPARROW +attack\nbind DOWNARROW +bikeback\n")
+          (quake:client-command player "+mlook 256\nalias +bikeback \"+jump 129; impulse 8\"\nalias -bikeback \"-jump 129; impulse 9\"\nbind UPARROW +attack\nbind DOWNARROW +bikeback\n")
           (quake:client-command player "-mlook 256\nbind UPARROW +forward\nbind DOWNARROW +back\n"))
       (quake:set-field! player bike-key-mode mode)
       ; A load or reconnect can restore the server state in a fresh client.
@@ -235,10 +235,10 @@
 (define (bike-reverse-input player braking)
   (let ((impulse (quake:field player impulse)))
     (cond
-      ((= impulse 4)
+      ((= impulse 8)
        (quake:set-field! player impulse 0)
        (quake:set-field! player bike-reverse-request 1))
-      ((= impulse 5)
+      ((= impulse 9)
        (quake:set-field! player impulse 0)
        (quake:set-field! player bike-reverse-request 0)))
     (when (not braking)

@@ -15,7 +15,7 @@ def guest_commands():
     # first key-down frame in the stock client contributes half its angle.
     commands += ['cl_yawspeed 1028.5714', '+left'] + ['wait'] * 4 + ['-left', 'cl_yawspeed 140']
     commands += ['wait'] * 6 + ['+attack'] + ['wait'] * 4 + ['-attack'] + ['wait'] * 15
-    commands += ['+forward'] + ['wait'] * 65 + ['-forward'] + ['wait'] * 5 + ['impulse 3']
+    commands += ['+forward'] + ['wait'] * 65 + ['-forward'] + ['wait'] * 5 + ['impulse 10']
     commands += ['wait'] * 60 + ['+moveleft'] + ['wait'] * 14 + ['-moveleft']
     commands += ['wait'] * 28 + ['kill'] + ['wait'] * 15
     commands += ['+attack'] + ['wait'] * 4 + ['-attack'] + ['wait'] * 10 + ['echo coop-client-finished']

@@ -150,68 +150,12 @@ leave four slots and the rocket and cell pools. Proposed layout:
 | 6 | 32 | Tail-call ricochet | rockets |
 | 7 | 64 | Mark-and-sweep | cells |
 
-### Match keys to HUD slots
-
-Key `1` now selects the shotgun shown in HUD position 2. Remap impulses to
-the layout above and draw each icon's number to match its key.
-[Progression](examples/progression.scm)
-
-### Mouse2 tether
-
-Make the tether always ready on Mouse2 instead of a weapon slot. Stock
-clients send only the attack and jump button bits (`cl_input.c`), so Mouse2
-sends impulses through a `+` alias, whose `-` half runs on release:
-
-```
-alias +tether "impulse 30"
-alias -tether "impulse 31"
-bind mouse2 +tether
-```
-
-Impulses are one per move and can be overwritten or dropped, so press
-attaches, release or jump lets go (jump is a held bit and cannot be lost),
-and a press while attached re-fires at a new anchor. Ship the binding in the
-mod's `autoexec.cfg`; stock Quake runs it and writes `config.cfg` in the
-`-game` directory, leaving the player's normal bindings alone.
-
-Keep attachment to authored anchors: stock traces report the entity, not the
-texture, and free grappling would bypass lifts, gantries, and puzzles. Add
-anchorable brush entities so whole girders and rails work, snap to the
-nearest anchor within an aim cone when the trace misses, and mark anchor
-surfaces with a procedural texture. Mouse2 does nothing on the bike. Leave
-slot 4 empty rather than invent a weapon, and skip per-weapon alt-fire: the
-planned weapons each work with one button. Test a fast click, a dropped
-release, jump release mid-swing, and two co-op players tethering.
-[Uplink tools](examples/uplink-tools.scm)
-
 ### Linker
 
 Fire at one entity, then another, and store the second in the first's link
 field; a refreshed `quake:beam` shows the pointer. It rewires `cdr` pads in
 the cons-cell puzzles and elsewhere chains a sentry to a relay, an enemy to a
 hazard, or a lift to a switch.
-
-### Tail-call ricochet
-
-One bolt that reflects off walls using the trace normal, hitting harder on
-each bounce while staying one entity: a tail call that never grows. Cut the
-splitting rocket idea, which doubles entities and plays like a rocket.
-
-### Mark-and-sweep
-
-Hold fire to beam-mark up to four targets in entity fields; release to damage
-everything marked at once. Pairs with the garbage collector monster.
-
-### Continuation beacon
-
-`call/cc` as a weapon, replacing the rune pickup. Throw a beacon, then fire
-again to return to it with `set-origin` and `fixangle` while the world keeps
-its state. The beacon is a toss entity with the player's bounding box, so it
-only rests where the player hull fits; stock has no builtin to test that
-otherwise. Keep the owner's return state in a per-player
-`define-saved-record`. A one-shot beacon is an escape continuation; a
-reusable one is re-entrant. Build it last: save/load and co-op tests carry
-most of the risk. [Saved records](qslisp/persistence.scm)
 
 ## HUD
 

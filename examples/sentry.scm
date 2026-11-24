@@ -58,6 +58,8 @@
             (begin
               (return-bike target)
               (clear-tether target)
+              (drop-beacon target)
+              (clear-marks target #f)
               (quake:set-field! target deadflag 2)
               (quake:set-field! target takedamage 0)
               (quake:set-field! target movetype 0)

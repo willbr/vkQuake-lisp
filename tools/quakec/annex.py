@@ -24,10 +24,10 @@ def verification_commands():
     commands += ['wait'] * 12 + ['save respawn', '+moveleft'] + ['wait'] * 23
     commands += ['-moveleft', '+attack'] + ['wait'] * 15 + ['-attack', 'wait', 'save disabled', '+forward']
     commands += ['wait'] * 39 + ['-forward'] + ['wait'] * 9
-    commands += ['save supplies', 'impulse 2', 'wait', 'save pulse', '+attack', 'wait', '-attack']
+    commands += ['save supplies', 'impulse 3', 'wait', 'save pulse', '+attack', 'wait', '-attack']
     commands += ['wait'] * 5 + ['impulse 1', 'wait', 'save switched', 'kill']
     commands += ['wait'] * 12 + ['+attack', 'wait', '-attack']
-    commands += ['wait'] * 12 + ['save checked', 'impulse 3']
+    commands += ['wait'] * 12 + ['save checked', 'impulse 10']
     commands += ['wait'] * 14 + ['save dooropen', '+moveright'] + ['wait'] * 5
     commands += ['-moveright'] + ['wait'] * 24 + ['save guarded', 'restart']
     commands += ['wait'] * 35 + ['save reset'] + ['wait'] * 27 + ['save rtmoved', 'load reset']
@@ -35,18 +35,18 @@ def verification_commands():
     commands += ['save rtresume', 'load guarded'] + ['wait'] * 20
     commands += ['+moveleft'] + ['wait'] * 5 + ['-moveleft'] + ['wait'] * 10
     commands += ['+attack'] + ['wait'] * 16 + ['-attack', '+forward'] + ['wait'] * 15
-    commands += ['-forward'] + ['wait'] * 12 + ['save bkdock', 'impulse 3'] + ['wait'] * 2
+    commands += ['-forward'] + ['wait'] * 12 + ['save bkdock', 'impulse 10'] + ['wait'] * 2
     commands += ['save bkstart', 'screenshot', '+attack 128'] + ['wait'] * 9
     # NetQuake appends client commands behind this cfg. Send the same button
     # and impulse as the Down binding while the scripted ride owns the queue.
-    commands += ['-attack 128', '+jump 129', 'impulse 4'] + ['wait'] * 5 + ['save bkbrake']
-    commands += ['wait'] * 24 + ['save bkback', '-jump 129', 'impulse 5', 'wait', 'load bkstart'] + ['wait'] * 16
+    commands += ['-attack 128', '+jump 129', 'impulse 8'] + ['wait'] * 5 + ['save bkbrake']
+    commands += ['wait'] * 24 + ['save bkback', '-jump 129', 'impulse 9', 'wait', 'load bkstart'] + ['wait'] * 16
     commands += ['+left'] + ['wait'] * 7 + ['-left', 'save bkaim', '+attack 128', 'wait', 'save bkpush']
     commands += ['wait'] * 8 + ['save bksteer', '+right'] + ['wait'] * 4
     commands += ['save bkgrip', '-right', '-attack 128', 'load bkstart'] + ['wait'] * 16
     commands += ['+attack'] + ['wait'] * 17
     commands += ['-attack', 'save bkfast', 'echo bike-particle-window', 'cl_shownet 2',
-                 'impulse 3', '+jump', '+left'] + ['wait'] * 7
+                 'impulse 10', '+jump', '+left'] + ['wait'] * 7
     commands += ['save bkslide', 'screenshot', '-jump', '+attack', 'wait', 'wait', 'save bksettle']
     commands += ['cl_shownet 0', 'echo bike-particle-end'] + ['wait'] * 4 + ['-left'] + ['wait'] * 14
     commands += ['save bkrelay', '+right'] + ['wait'] * 13 + ['-right', 'save bkdepot', 'screenshot']
@@ -60,7 +60,7 @@ def verification_commands():
     commands += ['save bkbank', '+left']
     commands += ['wait'] * 5 + ['save bkviewa', 'wait', 'save bkcurve', 'screenshot'] + ['wait'] * 8
     commands += ['-left', '-attack', '+jump'] + ['wait'] * 35
-    commands += ['-jump', 'impulse 3'] + ['wait'] * 2
+    commands += ['-jump', 'impulse 10'] + ['wait'] * 2
     # Revisit the bank at the play session's faster update rate.
     commands += ['save bkpark', 'host_framerate 0.013888889', 'load bkentry'] + ['wait'] * 14
     commands += ['+jump'] + ['wait'] * 69 + ['-jump', 'save bkupbase', '+attack']

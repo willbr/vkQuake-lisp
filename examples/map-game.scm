@@ -1,8 +1,7 @@
 ; Explore stock Quake and play the original Signal Room challenge.
 (import "../qslisp/actors.scm" "../qslisp/persistence.scm" "sentry.scm" "progression.scm"
-        "bike.scm" "uplink.scm" "uplink-tools.scm" "playtest-trace.scm")
+        "weapons.scm" "bike.scm" "uplink.scm" "uplink-tools.scm" "playtest-trace.scm")
 
-(define-field next-shot)
 (define-field gate-open)
 (define-field linked-gate entity)
 (define-field room-complete)
@@ -19,10 +18,7 @@
 
 (define (worldspawn)
   (quake:precache-model "progs/player.mdl")
-  (quake:precache-model "progs/v_shot.mdl")
-  (quake:precache-model "progs/v_nail.mdl")
-  (quake:precache-sound "weapons/sgun1.wav")
-  (quake:precache-sound "weapons/spike2.wav")
+  (precache-weapons)
   (quake:precache-sound "weapons/pkup.wav")
   (quake:precache-sound "items/health1.wav")
   (quake:precache-sound "misc/medkey.wav")
@@ -143,47 +139,6 @@
   (quake:vector (quake:field player origin_x) (quake:field player origin_y)
                 (+ (quake:field player origin_z) (quake:field player view_ofs_z))))
 
-(define (aimed-entity player range)
-  (quake:make-vectors (quake:field player v_angle))
-  (let ((eye (player-eye player)))
-    (quake:traceline eye
-                     (quake:vector (+ (quake:vector-x eye) (* range (quake:forward-x)))
-                                   (+ (quake:vector-y eye) (* range (quake:forward-y)))
-                                   (+ (quake:vector-z eye) (* range (quake:forward-z))))
-                     0 player)))
-
-(define (fire player rounds)
-  (update-ammo player (- rounds 1))
-  (quake:set-field! player weaponframe 1)
-  (quake:set-field! player punchangle_x -2)
-  (if (pulse-equipped? player)
-      (quake:sound player 1 "weapons/spike2.wav" 1 1)
-      (quake:sound player 1 "weapons/sgun1.wav" 1 1))
-  (quake:dprint "qslisp: fired\n")
-  (let ((hit (aimed-entity player 800)))
-    (when (not (quake:world? hit))
-      (cond ((> (quake:field hit takedamage) 0)
-             (when (pulse-equipped? player) (uplink-pulse-contact player hit))
-             (damage hit player (if (pulse-equipped? player) 15 25)))
-            ((string=? (quake:field hit classname) "qslisp_target")
-             (quake:call-callback hit use player))
-            ((pulse-equipped? player) (uplink-pulse-contact player hit))))))
-
-(define (update-weapon player)
-  (let ((now (quake:time))
-        (next (quake:field player next-shot)))
-    (if (> next now)
-        0
-        (if (= (quake:field player button0) 0)
-            (if (= (quake:field player weaponframe) 0)
-                0
-                (quake:set-field! player weaponframe 0))
-            (let ((rounds (weapon-ammo player)))
-              (quake:set-field! player next-shot (+ now (if (pulse-equipped? player) 0.2 0.35)))
-              (if (> rounds 0)
-                  (fire player rounds)
-                  (quake:centerprint player "Out of ammo.\nPress R to reset.")))))))
-
 ; Inline this in each stock entry point to keep the pre-think frame profiled.
 ; Steering is a target yaw for a scripted rider, or #f for client input.
 (define-syntax player-prethink
@@ -195,17 +150,18 @@
            (begin
              (trace-command player)
              (uplink-buddy-commands player)
+             (tether-input player)
              (interact player)
              (cond
                ((riding-bike? player)
                 (clear-tether player)
+                (quake:set-field! player tether-held 0)
                 (ride-bike player steering))
                ((and (not was-riding) (= (quake:field player movetype) move-walk))
                 (select-weapon player)
+                (update-tether player)
                 (update-jump player)
-                (if (= (quake:field player weapon) tether-weapon)
-                    (update-tether player)
-                    (begin (clear-tether player) (update-weapon player)))))))))))
+                (update-weapon player)))))))))
 
 (define (PlayerPostThink)
   (let* ((player (quake:self)) (riding (riding-bike? player)))
@@ -243,6 +199,11 @@
           (quake:set-field! player items shell-weapon)
           (equip player shell-weapon)
           (quake:set-field! player ammo_nails 0)
+          (quake:set-field! player ammo_rockets 0)
+          (quake:set-field! player ammo_cells 0)
+          (drop-beacon player)
+          (clear-marks player #f)
+          (quake:set-field! player link-source (quake:world))
           (update-ammo player 3)
           (quake:set-field! player angles (quake:field spot angles))
           (quake:set-field! player view_ofs (quake:vector 0 0 22))

@@ -2,52 +2,6 @@
 (define-field checkpoint entity)
 (define-field switch-used)
 (define-field next-level string)
-(define shell-weapon 1)
-(define pulse-weapon 4)
-(define shell-ammo-icon 256)
-(define pulse-ammo-icon 512)
-(define ammo-icon-mask 3840)
-
-(define (pulse-equipped? player)
-  (= (quake:field player weapon) pulse-weapon))
-
-(define (weapon-ammo player)
-  (cond
-    ((pulse-equipped? player) (quake:field player ammo_nails))
-    ((= (quake:field player weapon) tether-weapon) 0)
-    (else (quake:field player ammo_shells))))
-
-(define (update-ammo player rounds)
-  (if (pulse-equipped? player)
-      (quake:set-field! player ammo_nails rounds)
-      (quake:set-field! player ammo_shells rounds))
-  (quake:set-field! player currentammo rounds))
-
-(define (equip player weapon)
-  (let* ((items (quake:field player items))
-         (ammo-icon (cond
-                      ((= weapon pulse-weapon) pulse-ammo-icon)
-                      ((= weapon tether-weapon) 0)
-                      (else shell-ammo-icon))))
-    (when (= (quake:bit-and items weapon) weapon)
-      (quake:set-field! player items
-         (quake:bit-or (- items (quake:bit-and items ammo-icon-mask)) ammo-icon))
-      (quake:set-field! player weapon weapon)
-      (quake:set-field! player weaponmodel
-         (cond ((= weapon pulse-weapon) "progs/v_nail.mdl")
-               ((= weapon tether-weapon) "progs/tether.mdl")
-               (else "progs/v_shot.mdl")))
-      (quake:set-field! player weaponframe 0)
-      (quake:set-field! player currentammo (weapon-ammo player)))))
-
-(define (select-weapon player)
-  (let ((command (quake:field player impulse)))
-    (cond ((= command 1) (equip player shell-weapon))
-          ((= command 2) (equip player pulse-weapon))
-          ((= command 6) (equip player tether-weapon)))
-    (when (or (= command 1) (= command 2) (= command 6))
-      (quake:set-field! player impulse 0))))
-
 (define (set-pickup-model item model)
   (quake:set-field! item solid solid-trigger)
   (quake:set-model item model)
@@ -165,7 +119,7 @@
       (quake:dprint "qslisp: switch used\n"))))
 
 (define (interact player)
-  (when (= (quake:field player impulse) 3)
+  (when (= (quake:field player impulse) 10)
     (quake:set-field! player impulse 0)
     (cond
       ((riding-bike? player)

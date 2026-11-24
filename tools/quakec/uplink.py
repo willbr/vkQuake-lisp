@@ -81,9 +81,9 @@ def edit(source, destination, changes):
 
 
 class Client:
-    def __init__(self, dosbox, output, env, base, mod):
+    def __init__(self, dosbox, output, env, base, mod, level='uplink'):
         self.output, self.mod, self.base, self.env = output, mod, base, env
-        self.dosbox = dosbox
+        self.dosbox, self.level = dosbox, level
 
     def save(self, name):
         return self.mod / f'{name}.sav'
@@ -102,7 +102,7 @@ class Client:
                                     *wait(18), *commands, 'toggleconsole', 'quit', '']), encoding='ascii')
         log = self.mod / 'qconsole.log'
         log.unlink(missing_ok=True)
-        start = f'+load {load}' if load else '+map uplink'
+        start = f'+load {load}' if load else f'+map {self.level}'
         engine = ('quake -nosound -nocdaudio -noudp -noipx -condebug -game lispboot '
                   f'+developer 1 {start} +exec verify.cfg')
         command = [self.dosbox, '--noprimaryconf', '--nolocalconf', '--noautoexec',
@@ -128,7 +128,7 @@ def verify(dosbox, output, env, base, mod):
     require(not re.search(r'^bike +[-\d.]', boot, re.M) and 'trace buddy:' not in boot,
             'trace was enabled at spawn')
     client.place('start', 'atdock', -3316, -2258, 24, 270)
-    dock = client.run('dock', 'atdock', ['impulse 21', 'wait', 'impulse 3', *wait(8),
+    dock = client.run('dock', 'atdock', ['impulse 21', 'wait', 'impulse 10', *wait(8),
                       'save mounted', 'impulse 24', '+attack', *wait(70), '-attack', 'save entered'])
     require('qslisp: bike mounted' in dock, 'E did not mount the bike')
     require(re.search(r'^bike( +[-\d.]+){13}$', dock, re.M), 'invalid bike trace')
@@ -167,15 +167,15 @@ def verify(dosbox, output, env, base, mod):
 
     # Calling the lift requires stepping off the bike and using its panel.
     client.place('desc2', 'atfreigh', 3344, -1180, -1255, 90)
-    dismount = client.run('lift-dismount', 'atfreigh', ['impulse 3', *wait(4), 'save parked'])
+    dismount = client.run('lift-dismount', 'atfreigh', ['impulse 10', *wait(4), 'save parked'])
     parked = client.save('parked')
     require('qslisp: bike dismounted' in dismount and 'uplink: lift departing' not in dismount
             and number(named(parked, 'freight-lift'), 'lift-up') == 0,
             'E at the landing called the lift while still mounted')
     client.place('parked', 'atpanel', 3550, -1200, -1255, 0)
     upper_call = client.run('lift-call-panel-up', 'atpanel',
-                            ['impulse 3', *wait(4), 'impulse 3', *wait(90),
-                             'impulse 3', *wait(4), 'save panelup'])
+                            ['impulse 10', *wait(4), 'impulse 10', *wait(90),
+                             'impulse 10', *wait(4), 'save panelup'])
     up = named(client.save('panelup'), 'freight-lift')
     require(upper_call.count('uplink: lift call button pressed') == 3
             and upper_call.count('uplink: lift departing') == 1
@@ -183,12 +183,12 @@ def verify(dosbox, output, env, base, mod):
             'upper call panel did not summon and hold the freight lift')
     client.place('panelup', 'lowpanel', 3550, -1200, -2535, 0)
     lower_call = client.run('lift-call-panel-down', 'lowpanel',
-                            ['impulse 3', *wait(95), 'save paneldn'])
+                            ['impulse 10', *wait(95), 'save paneldn'])
     down = named(client.save('paneldn'), 'freight-lift')
     require('uplink: lift call button pressed' in lower_call and 'uplink: lift arrived' in lower_call
             and number(down, 'lift-up') == 0, 'lower call panel did not summon the freight lift')
     client.place('start', 'lockpan', -3818, -2940, -2535, 180)
-    locked_call = client.run('locked-lift-call-panel', 'lockpan', ['impulse 3', *wait(4), 'save calllock'])
+    locked_call = client.run('locked-lift-call-panel', 'lockpan', ['impulse 10', *wait(4), 'save calllock'])
     require('uplink: lift call button pressed' in locked_call and 'uplink: lift departing' not in locked_call
             and number(named(client.save('calllock'), 'sump-lift'), 'lift-locked') == 1,
             'calling an unpowered lift bypassed its interlock')
@@ -198,9 +198,9 @@ def verify(dosbox, output, env, base, mod):
     bx, by, bz = map(float, parked_bike['origin'].split())
     client.place('panelup', 'atpark', bx, by - 72, bz, 90)
     freight = client.run('freight-lift', 'atpark',
-                         ['impulse 3', *wait(4), '+attack', *wait(17), '-attack',
+                         ['impulse 10', *wait(4), '+attack', *wait(17), '-attack',
                           '+jump', *wait(20), '-jump', 'save aboard',
-                          'impulse 3', *wait(95), 'save flooded'])
+                          'impulse 10', *wait(95), 'save flooded'])
     require('qslisp: bike mounted' in freight and 'uplink: lift arrived' in freight
             and origin(client.save('flooded'))[2] < -2500,
             'freight lift did not carry the remounted rider down')
@@ -210,11 +210,11 @@ def verify(dosbox, output, env, base, mod):
     require(origin(client.save('passval'))[1] < -2735, 'the solid valve caught the bike')
 
     client.place('start', 'atvalve', -3650, -2780, -2535, 90)
-    client.run('flood-valve', 'atvalve', ['impulse 21', 'wait', 'impulse 3', *wait(5), 'save drained'])
+    client.run('flood-valve', 'atvalve', ['impulse 21', 'wait', 'impulse 10', *wait(5), 'save drained'])
     require(number(named(client.save('drained'), 'flood-valve'), 'uplink-active') == 1,
             'flood valve did not power the sump lift')
     client.place('drained', 'athold', -3370, -3574, -3815, 270)
-    pump = client.run('pump-assist', 'athold', ['impulse 3', *wait(90), 'save holding'])
+    pump = client.run('pump-assist', 'athold', ['impulse 10', *wait(90), 'save holding'])
     require('uplink: buddy arrived by service route' in pump and
             number(named(client.save('holding'), 'uplink_buddy', 'classname'), 'buddy-state') == 3,
             'buddy did not take the sump service route')
@@ -223,7 +223,7 @@ def verify(dosbox, output, env, base, mod):
     edit(client.save('athold'), client.save('walkhold'), [
         ('classname', 'uplink_buddy', {'origin': approach, 'oldorigin': approach}),
     ])
-    client.run('pump-approach', 'walkhold', ['impulse 3', *wait(50), 'save atstat'])
+    client.run('pump-approach', 'walkhold', ['impulse 10', *wait(50), 'save atstat'])
     buddy = named(client.save('atstat'), 'uplink_buddy', 'classname')
     valve = named(client.save('atstat'), 'pump-hold')
     buddy_xy = tuple(map(float, buddy['origin'].split()[:2]))
@@ -231,7 +231,7 @@ def verify(dosbox, output, env, base, mod):
     require(number(buddy, 'buddy-state') == 3 and math.dist(buddy_xy, valve_xy) < 88,
         'buddy could not walk to the valve from the sump approach')
     client.place('atstat', 'atpump', -2693, -3550, -3815, 0)
-    pump = client.run('pump-breaker', 'atpump', ['impulse 3', *wait(8), 'save pumped'])
+    pump = client.run('pump-breaker', 'atpump', ['impulse 10', *wait(8), 'save pumped'])
     require('uplink: pumps online' in pump and
             number(named(client.save('pumped'), 'mission-journal'), 'uplink-saved-flags') == 3,
             'buddy did not hold the valve or the mission journal lost the flood event')
@@ -243,11 +243,11 @@ def verify(dosbox, output, env, base, mod):
             'checkpoint did not restore the player and regroup the buddy')
 
     client.place('pumped', 'atcargo', -3760, -3776, -3815, 0)
-    cargo = client.run('cargo-lift', 'atcargo', ['impulse 3', *wait(335), 'save switch'])
+    cargo = client.run('cargo-lift', 'atcargo', ['impulse 10', *wait(335), 'save switch'])
     require('uplink: lift arrived' in cargo and origin(client.save('switch'))[2] > 1280,
             'cargo lift did not reach switchgear')
     client.place('switch', 'atpulse', -3200, -3750, 1305, 0)
-    client.run('pulse-pickup', 'atpulse', ['impulse 21', 'wait', 'impulse 2', *wait(4), 'save armed'])
+    client.run('pulse-pickup', 'atpulse', ['impulse 21', 'wait', 'impulse 3', *wait(4), 'save armed'])
     client.place('armed', 'atlong', 2600, -3290, 1305, 0)
     approach = client.run('switchgear-approach', 'atlong', [*wait(35), 'save approach'])
     require('qslisp: guard alerted' not in approach and number(player(client.save('approach')), 'health') == 100,
@@ -265,23 +265,33 @@ def verify(dosbox, output, env, base, mod):
             'pulse did not energize the switchgear relay')
 
     client.place('powered', 'atpick', 3600, 2850, 2585, 90)
-    client.run('tether-pickup', 'atpick', ['impulse 6', *wait(5), 'save tether'])
-    require(number(player(client.save('tether')), 'weapon') == 8, 'the gantry launcher did not equip')
+    client.run('tether-pickup', 'atpick', [*wait(5), 'save tether'])
+    picked = player(client.save('tether'))
+    require(number(picked, 'tether-owned') == 1 and number(picked, 'weapon') == 4
+            and int(number(picked, 'items')) & 8 == 0,
+            'the gantry launcher did not give a Mouse2 tether while keeping the pulse carbine')
 
+    # Mouse2 sends impulse 30 on press and 31 on release through the shipped binding.
     client.place('tether', 'atpull', -300, 3296, 2585, 292)
-    pull = client.run('tether-pull', 'atpull', [*look_up(23), 'cl_shownet 2', '+attack',
-                      *wait(9), 'save pulled', *wait(20), '-attack', 'cl_shownet 0',
+    pull = client.run('tether-pull', 'atpull', [*look_up(23), 'cl_shownet 2', 'impulse 30',
+                      *wait(9), 'save pulled', *wait(20), 'impulse 31', 'cl_shownet 0',
                       *wait(16), 'save pullend'])
     require('uplink: tether attached' in pull and 'svc_temp_entity' in pull
             and origin(client.save('pullend'))[2] >= 2670, 'tether pull did not reach the landing ledge')
     client.place('tether', 'atblock', 150, 3500, 2585, 236)
-    blocked = client.run('blocked-pull', 'atblock', [*look_up(12), '+attack', *wait(12),
-                         '-attack', 'save blocked'])
+    blocked = client.run('blocked-pull', 'atblock', [*look_up(12), 'impulse 30', *wait(12),
+                         'impulse 31', 'save blocked'])
     require('uplink: tether attached' not in blocked and origin(client.save('blocked'))[:2] == (150, 3500),
             'tether attached through a wall')
+    # A click shorter than one move leaves only the release impulse.
+    client.place('tether', 'atclick', -300, 3296, 2585, 292)
+    click = client.run('tether-fast-click', 'atclick', [*look_up(23), 'impulse 30', 'impulse 31',
+                       *wait(12), 'save clicked'])
+    require('uplink: tether attached' not in click and number(player(client.save('clicked')), 'tether-held') == 0,
+            'a click inside one move left the tether held')
     client.place('tether', 'atswing', -410, 3127, 2585, 181)
-    swing = client.run('tether-swing', 'atswing', [*look_up(19), '+attack', '+forward', *wait(10),
-                       'save affixed', *wait(18), 'save swung', '-attack', '-forward',
+    swing = client.run('tether-swing', 'atswing', [*look_up(19), 'impulse 30', '+forward', *wait(10),
+                       'save affixed', *wait(18), 'save swung', 'impulse 31', '-forward',
                        *wait(4), 'save letgo', *wait(30), 'save landed'])
     require('uplink: tether attached' in swing and 'uplink: tether released' in swing
             and number(player(client.save('swung')), 'tether-anchor') > 0
@@ -289,16 +299,24 @@ def verify(dosbox, output, env, base, mod):
             and origin(client.save('letgo'))[0] < origin(client.save('swung'))[0] - 35,
             'tether swing did not preserve momentum through release')
     require(2176 < origin(client.save('landed'))[2] < 2368, 'early release missed the catch lane')
-    client.run('swing-landing', 'atswing', [*look_up(19), '+attack', '+forward', *wait(46),
-               '-attack', *wait(28), '-forward', *wait(14), 'save farside'])
+    # With the release impulse lost, jump lets go mid-swing.
+    jumped = client.run('tether-jump-release', 'atswing', [*look_up(19), 'impulse 30', '+forward', *wait(28),
+                        'save jswung', '+jump', *wait(2), '-jump', '-forward', *wait(2), 'save jletgo'])
+    require('uplink: tether released' in jumped
+            and number(player(client.save('jswung')), 'tether-anchor') > 0
+            and number(player(client.save('jletgo')), 'tether-anchor') == 0
+            and number(player(client.save('jletgo')), 'tether-held') == 0,
+            'jump did not release a tether whose release impulse was lost')
+    client.run('swing-landing', 'atswing', [*look_up(19), 'impulse 30', '+forward', *wait(46),
+               'impulse 31', *wait(28), '-forward', *wait(14), 'save farside'])
     fx, _, fz = origin(client.save('farside'))
     require(fx < -1300 and fz >= 2392, 'late release did not reach the far landing ramp')
 
     client.place('powered', 'atrecall', 3580, -2262, 2585, 90)
-    recall = client.run('bike-recovery', 'atrecall', ['impulse 3', *wait(4), 'save recalled'])
+    recall = client.run('bike-recovery', 'atrecall', ['impulse 10', *wait(4), 'save recalled'])
     require('uplink: bike recalled' in recall, 'gantry service bay did not recover a bike')
     client.place('recalled', 'atbike', 3508, -2264, 2585, 90)
-    client.run('gantry-dock', 'atbike', ['impulse 3', *wait(12), 'save ride'])
+    client.run('gantry-dock', 'atbike', ['impulse 10', *wait(12), 'save ride'])
     require(number(player(client.save('ride')), 'riding') > 0, 'recovered bike would not mount')
     client.place('ride', 'atgantry', 3240, 3730, 2585, 180)
     gantry = client.run('gantry-relays', 'atgantry', ['+attack', *wait(290), '-attack', 'save relays'])
@@ -306,14 +324,14 @@ def verify(dosbox, output, env, base, mod):
             number(named(client.save('relays'), 'mission-journal'), 'uplink-saved-flags') == 31,
             'riding through the gantries did not power both relays')
     client.place('relays', 'atroof', -3760, 3780, 2585, 0)
-    roof = client.run('roof-lift', 'atroof', ['impulse 3', *wait(95), 'save rooftop'])
+    roof = client.run('roof-lift', 'atroof', ['impulse 10', *wait(95), 'save rooftop'])
     require('uplink: lift arrived' in roof and origin(client.save('rooftop'))[2] > 3840,
             'roof lift did not reach the roof')
     client.place('rooftop', 'rooflane', -3456, 3720, 3865, 0)
     client.run('roof-ride', 'rooflane', ['+attack', *wait(357), '-attack', '+jump',
-               *wait(30), '-jump', 'impulse 3', *wait(12), 'save endride'])
+               *wait(30), '-jump', 'impulse 10', *wait(12), 'save endride'])
     client.place('endride', 'atextrac', 3890, 3622, 3865, 90)
-    extract = client.run('extraction', 'atextrac', ['impulse 3', *wait(6), 'save finish'])
+    extract = client.run('extraction', 'atextrac', ['impulse 10', *wait(6), 'save finish'])
     require('uplink: mission complete' in extract and
             number(named(client.save('finish'), 'mission-journal'), 'uplink-saved-flags') == 63,
             'the restored mission journal did not permit roof extraction')
@@ -405,7 +423,7 @@ def run_coop(dosbox, output, env, host, guest, level, *rounds):
 
 
 def verify_coop(dosbox, output, env, host, guest):
-    ride = ['impulse 3', *wait(8), 'impulse 24', '+attack', *wait(20), '-attack']
+    ride = ['impulse 10', *wait(8), 'impulse 24', '+attack', *wait(20), '-attack']
     dock, _ = run_coop(dosbox, output, env, host, guest, 'updock',
                        (['impulse 21', *wait(12), *ride], [*wait(10), *ride]))
     bike_samples = [line.split() for line in re.findall(r'^bike(?!\S)(?: +[-\d.]+){13}$', dock, re.M)]
@@ -413,12 +431,12 @@ def verify_coop(dosbox, output, env, host, guest):
             {sample[2] for sample in bike_samples if float(sample[6]) > 60} == {'1', '2'},
             'both co-op riders did not mount and ride separate bikes')
     pump, _ = run_coop(dosbox, output, env, host, guest, 'uppump',
-                       (['impulse 3', *wait(8)], wait(10)))
+                       (['impulse 10', *wait(8)], wait(10)))
     require('uplink: pumps online' in pump, 'the other client did not satisfy the valve interlock')
-    equip = ['impulse 6', *wait(6), 'impulse 24']
+    equip = [*wait(6), 'impulse 24']
     rope, _ = run_coop(dosbox, output, env, host, guest, 'uprope', (
-        [*equip, *look_up(19), '+attack', '+forward', *wait(18), '-attack', '-forward', *wait(4)],
-        [*equip, *look_up(16), '+attack', '+forward', *wait(35), '-attack', '-forward', *wait(4)],
+        [*equip, *look_up(19), 'impulse 30', '+forward', *wait(18), 'impulse 31', '-forward', *wait(4)],
+        [*equip, *look_up(16), 'impulse 30', '+forward', *wait(35), 'impulse 31', '-forward', *wait(4)],
     ))
     events = [tuple(map(float, line.split()[1:])) for line in rope.splitlines() if line.startswith('tether ')]
     require({(rider, attached) for _, rider, attached in events} == {(1, 1), (2, 1), (1, 0), (2, 0)}
@@ -438,18 +456,18 @@ def verify_coop_tour(dosbox, output, env, host, guest):
                     '-o', fixture], cwd=MAP_SOURCE.parents[1], check=True)
     for mod in (host, guest):
         shutil.copyfile(fixture, mod / 'progs.dat')
-    drive = ['impulse 3', *wait(8), '+attack', *wait(28), '-attack', *wait(12)]
+    drive = ['impulse 10', *wait(8), '+attack', *wait(28), '-attack', *wait(12)]
     segments = [
-        (['impulse 3', *wait(20)], wait(20)),
-        (['impulse 3', *wait(20)], wait(20)),
+        (['impulse 10', *wait(20)], wait(20)),
+        (['impulse 10', *wait(20)], wait(20)),
         (['+attack', *wait(75), '-attack'], wait(75)),
-        (['impulse 3', *wait(20)], wait(20)),
+        (['impulse 10', *wait(20)], wait(20)),
         (drive, drive),
-        (['impulse 3', *wait(101)], wait(101)),
-        (['impulse 3', *wait(10)], wait(10)),
+        (['impulse 10', *wait(101)], wait(101)),
+        (['impulse 10', *wait(10)], wait(10)),
     ]
-    rounds = [(['impulse 21', *wait(12), 'impulse 3', *wait(12)],
-               [*wait(12), 'impulse 3', *wait(12)])]
+    rounds = [(['impulse 21', *wait(12), 'impulse 10', *wait(12)],
+               [*wait(12), 'impulse 10', *wait(12)])]
     for command, actions in enumerate(segments, 50):
         move = [f'impulse {command}', *wait(14)]
         rounds.extend(((move, move), actions))

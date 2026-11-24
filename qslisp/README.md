@@ -194,10 +194,32 @@ python3 tools/quakec/test-map-boot.py --play /path/to/dosbox /path/to/quake
 
 Click the game window to capture the mouse. Use **WASD** to walk, the mouse to
 look around, **Space** to jump, **left click** to fire, and **R** to restart the
-current map. Press **E** to interact and **1** or **2** to select a weapon. The
+current map. Press **E** to interact and **1**–**7** to select a weapon. The
 Lisp code spawns the local player at `info_player_start`, handles input,
 and uses stock walking physics and collision. On `start`, Quake skips original
 gameplay entities that lack a Lisp spawn function.
+
+The mod ships these bindings in [`autoexec.cfg`](../examples/autoexec.cfg).
+Stock Quake runs it from the `-game` directory and saves `config.cfg` there,
+so the player's normal Quake bindings stay untouched. Keys **1**–**7** send
+impulses 1–7 and select the matching status bar slot; slot 4 stays empty.
+**E** sends impulse 10. Stock clients transmit only the attack and jump
+buttons, so **Mouse2** is bound to `+tether`, whose halves send impulses 30
+and 31.
+
+| Key | Status bar bit | Weapon | Ammo |
+| --- | ---: | --- | --- |
+| 1 | 1 | Shotgun | shells |
+| 2 | 2 | Linker: fire at a pad or hostile, then at its new target | none |
+| 3 | 4 | Pulse carbine | nails |
+| 5 | 16 | Continuation beacon: fire to throw, fire again to return | one beacon |
+| 6 | 32 | Tail-call ricochet: one bolt that reflects and hits harder per bounce | rockets |
+| 7 | 64 | Mark-and-sweep: hold to mark up to four, release to sweep | cells |
+
+The continuation beacon is a toss entity with the player's bounding box, so
+stock physics only rests it where the player fits. While it is out, the
+player carries the stock quad bit, which tints the view blue. Returning
+restores the throw's view angles and leaves the world as it is.
 
 ## Play and verify the Signal Room
 
@@ -340,10 +362,14 @@ dismount when stopped. The console aliases `buddy_follow`, `buddy_wait`, and
 `buddy_regroup` are available in the launcher. They send impulses 21–23.
 
 The pump can use the buddy or a second player at the valve. At switchgear,
-press **2** to equip the pulse carbine, which sends a delayed follow-up to the
-sentry or the linked switch. On the upper gantries, press **3** after picking
-up the launcher. Aim at a marked anchor and hold fire. Release fire to keep
-your momentum off the swing.
+press **3** to equip the pulse carbine, which sends a delayed follow-up to the
+sentry or the linked switch. On the upper gantries, pick up the tether
+launcher. It stays ready on **Mouse2** whatever weapon is selected. Aim at a
+marked anchor and hold **Mouse2**. Release it to keep your momentum off the
+swing. Impulses can be overwritten or dropped, so **Jump** also lets go and a
+second press re-fires at a new anchor. Within 10 degrees of the aim, the
+tether snaps to the best-aligned anchor with a clear line. Brush entities of
+class `uplink_anchor_rail` take the tether wherever the aim hits them.
 
 Use `developer 1` and `gameplay_trace` (impulse 24) for up to 12 seconds of
 console samples. The trace records bike steering, ground contact, speed,

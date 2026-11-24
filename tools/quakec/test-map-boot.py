@@ -17,26 +17,6 @@ import uplink_server
 
 ROOT = Path(__file__).resolve().parents[2]
 BOOT_MESSAGES = ('qslisp: worldspawn', 'qslisp: StartFrame', 'qslisp: StartFrame', 'Server spawned.')
-WALK_CONTROLS = '''bind w +forward
-bind a +moveleft
-bind s +back
-bind d +moveright
-bind leftarrow +left
-bind rightarrow +right
-bind f +attack
-bind space +jump
-bind mouse1 +attack
-bind 1 "impulse 1"
-bind 2 "impulse 2"
-bind 3 "impulse 6"
-bind e "impulse 3"
-alias buddy_follow "impulse 21"
-alias buddy_wait "impulse 22"
-alias buddy_regroup "impulse 23"
-alias gameplay_trace "impulse 24"
-bind r restart
-+mlook
-'''
 
 
 def wait_for_annex(command, base, mod, env, log):
@@ -67,6 +47,7 @@ def prepare(output, maps, *, program_source='examples/map-boot.scm', map_sources
     subprocess.run([sys.executable, '-m', 'qslisp', program_source, '-o', program],
                    cwd=ROOT, check=True)
     subprocess.run([sys.executable, 'tools/quakec/check-stock.py', program], cwd=ROOT, check=True)
+    shutil.copyfile(ROOT / 'examples/autoexec.cfg', output / 'autoexec.cfg')
     if maps:
         (output / 'maps').mkdir()
         with (output / 'map-build.log').open('w') as log:
@@ -84,6 +65,24 @@ def prepare(output, maps, *, program_source='examples/map-boot.scm', map_sources
         subprocess.run([sys.executable, 'tools/quakec/build-uplink-assets.py', output], cwd=ROOT, check=True)
 
 
+def write_chained_cfg(mod, name, text, limit=4096):
+    """Split a long script into files that exec the next one as their last line.
+
+    Stock Quake's command buffer holds 8,192 bytes and exits on overflow, so
+    one exec must stay well below that while other commands are queued."""
+    chunks, current = [], []
+    for line in text.splitlines():
+        if current and sum(len(item) + 1 for item in current) + len(line) > limit:
+            chunks.append(current)
+            current = []
+        current.append(line)
+    chunks.append(current)
+    for index, lines in enumerate(chunks):
+        filename = f'{name}.cfg' if index == 0 else f'{name}{index}.cfg'
+        tail = [f'exec {name}{index + 1}.cfg'] if index + 1 < len(chunks) else []
+        (mod / filename).write_text('\n'.join(lines + tail) + '\n', encoding='ascii')
+
+
 def stage(quake_dir, output, base):
     (base / 'id1').mkdir(parents=True)
     mod = base / 'lispboot'
@@ -91,6 +90,7 @@ def stage(quake_dir, output, base):
     for name in ('quake.exe', 'cwsdpmi.exe', 'id1/pak0.pak', 'id1/pak1.pak'):
         shutil.copyfile(quake_dir / name, base / name)
     shutil.copyfile(output / 'progs.dat', mod / 'progs.dat')
+    shutil.copyfile(output / 'autoexec.cfg', mod / 'autoexec.cfg')
     for name in ('maps', 'progs', 'sound'):
         if (output / name).is_dir():
             shutil.copytree(output / name, mod / name)
@@ -119,11 +119,10 @@ def boot(dosbox, quake_dir, output, *, level, play=False, verify=False, protecte
 
         engine_flags = '-noudp -noipx -condebug -game lispboot'
         if play:
-            (mod / 'walk.cfg').write_text(WALK_CONTROLS, encoding='ascii')
-            engine = f'quake -nocdaudio {engine_flags} +developer 1 +map {level} +exec walk.cfg'
+            engine = f'quake -nocdaudio {engine_flags} +developer 1 +map {level}'
         elif verify:
             scenario = annex if level == 'annex' else challenge
-            (mod / 'verify.cfg').write_text(scenario.verification_commands(), encoding='ascii')
+            write_chained_cfg(mod, 'verify', scenario.verification_commands())
             engine = f'quake -nosound -nocdaudio {engine_flags} +developer 1 +map {level} +exec verify.cfg'
         else:
             engine = f'quake -dedicated 1 {engine_flags} +developer 1 +map {level} +wait +quit'

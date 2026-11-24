@@ -39,7 +39,7 @@ def verification_commands():
     commands += profile('combined', ['+jump', '+attack'])
     commands += ['-attack', '-jump'] + ['wait'] * 25
     commands += ['save replay', '+forward'] + ['wait'] * 55
-    commands += ['-forward', 'wait', 'echo annex-transition-request', 'impulse 3', 'wait', 'wait']
+    commands += ['-forward', 'wait', 'echo annex-transition-request', 'impulse 10', 'wait', 'wait']
     return '\n'.join(commands) + '\n'
 
 
