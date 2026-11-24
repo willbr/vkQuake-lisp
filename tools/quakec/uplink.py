@@ -389,6 +389,10 @@ def run_coop(dosbox, output, env, host, guest, level, *rounds):
                           f'{level} guest did not sign on')
             for index, inputs in enumerate(rounds):
                 marker = f'input-complete-{index:02d}'
+                if index == 0:
+                    # A stock client discards its first two moves after signing on,
+                    # along with any impulse they carry. The guest has only just joined.
+                    inputs = [[*wait(8), *commands] for commands in inputs]
                 for mod, commands in zip((host, guest), inputs):
                     command = mod / 'next.cfg'
                     command.write_text('\n'.join([*commands, poll(index + 1), f'echo {marker}', '']),
